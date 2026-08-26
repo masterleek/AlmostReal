@@ -18,6 +18,7 @@
 [ext_resource type="AudioStream" path="res://Audio/bling_appear.wav" id="17_bling_sfx"]
 [ext_resource type="AudioStream" path="res://Audio/worldmap_theme.mp3" id="18_worldmap_music"]
 [ext_resource type="Script" path="res://Scripts/Worldmap/HitzoneDebugOverlay.gd" id="19_hitzone_debug"]
+[ext_resource type="Script" path="res://Scripts/Worldmap/PlayerCharacter.gd" id="20_player_character"]
 
 [sub_resource type="TileSetAtlasSource" id="TileSetAtlasSource_hex"]
 texture = ExtResource("1_hex")
@@ -192,6 +193,11 @@ stream = ExtResource("8_move_sfx")
 
 [node name="RevealSFX" type="AudioStreamPlayer" parent="WorldmapCursor" unique_id=1721430834]
 stream = ExtResource("17_bling_sfx")
+
+[node name="PlayerCharacter" type="Sprite2D" parent="." unique_id=3049182746]
+position = Vector2(32, 22)
+z_index = 10
+script = ExtResource("20_player_character")
 
 [node name="TileHighlight" type="Node2D" parent="." unique_id=1165930132]
 z_index = -1

@@ -319,9 +319,33 @@ function setTool(tool) {
     // les masquerait.
     setRevealPreview(false);
   }
+  if (tool === "erase") {
+    removeOrphanProps();
+  }
+
   updateRevealPaletteState();
   updateToolPanels();
   updateGhost();
+}
+
+// Supprime les props qui ne se trouvent plus sur aucune tuile (case effacée
+// depuis, ou prop jamais correctement rattaché) : ils resteraient sinon
+// affichés "dans le vide". Coût négligeable (quelques tests point-dans-
+// polygone par prop, cf cellContainingProp) et déclenché une seule fois à la
+// sélection de l'outil, pas à chaque frame.
+function removeOrphanProps() {
+  const map = activeMap();
+  if (!map || !map.props?.length) return;
+  const orphans = map.props.filter((prop) => {
+    const cell = cellContainingProp(prop, map.cells);
+    return !map.cells[`${cell.col},${cell.row}`];
+  });
+  if (orphans.length === 0) return;
+  pushUndo();
+  map.props = map.props.filter((prop) => !orphans.includes(prop));
+  if (selectedProp && orphans.includes(selectedProp)) selectProp(null);
+  mapCanvas.render();
+  setStatus(`${orphans.length} prop(s) orphelin(s) supprimé(s) ✓`);
 }
 
 // Chaque outil n'a besoin que d'un des deux panneaux (tuiles/props), voire
@@ -693,13 +717,18 @@ function paintAt(evt) {
     const { col, row } = mapCanvas.cellAt(evt);
     const key = `${col},${row}`;
     if (!map.cells[key]) return;
+    // Calculé avant la suppression : la case qu'on efface doit encore
+    // compter comme "peinte" pour déterminer quels props étaient dessus.
+    const propsToRemove = new Set(
+      (map.props || []).filter((prop) => {
+        const cell = cellContainingProp(prop, map.cells);
+        return cell.col === col && cell.row === row;
+      })
+    );
     delete map.cells[key];
     // Supprime aussi tous les props posés sur cette case : sans tuile
     // dessous, ils resteraient affichés "dans le vide".
-    map.props = (map.props || []).filter((prop) => {
-      const cell = cellContainingProp(prop);
-      return !(cell.col === col && cell.row === row);
-    });
+    map.props = (map.props || []).filter((prop) => !propsToRemove.has(prop));
     mapCanvas.render();
     return;
   }
@@ -749,12 +778,16 @@ const AXIAL_NEIGHBORS = [
 // région différente de la hitzone réellement affichée (asymétrique, ancrée en
 // haut du sprite, cf HITZONE_POLY), donc pas fiable près d'une frontière.
 // On vérifie plutôt la hitzone de la case "logique" puis de ses 6 voisines,
-// et on ne retombe sur la case la plus proche que si aucune ne convient
-// (prop posé dans un interstice entre deux hitzones).
-function cellContainingProp(prop) {
+// mais seulement parmi celles réellement peintes : sinon un prop posé tout
+// près d'un bord peut mordre sur la hitzone d'une case voisine vide et se
+// faire rattacher à une case qui n'existe pas. On ne retombe sur la case la
+// plus proche (peinte ou non — laisser détecter un vrai orphelin ailleurs)
+// que si aucune case peinte ne convient.
+function cellContainingProp(prop, cells) {
   const guess = pixelToCell(prop.x, prop.y);
   const candidates = [guess, ...AXIAL_NEIGHBORS.map(([da, db]) => ({ col: guess.col + da, row: guess.row + db }))];
-  for (const cell of candidates) {
+  const painted = candidates.filter((cell) => cells[`${cell.col},${cell.row}`]);
+  for (const cell of painted) {
     if (isPointInTileHitzone(prop.x, prop.y, cell.col, cell.row)) return cell;
   }
   return guess;
@@ -769,7 +802,7 @@ function cellContainingProp(prop) {
 // suivront sa révélation) ; toute autre tuile les rend visibles.
 function resyncPropsRevealCell(map) {
   for (const prop of map.props || []) {
-    const cell = cellContainingProp(prop);
+    const cell = cellContainingProp(prop, map.cells);
     const tile = map.cells[`${cell.col},${cell.row}`];
     const isEmpty = tile && mapCanvas.tileDefs.get(tile.atlas.join(","))?.terrain_type === "empty1";
     if (isEmpty) {
