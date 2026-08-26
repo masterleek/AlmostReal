@@ -15,10 +15,10 @@
 [ext_resource type="Script" uid="uid://dtqa2igpd2ton" path="res://Scripts/UI/HexCounterHUD.gd" id="13_hex_counter_script"]
 [ext_resource type="Script" uid="uid://cgrwc7ahfkjw0" path="res://Scripts/UI/TileCostBubble.gd" id="14_tile_cost_bubble_script"]
 [ext_resource type="Shader" uid="uid://cxgmt27kex8ra" path="res://Shaders/white_tint.gdshader" id="16_white_tint_shader"]
-[ext_resource type="AudioStream" path="res://Audio/bling_appear.wav" id="17_bling_sfx"]
-[ext_resource type="AudioStream" path="res://Audio/worldmap_theme.mp3" id="18_worldmap_music"]
-[ext_resource type="Script" path="res://Scripts/Worldmap/HitzoneDebugOverlay.gd" id="19_hitzone_debug"]
-[ext_resource type="Script" path="res://Scripts/Worldmap/PlayerCharacter.gd" id="20_player_character"]
+[ext_resource type="AudioStream" uid="uid://dj3pydrxmr6w5" path="res://Audio/bling_appear.wav" id="17_bling_sfx"]
+[ext_resource type="AudioStream" uid="uid://cap1k7kxy07ox" path="res://Audio/worldmap_theme.mp3" id="18_worldmap_music"]
+[ext_resource type="Script" uid="uid://dudph00un0npq" path="res://Scripts/Worldmap/HitzoneDebugOverlay.gd" id="19_hitzone_debug"]
+[ext_resource type="Script" path="res://Scripts/Worldmap/Hero.gd" id="20_hero"]
 
 [sub_resource type="TileSetAtlasSource" id="TileSetAtlasSource_hex"]
 texture = ExtResource("1_hex")
@@ -173,7 +173,7 @@ tile_set = SubResource("TileSet_hex")
 [node name="PropsLayer" type="Node2D" parent="." unique_id=2127558011]
 y_sort_enabled = true
 
-[node name="HitzoneDebugOverlay" type="Node2D" parent="."]
+[node name="HitzoneDebugOverlay" type="Node2D" parent="." unique_id=810778164]
 script = ExtResource("19_hitzone_debug")
 
 [node name="WorldmapCursor" type="Node2D" parent="." unique_id=182299582]
@@ -194,10 +194,11 @@ stream = ExtResource("8_move_sfx")
 [node name="RevealSFX" type="AudioStreamPlayer" parent="WorldmapCursor" unique_id=1721430834]
 stream = ExtResource("17_bling_sfx")
 
-[node name="PlayerCharacter" type="Sprite2D" parent="." unique_id=3049182746]
-position = Vector2(32, 22)
+[node name="Hero" type="Sprite2D" parent="." unique_id=-1245784550]
 z_index = 10
-script = ExtResource("20_player_character")
+position = Vector2(32, 22)
+offset = Vector2(0, -10)
+script = ExtResource("20_hero")
 
 [node name="TileHighlight" type="Node2D" parent="." unique_id=1165930132]
 z_index = -1
@@ -229,8 +230,8 @@ position = Vector2(128, 66)
 
 [node name="RevealTile" type="Sprite2D" parent="RevealAnchor/RevealLift" unique_id=1716512893]
 visible = false
-position = Vector2(0, -11)
 material = SubResource("ShaderMaterial_white_tint")
+position = Vector2(0, -11)
 texture = ExtResource("1_hex")
 region_enabled = true
 
