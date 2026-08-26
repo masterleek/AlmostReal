@@ -1,0 +1,730 @@
+:root {
+  color-scheme: light dark;
+  --bg: #1c1f26;
+  --panel: #262a34;
+  --border: #3a3f4b;
+  --text: #e8e8ec;
+  --accent: #7bc67e;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+header {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+header h1 { font-size: 16px; margin: 0; }
+
+#status { font-size: 12px; color: #9aa0ab; margin-left: auto; }
+
+/* Barre de menus */
+#menubar { display: flex; gap: 4px; }
+
+.menu-item {
+  background: none;
+  border: 1px solid transparent;
+  color: var(--text);
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.menu-item:hover:not(:disabled) { background: var(--panel); border-color: var(--border); }
+.menu-item:disabled { color: #5a5f6b; cursor: default; }
+
+#layout {
+  display: flex;
+  height: calc(100vh - 49px - 41px);
+}
+
+#sidebar {
+  width: 260px;
+  padding: 16px;
+  border-left: 1px solid var(--border);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  order: 2;
+}
+
+#sidebar h2 {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #9aa0ab;
+  margin: 0 0 8px;
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.section-header h2 { margin: 0; }
+
+button {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 6px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+button:hover { border-color: var(--accent); }
+
+/* Onglets de maps ouvertes — barre horizontale façon éditeur (cf Tiled) */
+#tab-strip {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  padding: 8px 20px 0;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  min-height: 41px;
+  overflow-x: auto;
+}
+
+.tab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px 8px;
+  margin-bottom: -1px;
+  border-radius: 6px 6px 0 0;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+  font-size: 13px;
+  max-width: 180px;
+}
+
+.tab:hover { background: #2f333f; }
+
+.tab.active {
+  background: var(--bg);
+  border-bottom-color: var(--bg);
+  color: var(--text);
+  position: relative;
+  z-index: 1;
+}
+
+.tab-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.tab-close {
+  background: none;
+  border: none;
+  color: inherit;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 2px;
+  opacity: 0.6;
+}
+
+.tab-close:hover { opacity: 1; }
+
+.empty-hint { font-size: 12px; color: #9aa0ab; padding: 8px 0; }
+
+#palette {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.palette-tile {
+  border: 2px solid transparent;
+  border-radius: 4px;
+  overflow: hidden;
+  cursor: pointer;
+  background: var(--panel);
+  padding: 2px;
+}
+
+.palette-tile canvas { display: block; width: 100%; }
+.palette-tile.selected { border-color: var(--accent); }
+.palette-tile.disabled { opacity: 0.35; pointer-events: none; cursor: default; }
+#palette.panel-disabled, #props-palette.panel-disabled { opacity: 0.35; pointer-events: none; }
+.palette-tile .tile-name {
+  font-size: 10px;
+  text-align: center;
+  color: #9aa0ab;
+  display: block;
+}
+
+#props-palette {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+/* Miniatures de props toujours en carré fixe 48x48, pas étirées à la
+   largeur de la cellule de la grille (les props n'ont pas une taille
+   uniforme comme les tuiles 64x64). */
+.prop-tile canvas {
+  display: block;
+  width: 48px;
+  height: 48px;
+  margin: 0 auto;
+}
+
+/* Icônes d'outils */
+.icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+}
+
+.icon-btn.selected { border-color: var(--accent); color: var(--accent); }
+
+.icon-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.icon-btn:disabled:hover { border-color: var(--border); }
+
+#canvas-wrap {
+  flex: 1;
+  order: 1;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 20px;
+  gap: 16px;
+}
+
+#toolbar {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.tool-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-right: 20px;
+  border-right: 1px solid var(--border);
+}
+
+.tool-group:last-child { border-right: none; padding-right: 0; }
+
+#zoom-controls button { width: 28px; height: 28px; padding: 0; font-size: 16px; line-height: 1; }
+
+#zoom-level { font-size: 13px; min-width: 28px; text-align: center; }
+
+#zoom-hint { font-size: 12px; color: #9aa0ab; margin-left: 8px; }
+
+#map-props {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+#map-props label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #9aa0ab;
+  white-space: nowrap;
+}
+
+.tool-group input {
+  width: 64px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 4px 6px;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+#map-props input#map-name { width: 130px; }
+
+#prop-inspector.hidden { display: none; }
+
+.prop-inspector-name {
+  font-size: 12px;
+  color: #9aa0ab;
+  max-width: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#prop-zindex { width: 56px; }
+
+#preview-wrap {
+  position: relative;
+  display: block;
+  width: 100%;
+}
+
+#preview-frame {
+  position: relative;
+  overflow: auto;
+  background: #10131a;
+  border-radius: 6px;
+  max-height: calc(100vh - 280px);
+}
+
+#map-canvas {
+  display: block;
+  transform-origin: top left;
+  image-rendering: pixelated;
+  cursor: crosshair;
+}
+
+/* Les props sont sur un canvas séparé, superposé, pour pouvoir les afficher
+   lissés (image-rendering: auto) alors que les tuiles restent en pixel-art
+   net (image-rendering: pixelated) — les deux ne peuvent pas cohabiter sur
+   le même bitmap avec un seul réglage CSS. */
+#props-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  image-rendering: auto;
+  pointer-events: none;
+}
+
+/* Mini-preview taille réelle, déplaçable */
+#mini-preview-wrap {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  border: 2px solid var(--accent);
+  border-radius: 4px;
+  overflow: hidden;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
+  background: #000;
+}
+
+#mini-preview-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 10px;
+  padding: 2px 4px 2px 8px;
+  background: var(--accent);
+  color: #10240f;
+  cursor: grab;
+  user-select: none;
+}
+
+#mini-preview-label:active { cursor: grabbing; }
+
+#mini-toggle-btn {
+  width: 20px;
+  height: 20px;
+  background: none;
+  border: none;
+  padding: 0;
+  color: #10240f;
+}
+
+#mini-toggle-btn:hover { border-color: transparent; opacity: 0.7; }
+
+#mini-canvas {
+  display: block;
+  width: 480px;
+  height: 270px;
+  image-rendering: pixelated;
+  background: #10131a;
+}
+
+#mini-preview-wrap.collapsed #mini-canvas { display: none; }
+
+/* Modal Maps */
+#modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+#modal-overlay.hidden { display: none; }
+
+#maps-modal {
+  width: 420px;
+  max-height: 70vh;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+  gap: 12px;
+}
+
+#maps-modal header {
+  border-bottom: none;
+  padding: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+#maps-modal h2 { font-size: 15px; margin: 0; }
+
+#modal-map-list {
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 40px;
+}
+
+.modal-map-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 4px;
+}
+
+.modal-map-name {
+  flex: 1;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.modal-map-name:hover { background: var(--bg); outline: 1px solid var(--accent); }
+
+.modal-map-name.editing {
+  cursor: text;
+  outline: 1px solid var(--accent);
+  background: var(--bg);
+}
+
+.modal-map-delete {
+  background: none;
+  border: none;
+  color: #d98a8a;
+  font-size: 16px;
+  line-height: 1;
+  padding: 2px 6px;
+}
+
+.modal-map-delete:hover { color: #ff6b6b; }
+
+#modal-new-map-btn { width: 100%; }
+
+/* Modal Gestion des tuiles / props */
+#tiles-modal-overlay,
+#atlas-picker-overlay,
+#props-modal-overlay,
+#systems-modal-overlay,
+#rect-picker-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+#atlas-picker-overlay,
+#rect-picker-overlay { z-index: 110; }
+
+#tiles-modal-overlay.hidden,
+#atlas-picker-overlay.hidden,
+#props-modal-overlay.hidden,
+#systems-modal-overlay.hidden,
+#rect-picker-overlay.hidden { display: none; }
+
+#tiles-modal,
+.crud-modal {
+  width: 480px;
+  max-height: 75vh;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+  gap: 12px;
+}
+
+#tiles-modal header,
+.crud-modal header {
+  border-bottom: none;
+  padding: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+#tiles-modal h2,
+.crud-modal h2 { font-size: 15px; margin: 0; }
+
+#tiles-list,
+#props-list {
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 40px;
+}
+
+.tile-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  background: var(--bg);
+  border: 1px solid transparent;
+}
+
+.tile-row.drag-over { border-color: var(--accent); }
+.tile-row.dragging { opacity: 0.4; }
+
+.tile-drag-handle {
+  cursor: grab;
+  color: #9aa0ab;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0 2px;
+}
+
+.tile-row-name {
+  flex: 1;
+  font-size: 13px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  cursor: text;
+}
+
+.tile-row-name:hover { outline: 1px solid var(--accent); }
+.tile-row-name.editing { outline: 1px solid var(--accent); background: var(--panel); }
+
+#tiles-add-btn,
+#props-add-btn { width: 100%; }
+
+/* Séquence d'images d'animation (tuiles/props) */
+.frame-strip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  overflow-x: auto;
+  max-width: 220px;
+}
+
+.frame-swatch {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  border-radius: 4px;
+  background: var(--panel);
+  flex-shrink: 0;
+  cursor: pointer;
+  border: 1px solid var(--border);
+}
+
+.frame-swatch:hover { border-color: var(--accent); }
+.frame-swatch canvas { display: block; width: 100%; height: 100%; }
+
+.frame-remove {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border-radius: 50%;
+  background: #3a1f1f;
+  border: 1px solid #d98a8a;
+  color: #d98a8a;
+  font-size: 11px;
+  line-height: 1;
+}
+
+.frame-remove:hover { color: #ff6b6b; border-color: #ff6b6b; }
+
+.frame-add {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  flex-shrink: 0;
+  font-size: 16px;
+  line-height: 1;
+  border-style: dashed;
+}
+
+.fps-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: #9aa0ab;
+  flex-shrink: 0;
+}
+
+.fps-label input {
+  width: 44px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 4px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+/* Sélecteur de case d'atlas (tuiles) */
+#atlas-picker {
+  width: 420px;
+  max-height: 70vh;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+  gap: 12px;
+}
+
+#atlas-picker header {
+  border-bottom: none;
+  padding: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+#atlas-picker h2 { font-size: 15px; margin: 0; }
+
+#atlas-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 8px;
+  overflow-y: auto;
+}
+
+.atlas-picker-cell {
+  border: 2px solid transparent;
+  border-radius: 4px;
+  overflow: hidden;
+  cursor: pointer;
+  background: var(--bg);
+  padding: 2px;
+}
+
+.atlas-picker-cell canvas { display: block; width: 100%; }
+.atlas-picker-cell.selected { border-color: var(--accent); }
+.atlas-picker-cell:hover { border-color: var(--accent); }
+
+/* Sélecteur de rectangle libre (props) */
+#rect-picker { width: auto; max-width: 90vw; }
+
+#rect-picker .hint,
+.crud-modal .hint {
+  font-size: 12px;
+  color: #9aa0ab;
+  margin: 0;
+}
+
+.crud-modal .hint code {
+  background: var(--bg);
+  border-radius: 3px;
+  padding: 1px 4px;
+}
+
+/* Catalogue des systèmes (lecture seule) */
+#systems-list {
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 40px;
+}
+
+.system-category-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #9aa0ab;
+  margin: 0 0 6px;
+}
+
+.system-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border-radius: 4px;
+  background: var(--bg);
+  border: 1px solid transparent;
+  margin-bottom: 6px;
+}
+
+.system-row-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.system-name { font-size: 13px; font-weight: 600; }
+
+.system-path {
+  font-size: 11px;
+  color: #9aa0ab;
+  font-family: monospace;
+}
+
+.system-description {
+  font-size: 12px;
+  color: #c7cad1;
+}
+
+.system-badge {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+}
+
+.system-used-in {
+  font-size: 11px;
+  color: #9aa0ab;
+}
+
+#rect-picker-canvas {
+  display: block;
+  image-rendering: pixelated;
+  cursor: crosshair;
+  border-radius: 4px;
+  max-width: 100%;
+}

@@ -1,0 +1,14 @@
+{
+  "name": "almostreal-map-editor",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Outil web local pour créer et éditer les maps hexagonales d'AlmostReal.",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}

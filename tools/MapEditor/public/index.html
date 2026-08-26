@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <title>AlmostReal — MapEditor</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <h1>AlmostReal — MapEditor</h1>
+    <nav id="menubar">
+      <button id="menu-maps" class="menu-item">Maps</button>
+      <button id="menu-systems" class="menu-item">Systèmes</button>
+      <button id="menu-autres" class="menu-item" disabled>Autres</button>
+    </nav>
+    <div id="status"></div>
+  </header>
+
+  <div id="tab-strip"></div>
+
+  <div id="layout">
+    <main id="canvas-wrap">
+      <div id="toolbar">
+        <div class="tool-group">
+          <button id="tool-save" class="icon-btn" title="Enregistrer">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg>
+          </button>
+          <button id="tool-undo" class="icon-btn" title="Annuler la dernière action" disabled>
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>
+          </button>
+          <button id="tool-erase" class="icon-btn" title="Gomme">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 21-4.3-4.3a1 1 0 0 1 0-1.4l9.6-9.6a1 1 0 0 1 1.4 0l5.7 5.7a1 1 0 0 1 0 1.4L13 21"/><path d="M22 21H7"/><path d="m5 11 9 9"/></svg>
+          </button>
+          <button id="tool-edit" class="icon-btn selected" title="Éditer (poser des tuiles)">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+          </button>
+          <button id="tool-prop" class="icon-btn" title="Placer des props (positionnement libre)">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 19 15H5Z"/><path d="M12 15V21"/><path d="M9 21H15"/></svg>
+          </button>
+          <button id="tool-reveal" class="icon-btn" title="Assigner la tuile révélée par une case Empty : sélectionne une tuile dans la palette puis clique une case Empty">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 19.8 7.5 19.8 16.5 12 21 4.2 16.5 4.2 7.5Z"/></svg>
+          </button>
+          <button id="tool-reveal-preview" class="icon-btn" title="Aperçu révélé : montre les cases Empty avec la tuile qu'elles deviendront, et leurs props à pleine opacité">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+          </button>
+        </div>
+        <div class="tool-group">
+          <button id="tool-play" class="icon-btn" title="Lancer le jeu">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" stroke="none"><path d="M8 5v14l11-7z"/></svg>
+          </button>
+        </div>
+        <div class="tool-group" id="zoom-controls">
+          <button id="zoom-out" title="Dézoomer">−</button>
+          <span id="zoom-level">3x</span>
+          <button id="zoom-in" title="Zoomer">+</button>
+          <span id="zoom-hint">Résolution jeu : 480×270</span>
+        </div>
+        <div class="tool-group" id="map-props">
+          <label>Nom <input id="map-name" type="text" /></label>
+          <label>L (px) <input id="map-width" type="number" min="1" step="1" /></label>
+          <label>H (px) <input id="map-height" type="number" min="1" step="1" /></label>
+        </div>
+        <div class="tool-group hidden" id="prop-inspector">
+          <span id="prop-inspector-name" class="prop-inspector-name"></span>
+          <label>Z-index <input id="prop-zindex" type="number" step="1" /></label>
+          <button id="prop-delete-btn" class="icon-btn" title="Supprimer ce prop">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <div id="preview-wrap">
+        <div id="preview-frame">
+          <canvas id="map-canvas"></canvas>
+          <canvas id="props-canvas"></canvas>
+        </div>
+        <div id="mini-preview-wrap">
+          <div id="mini-preview-label">
+            <span>Taille réelle 480×270</span>
+            <button id="mini-toggle-btn" class="icon-btn" title="Afficher/masquer la preview"></button>
+          </div>
+          <canvas id="mini-canvas" width="480" height="270"></canvas>
+        </div>
+      </div>
+    </main>
+
+    <aside id="sidebar">
+      <section>
+        <div class="section-header">
+          <h2>Palette</h2>
+          <button id="manage-tiles-btn" class="icon-btn" title="Gérer les tuiles">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>
+          </button>
+        </div>
+        <div id="palette"></div>
+      </section>
+
+      <section>
+        <div class="section-header">
+          <h2>Props</h2>
+          <button id="manage-props-btn" class="icon-btn" title="Gérer les props">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>
+          </button>
+          <button id="fix-overflow-props-btn" class="icon-btn" title="Recentrer les props qui débordent du cadre de leur tuile (risque de sembler flotter hors de la case révélée)">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/></svg>
+          </button>
+        </div>
+        <div id="props-palette"></div>
+      </section>
+    </aside>
+  </div>
+
+  <div id="modal-overlay" class="hidden">
+    <div id="maps-modal">
+      <header>
+        <h2>Maps</h2>
+        <button id="modal-close" class="icon-btn" title="Fermer">✕</button>
+      </header>
+      <div id="modal-map-list"></div>
+      <button id="modal-new-map-btn">+ Nouvelle map</button>
+    </div>
+  </div>
+
+  <div id="tiles-modal-overlay" class="hidden">
+    <div id="tiles-modal">
+      <header>
+        <h2>Gestion des tuiles</h2>
+        <button id="tiles-modal-close" class="icon-btn" title="Fermer">✕</button>
+      </header>
+      <div id="tiles-list"></div>
+      <button id="tiles-add-btn">+ Ajouter une tuile</button>
+    </div>
+  </div>
+
+  <div id="atlas-picker-overlay" class="hidden">
+    <div id="atlas-picker">
+      <header>
+        <h2>Choisir une case de l'atlas</h2>
+        <button id="atlas-picker-close" class="icon-btn" title="Fermer">✕</button>
+      </header>
+      <div id="atlas-picker-grid"></div>
+    </div>
+  </div>
+
+  <div id="props-modal-overlay" class="hidden">
+    <div id="props-modal" class="crud-modal">
+      <header>
+        <h2>Gestion des props</h2>
+        <button id="props-modal-close" class="icon-btn" title="Fermer">✕</button>
+      </header>
+      <div id="props-list"></div>
+      <button id="props-add-btn">+ Ajouter un prop</button>
+    </div>
+  </div>
+
+  <div id="systems-modal-overlay" class="hidden">
+    <div id="systems-modal" class="crud-modal">
+      <header>
+        <h2>Systèmes du jeu</h2>
+        <button id="systems-modal-close" class="icon-btn" title="Fermer">✕</button>
+      </header>
+      <p class="hint">
+        Catalogue en lecture seule, généré depuis les scripts sous
+        <code>Scripts/</code> — écrire un nouveau système suffit à le faire
+        apparaître ici.
+      </p>
+      <div id="systems-list"></div>
+    </div>
+  </div>
+
+  <div id="rect-picker-overlay" class="hidden">
+    <div id="rect-picker" class="crud-modal">
+      <header>
+        <h2>Sélectionner la zone du prop</h2>
+        <button id="rect-picker-close" class="icon-btn" title="Fermer">✕</button>
+      </header>
+      <p class="hint">Cliquer-glisser pour dessiner le rectangle du sprite.</p>
+      <canvas id="rect-picker-canvas"></canvas>
+    </div>
+  </div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

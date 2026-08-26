@@ -1,0 +1,12 @@
+# Godot 4+ : cache local régénéré automatiquement à l'ouverture du projet
+# (miniatures, ressources importées, etc.) — jamais à versionner.
+.godot/
+
+# Traductions générées automatiquement depuis des CSV
+*.translation
+
+# macOS
+.DS_Store
+
+# Éditeur de maps (Node.js) : dépendances régénérées via `npm install`
+tools/MapEditor/node_modules/

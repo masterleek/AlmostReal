@@ -1,0 +1,110 @@
+[
+  {
+    "name": "Grass 1",
+    "source_id": 0,
+    "atlas": [
+      0,
+      0
+    ],
+    "frames": [
+      [
+        0,
+        0
+      ]
+    ],
+    "fps": 4,
+    "terrain_type": "grass1",
+    "walkable": true,
+    "movement_cost": 1
+  },
+  {
+    "name": "Grass 2",
+    "source_id": 0,
+    "atlas": [
+      0,
+      1
+    ],
+    "frames": [
+      [
+        0,
+        1
+      ]
+    ],
+    "fps": 4,
+    "terrain_type": "grass2",
+    "walkable": true,
+    "movement_cost": 1
+  },
+  {
+    "name": "Empty",
+    "source_id": 0,
+    "atlas": [
+      1,
+      0
+    ],
+    "frames": [
+      [
+        1,
+        0
+      ]
+    ],
+    "fps": 4,
+    "terrain_type": "empty1",
+    "walkable": false,
+    "movement_cost": 0
+  },
+  {
+    "name": "Sand",
+    "source_id": 0,
+    "atlas": [
+      0,
+      2
+    ],
+    "frames": [
+      [
+        0,
+        2
+      ]
+    ],
+    "fps": 4,
+    "terrain_type": "sand",
+    "walkable": true,
+    "movement_cost": 2
+  },
+  {
+    "name": "Bottom",
+    "source_id": 0,
+    "atlas": [
+      1,
+      1
+    ],
+    "frames": [
+      [
+        1,
+        1
+      ]
+    ],
+    "fps": 4,
+    "terrain_type": null,
+    "walkable": true,
+    "movement_cost": 1
+  },
+  {
+    "name": "Nouvelle tuile",
+    "source_id": 0,
+    "atlas": [
+      0,
+      0
+    ],
+    "frames": [
+      [
+        0,
+        0
+      ]
+    ],
+    "fps": 4,
+    "terrain_type": null,
+    "walkable": true,
+    "movement_cost": 1
+  }
+]

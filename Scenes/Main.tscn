@@ -1,0 +1,318 @@
+[gd_scene format=3 uid="uid://cqejdfelq81xo"]
+
+[ext_resource type="Texture2D" uid="uid://m4upl0ehe2sh" path="res://Sprites/hex_tiles.png" id="1_hex"]
+[ext_resource type="Script" uid="uid://cxw0w6i31eejb" path="res://Scripts/map_loader.gd" id="2_loader"]
+[ext_resource type="Script" uid="uid://bt4qipmt2de80" path="res://Scripts/Worldmap/WorldmapCursor.gd" id="3_cursor"]
+[ext_resource type="Texture2D" uid="uid://dlyxwngkc7lwr" path="res://UI/cursor_worldmap.png" id="4_cursor_tex"]
+[ext_resource type="Texture2D" uid="uid://f26i3aar4eu8" path="res://UI/cursor_worldmap2.png" id="5_highlight_tex"]
+[ext_resource type="Script" uid="uid://3706j1tnde3a" path="res://Scripts/Camera/CameraController.gd" id="6_camera"]
+[ext_resource type="Texture2D" uid="uid://cqs6grq1vemur" path="res://UI/highlight.png" id="7_tile_select_tex"]
+[ext_resource type="AudioStream" uid="uid://mp0llgdeyre0" path="res://Audio/move.wav" id="8_move_sfx"]
+[ext_resource type="FontFile" uid="uid://beus2787fu0lf" path="res://Fonts/BoldPixels1.4.ttf" id="9_pixel_font"]
+[ext_resource type="Texture2D" uid="uid://c6o0pj8hht0mv" path="res://UI/ic_hex.png" id="10_hex_icon"]
+[ext_resource type="Texture2D" uid="uid://cylord63l1u0m" path="res://UI/bubble.png" id="11_bubble_tex"]
+[ext_resource type="Texture2D" uid="uid://daje0hxrv0d56" path="res://UI/bubble_arrow.png" id="12_bubble_arrow_tex"]
+[ext_resource type="Script" uid="uid://dtqa2igpd2ton" path="res://Scripts/UI/HexCounterHUD.gd" id="13_hex_counter_script"]
+[ext_resource type="Script" uid="uid://cgrwc7ahfkjw0" path="res://Scripts/UI/TileCostBubble.gd" id="14_tile_cost_bubble_script"]
+[ext_resource type="Shader" uid="uid://cxgmt27kex8ra" path="res://Shaders/white_tint.gdshader" id="16_white_tint_shader"]
+[ext_resource type="AudioStream" path="res://Audio/bling_appear.wav" id="17_bling_sfx"]
+[ext_resource type="AudioStream" path="res://Audio/worldmap_theme.mp3" id="18_worldmap_music"]
+
+[sub_resource type="TileSetAtlasSource" id="TileSetAtlasSource_hex"]
+texture = ExtResource("1_hex")
+texture_region_size = Vector2i(64, 64)
+0:0/0 = 0
+0:0/0/y_sort_origin = 10
+0:0/0/custom_data_0 = "grass1"
+0:0/0/custom_data_1 = 1
+0:0/0/custom_data_2 = true
+1:0/0 = 0
+1:0/0/y_sort_origin = 10
+1:0/0/custom_data_0 = "empty1"
+0:1/0 = 0
+0:1/0/y_sort_origin = 10
+0:1/0/custom_data_0 = "grass2"
+0:1/0/custom_data_1 = 1
+0:1/0/custom_data_2 = true
+0:2/0 = 0
+0:2/0/y_sort_origin = 10
+0:2/0/custom_data_0 = "sand"
+0:2/0/custom_data_1 = 2
+0:2/0/custom_data_2 = true
+
+[sub_resource type="TileSet" id="TileSet_hex"]
+tile_shape = 3
+tile_layout = 5
+tile_size = Vector2i(64, 44)
+custom_data_layer_0/name = "terrain_type"
+custom_data_layer_0/type = 4
+custom_data_layer_1/name = "movement_cost"
+custom_data_layer_1/type = 2
+custom_data_layer_2/name = "walkable"
+custom_data_layer_2/type = 1
+sources/0 = SubResource("TileSetAtlasSource_hex")
+
+[sub_resource type="CanvasItemMaterial" id="CanvasItemMaterial_glow"]
+blend_mode = 1
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_white_tint"]
+shader = ExtResource("16_white_tint_shader")
+shader_parameter/white_amount = 0.0
+
+[sub_resource type="Animation" id="Animation_h1m7h"]
+resource_name = "tile_reveal"
+length = 0.65
+tracks/0/type = "value"
+tracks/0/imported = false
+tracks/0/enabled = true
+tracks/0/path = NodePath("HUD/TileCostBubble:modulate:a")
+tracks/0/interp = 1
+tracks/0/loop_wrap = true
+tracks/0/keys = {
+"times": PackedFloat32Array(0, 0.1, 0.5, 0.65),
+"transitions": PackedFloat32Array(0.6, 1, 1.8, 1),
+"update": 0,
+"values": [1.0, 0.0, 0.0, 1.0]
+}
+tracks/1/type = "value"
+tracks/1/imported = false
+tracks/1/enabled = true
+tracks/1/path = NodePath("TileHighlight:modulate:a")
+tracks/1/interp = 1
+tracks/1/loop_wrap = true
+tracks/1/keys = {
+"times": PackedFloat32Array(0, 0.1, 0.5, 0.65),
+"transitions": PackedFloat32Array(0.6, 1, 1.8, 1),
+"update": 0,
+"values": [1.0, 0.0, 0.0, 1.0]
+}
+tracks/2/type = "value"
+tracks/2/imported = false
+tracks/2/enabled = true
+tracks/2/path = NodePath("TileSelectHighlight:modulate:a")
+tracks/2/interp = 1
+tracks/2/loop_wrap = true
+tracks/2/keys = {
+"times": PackedFloat32Array(0, 0.1, 0.5, 0.65),
+"transitions": PackedFloat32Array(0.6, 1, 1.8, 1),
+"update": 0,
+"values": [1.0, 0.0, 0.0, 1.0]
+}
+tracks/3/type = "value"
+tracks/3/imported = false
+tracks/3/enabled = true
+tracks/3/path = NodePath("RevealAnchor/RevealLift/RevealTile:material:shader_parameter/white_amount")
+tracks/3/interp = 1
+tracks/3/loop_wrap = true
+tracks/3/keys = {
+"times": PackedFloat32Array(0, 0.1, 0.25, 0.5),
+"transitions": PackedFloat32Array(0.6, 1, 1.8, 1),
+"update": 0,
+"values": [0.0, 1.0, 1.0, 0.0]
+}
+tracks/4/type = "value"
+tracks/4/imported = false
+tracks/4/enabled = true
+tracks/4/path = NodePath("RevealAnchor/RevealLift:position:y")
+tracks/4/interp = 2
+tracks/4/loop_wrap = true
+tracks/4/keys = {
+"times": PackedFloat32Array(0, 0.1, 0.25, 0.38, 0.44, 0.5),
+"transitions": PackedFloat32Array(1, 0.5, 2.2, 0.6, 1.6, 1),
+"update": 0,
+"values": [0.0, 0.0, -24.0, 0.0, 3.0, 0.0]
+}
+tracks/5/type = "method"
+tracks/5/imported = false
+tracks/5/enabled = true
+tracks/5/path = NodePath("WorldmapCursor")
+tracks/5/interp = 1
+tracks/5/loop_wrap = true
+tracks/5/keys = {
+"times": PackedFloat32Array(0.1, 0.25, 0.38),
+"transitions": PackedFloat32Array(1, 1, 1),
+"values": [{
+"args": [],
+"method": &"_on_reveal_liftoff"
+}, {
+"args": [],
+"method": &"_on_reveal_swap"
+}, {
+"args": [],
+"method": &"_on_reveal_landed"
+}]
+}
+
+[sub_resource type="AnimationLibrary" id="AnimationLibrary_erwvk"]
+_data = {
+&"tile_reveal": SubResource("Animation_h1m7h")
+}
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_bubble"]
+content_margin_left = 14.0
+content_margin_top = 10.0
+content_margin_right = 14.0
+content_margin_bottom = 14.0
+texture = ExtResource("11_bubble_tex")
+texture_margin_left = 16.0
+texture_margin_top = 16.0
+texture_margin_right = 16.0
+texture_margin_bottom = 16.0
+
+[node name="Main" type="Node2D" unique_id=1012213867]
+y_sort_enabled = true
+script = ExtResource("2_loader")
+
+[node name="TileMapLayer" type="TileMapLayer" parent="." unique_id=319968199]
+z_index = -1
+y_sort_enabled = true
+tile_set = SubResource("TileSet_hex")
+
+[node name="PropsLayer" type="Node2D" parent="." unique_id=2127558011]
+y_sort_enabled = true
+
+[node name="WorldmapCursor" type="Node2D" parent="." unique_id=182299582]
+z_index = 10
+script = ExtResource("3_cursor")
+tile_select_offset = Vector2(0, -8)
+tile_select_empty_offset = Vector2(0, 3)
+tile_cost_bubble_anchor = Vector2(0, -16)
+tile_cost_bubble_arrow_offset = Vector2(0, -8)
+
+[node name="Sprite2D" type="Sprite2D" parent="WorldmapCursor" unique_id=1368578664]
+texture = ExtResource("4_cursor_tex")
+offset = Vector2(0, -34)
+
+[node name="MoveSFX" type="AudioStreamPlayer" parent="WorldmapCursor" unique_id=1721430833]
+stream = ExtResource("8_move_sfx")
+
+[node name="RevealSFX" type="AudioStreamPlayer" parent="WorldmapCursor" unique_id=1721430834]
+stream = ExtResource("17_bling_sfx")
+
+[node name="TileHighlight" type="Node2D" parent="." unique_id=1165930132]
+z_index = -1
+position = Vector2(128, 55)
+
+[node name="Sprite2D" type="Sprite2D" parent="TileHighlight" unique_id=758934971]
+texture = ExtResource("5_highlight_tex")
+
+[node name="HoverGlow" type="Sprite2D" parent="." unique_id=164122880]
+visible = false
+modulate = Color(1, 0.85, 0.4, 1)
+z_index = -1
+material = SubResource("CanvasItemMaterial_glow")
+texture = ExtResource("1_hex")
+region_enabled = true
+region_rect = Rect2(0, 0, 64, 64)
+
+[node name="TileSelectHighlight" type="Sprite2D" parent="." unique_id=-379540275]
+z_index = -1
+position = Vector2(128, 55)
+texture = ExtResource("7_tile_select_tex")
+offset = Vector2(0, 11)
+
+[node name="RevealAnchor" type="Node2D" parent="." unique_id=1009112296]
+z_index = -1
+position = Vector2(128, 66)
+
+[node name="RevealLift" type="Node2D" parent="RevealAnchor" unique_id=1009112297]
+
+[node name="RevealTile" type="Sprite2D" parent="RevealAnchor/RevealLift" unique_id=1716512893]
+visible = false
+position = Vector2(0, -11)
+material = SubResource("ShaderMaterial_white_tint")
+texture = ExtResource("1_hex")
+region_enabled = true
+
+[node name="RevealAnimationPlayer" type="AnimationPlayer" parent="." unique_id=885276477]
+libraries/ = SubResource("AnimationLibrary_erwvk")
+
+[node name="Camera2D" type="Camera2D" parent="." unique_id=1028941684]
+zoom = Vector2(4, 4)
+script = ExtResource("6_camera")
+
+[node name="WorldmapMusic" type="AudioStreamPlayer" parent="." unique_id=1721430835]
+stream = ExtResource("18_worldmap_music")
+
+[node name="HUD" type="CanvasLayer" parent="." unique_id=1725324657]
+
+[node name="HexCounter" type="HBoxContainer" parent="HUD" unique_id=1290498837]
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -8.0
+offset_top = 8.0
+offset_right = -8.0
+offset_bottom = 8.0
+grow_horizontal = 0
+theme_override_constants/separation = 4
+script = ExtResource("13_hex_counter_script")
+
+[node name="Icon" type="TextureRect" parent="HUD/HexCounter" unique_id=1705197384]
+custom_minimum_size = Vector2(48, 48)
+layout_mode = 2
+texture = ExtResource("10_hex_icon")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="Count" type="Label" parent="HUD/HexCounter" unique_id=108800715]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_colors/font_shadow_color = Color(0.411765, 0.203922, 0.054902, 1)
+theme_override_colors/font_outline_color = Color(0.411765, 0.203922, 0.054902, 1)
+theme_override_constants/shadow_offset_x = 4
+theme_override_constants/shadow_offset_y = 4
+theme_override_constants/outline_size = 4
+theme_override_fonts/font = ExtResource("9_pixel_font")
+theme_override_font_sizes/font_size = 64
+text = "10"
+vertical_alignment = 1
+
+[node name="TileCostBubble" type="Control" parent="HUD" unique_id=609416610]
+layout_mode = 3
+anchors_preset = 0
+offset_top = 23.0
+offset_bottom = 23.0
+mouse_filter = 2
+script = ExtResource("14_tile_cost_bubble_script")
+
+[node name="Bubble" type="PanelContainer" parent="HUD/TileCostBubble" unique_id=1677293457]
+layout_mode = 0
+offset_top = 45.0
+offset_right = 115.0
+offset_bottom = 125.0
+mouse_filter = 2
+theme_override_styles/panel = SubResource("StyleBoxTexture_bubble")
+
+[node name="Content" type="HBoxContainer" parent="HUD/TileCostBubble/Bubble" unique_id=613261526]
+layout_mode = 2
+mouse_filter = 2
+theme_override_constants/separation = 3
+
+[node name="Icon" type="TextureRect" parent="HUD/TileCostBubble/Bubble/Content" unique_id=34229235]
+custom_minimum_size = Vector2(48, 48)
+layout_mode = 2
+texture = ExtResource("10_hex_icon")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="Cost" type="Label" parent="HUD/TileCostBubble/Bubble/Content" unique_id=571712604]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_colors/font_shadow_color = Color(0.411765, 0.203922, 0.054902, 1)
+theme_override_colors/font_outline_color = Color(0.411765, 0.203922, 0.054902, 1)
+theme_override_constants/shadow_offset_x = 0
+theme_override_constants/shadow_offset_y = 7
+theme_override_constants/outline_size = 16
+theme_override_fonts/font = ExtResource("9_pixel_font")
+theme_override_font_sizes/font_size = 64
+text = "1"
+vertical_alignment = 1
+
+[node name="Arrow" type="TextureRect" parent="HUD/TileCostBubble" unique_id=592440516]
+layout_mode = 0
+offset_right = 20.0
+offset_bottom = 16.0
+mouse_filter = 2
+texture = ExtResource("12_bubble_arrow_tex")
+expand_mode = 1
