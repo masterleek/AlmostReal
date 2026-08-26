@@ -5,7 +5,7 @@ extends Node
 ## affichée à l'écran.
 signal hex_changed(new_value: int)
 
-var hex: int = 10:
+var hex: int = 20:
 	set(value):
 		hex = value
 		hex_changed.emit(hex)

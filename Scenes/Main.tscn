@@ -17,6 +17,7 @@
 [ext_resource type="Shader" uid="uid://cxgmt27kex8ra" path="res://Shaders/white_tint.gdshader" id="16_white_tint_shader"]
 [ext_resource type="AudioStream" path="res://Audio/bling_appear.wav" id="17_bling_sfx"]
 [ext_resource type="AudioStream" path="res://Audio/worldmap_theme.mp3" id="18_worldmap_music"]
+[ext_resource type="Script" path="res://Scripts/Worldmap/HitzoneDebugOverlay.gd" id="19_hitzone_debug"]
 
 [sub_resource type="TileSetAtlasSource" id="TileSetAtlasSource_hex"]
 texture = ExtResource("1_hex")
@@ -170,6 +171,9 @@ tile_set = SubResource("TileSet_hex")
 
 [node name="PropsLayer" type="Node2D" parent="." unique_id=2127558011]
 y_sort_enabled = true
+
+[node name="HitzoneDebugOverlay" type="Node2D" parent="."]
+script = ExtResource("19_hitzone_debug")
 
 [node name="WorldmapCursor" type="Node2D" parent="." unique_id=182299582]
 z_index = 10

@@ -3,21 +3,48 @@ import { cellToPixel, pixelToCell, TILE_W, TILE_H } from "./hexgrid.js";
 const CELL = 64;
 const PADDING = 16;
 
-// Contour hexagonal "logique" d'une tuile (celui qui définit vraiment sa
-// case, cf tile_size Vector2i(64,44) côté Godot) — pointe en haut/bas, côtés
-// verticaux plats au milieu. Sert de zone de pose sûre pour les props (cf
-// fixOverflowingProps côté app.js, qui utilise le même repère TILE_W/TILE_H).
-// Distinct du rendu visuel du sprite (qui a un dégradé d'ombre donnant
-// l'impression d'un bord plat vers le bas — un effet de lumière, pas la
-// vraie forme de la case).
+// Contour hexagonal "logique" d'une tuile — forme de référence fournie
+// directement (cf shape.png) : pointe en haut/bas, côtés verticaux plats sur
+// le tiers central (de H/3 à 2H/3), largeur 64 (= TILE_W) mais hauteur 50,
+// plus haute que la boîte du sprite (44). Coordonnées relatives au coin
+// haut-gauche du sprite (0..W, 0..H), pas centrées : la face du dessus d'un
+// sprite commence en haut du sprite (cf position.png), pas au milieu — le
+// reste du sprite en dessous, c'est l'épaisseur/le relief de la tuile.
+const HITZONE_W = TILE_W;
+const HITZONE_H = 50;
+const HITZONE_SHOULDER_Y = HITZONE_H / 3;
 const HITZONE_POLY = [
-  [TILE_W / 2, 0],
-  [TILE_W, TILE_H * 0.25],
-  [TILE_W, TILE_H * 0.75],
-  [TILE_W / 2, TILE_H],
-  [0, TILE_H * 0.75],
-  [0, TILE_H * 0.25],
+  [HITZONE_W / 2, 0],
+  [HITZONE_W, HITZONE_SHOULDER_Y],
+  [HITZONE_W, HITZONE_H - HITZONE_SHOULDER_Y],
+  [HITZONE_W / 2, HITZONE_H],
+  [0, HITZONE_H - HITZONE_SHOULDER_Y],
+  [0, HITZONE_SHOULDER_Y],
 ];
+
+// Ray casting standard (nombre d'intersections avec les arêtes du polygone).
+function pointInPolygon(px, py, poly) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [xi, yi] = poly[i];
+    const [xj, yj] = poly[j];
+    const intersects = yi > py !== yj > py && px < ((xj - xi) * (py - yi)) / (yj - yi) + xi;
+    if (intersects) inside = !inside;
+  }
+  return inside;
+}
+
+// Vrai si (px, py) tombe dans la hitzone réelle (affichée) de la case
+// (col, row) — utilisé pour savoir à quelle case un prop appartient
+// visuellement, plutôt que de se fier à pixelToCell() qui ne renvoie que la
+// case la plus proche au sens du pavage logique (a, b), une région
+// différente de la hitzone une fois celle-ci asymétrique (cf drawHitzone).
+export function isPointInTileHitzone(px, py, col, row) {
+  const { x, y } = cellToPixel(col, row);
+  const spriteTop = y - CELL / 2;
+  const poly = HITZONE_POLY.map(([hx, hy]) => [x - HITZONE_W / 2 + hx, spriteTop + hy]);
+  return pointInPolygon(px, py, poly);
+}
 
 // Tuile révélée par défaut (Grass1) pour une case Empty sans cible assignée
 // explicitement — doit rester synchronisée avec map_loader.gd (Godot).
@@ -62,6 +89,7 @@ export class MapCanvas {
     this.dimCell = null; // { col, row } — tuile existante estompée à 50% sous le curseur (mode gomme)
     this.propGhost = null; // { rect, x, y } — nouveau prop prévisualisé sous le curseur (position libre)
     this.hitzoneHover = null; // { col, row } — contour de la zone de pose sûre, affiché en mode props
+    this.hitzoneShowAll = false; // affiche le contour de la hitzone de toutes les tuiles de la map
     this.selectedProp = null; // référence directe vers un élément de map.props
     this.dimProp = null; // référence vers un prop existant estompé à 50% sous le curseur (mode gomme)
     this.tileDefs = new Map(); // "x,y" (atlas) -> définition de tuile (pour résoudre les frames d'animation)
@@ -191,15 +219,21 @@ export class MapCanvas {
     this.render();
   }
 
+  setHitzoneShowAll(value) {
+    this.hitzoneShowAll = value;
+    this.render();
+  }
+
   // Contour de la zone de pose sûre d'une case (cf HITZONE_POLY) : un prop
   // entièrement dedans ne débordera jamais sur une case voisine.
   drawHitzone(x, y) {
     const { ctx } = this;
     ctx.save();
     ctx.beginPath();
+    const spriteTop = y - CELL / 2;
     HITZONE_POLY.forEach(([px, py], i) => {
-      const dx = x - TILE_W / 2 + px;
-      const dy = y - TILE_H / 2 + py;
+      const dx = x - HITZONE_W / 2 + px;
+      const dy = spriteTop + py;
       if (i === 0) ctx.moveTo(dx, dy);
       else ctx.lineTo(dx, dy);
     });
@@ -368,6 +402,10 @@ export class MapCanvas {
     if (this.hitzoneHover) {
       const { x, y } = cellToPixel(this.hitzoneHover.col, this.hitzoneHover.row);
       this.drawHitzone(x, y);
+    }
+
+    if (this.hitzoneShowAll) {
+      for (const { x, y } of ordered) this.drawHitzone(x, y);
     }
 
     ctx.restore();

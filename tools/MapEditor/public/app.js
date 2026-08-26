@@ -4,7 +4,7 @@ import { buildPalette, loadImage } from "./palette.js";
 import { openTileManager } from "./tiles.js";
 import { openPropManager } from "./props.js";
 import { openSystemsManager } from "./systems.js";
-import { MapCanvas, currentFrameIndex } from "./canvas.js";
+import { MapCanvas, currentFrameIndex, isPointInTileHitzone } from "./canvas.js";
 import { pixelToCell, cellToPixel, TILE_W, TILE_H } from "./hexgrid.js";
 
 const EYE_OPEN =
@@ -48,6 +48,7 @@ const toolEditBtn = document.getElementById("tool-edit");
 const toolPropBtn = document.getElementById("tool-prop");
 const toolRevealBtn = document.getElementById("tool-reveal");
 const toolRevealPreviewBtn = document.getElementById("tool-reveal-preview");
+const toolHitzoneShowAllBtn = document.getElementById("tool-hitzone-show-all");
 const toolPlayBtn = document.getElementById("tool-play");
 const manageTilesBtn = document.getElementById("manage-tiles-btn");
 const managePropsBtn = document.getElementById("manage-props-btn");
@@ -429,6 +430,16 @@ function setRevealPreview(value) {
 }
 toolRevealPreviewBtn.onclick = () => setRevealPreview(!revealPreview);
 
+// Affiche/masque la hitzone de toutes les tuiles de la map (indépendant de
+// l'outil actif, comme l'aperçu révélé ci-dessus).
+let hitzoneShowAll = false;
+function setHitzoneShowAll(value) {
+  hitzoneShowAll = value;
+  toolHitzoneShowAllBtn.classList.toggle("selected", hitzoneShowAll);
+  mapCanvas.setHitzoneShowAll(hitzoneShowAll);
+}
+toolHitzoneShowAllBtn.onclick = () => setHitzoneShowAll(!hitzoneShowAll);
+
 async function saveActiveMap() {
   const map = activeMap();
   if (!map) return null;
@@ -686,7 +697,7 @@ function paintAt(evt) {
     // Supprime aussi tous les props posés sur cette case : sans tuile
     // dessous, ils resteraient affichés "dans le vide".
     map.props = (map.props || []).filter((prop) => {
-      const cell = pixelToCell(prop.x, prop.y);
+      const cell = cellContainingProp(prop);
       return !(cell.col === col && cell.row === row);
     });
     mapCanvas.render();
@@ -721,6 +732,34 @@ function paintAt(evt) {
   }
 }
 
+// Les 6 voisines d'une case en coordonnées axiales (a, b) — cf cellToPixel :
+// mêmes directions que celles vérifiées empiriquement contre
+// TileMapLayer.get_surrounding_cells() (tile_shape=HEXAGON, tile_layout=5).
+const AXIAL_NEIGHBORS = [
+  [1, 0],
+  [-1, 0],
+  [0, 1],
+  [0, -1],
+  [1, -1],
+  [-1, 1],
+];
+
+// À quelle case (prop.x, prop.y) appartient-il visuellement ? pixelToCell()
+// ne donne que la case la plus proche au sens du pavage logique (a, b) — une
+// région différente de la hitzone réellement affichée (asymétrique, ancrée en
+// haut du sprite, cf HITZONE_POLY), donc pas fiable près d'une frontière.
+// On vérifie plutôt la hitzone de la case "logique" puis de ses 6 voisines,
+// et on ne retombe sur la case la plus proche que si aucune ne convient
+// (prop posé dans un interstice entre deux hitzones).
+function cellContainingProp(prop) {
+  const guess = pixelToCell(prop.x, prop.y);
+  const candidates = [guess, ...AXIAL_NEIGHBORS.map(([da, db]) => ({ col: guess.col + da, row: guess.row + db }))];
+  for (const cell of candidates) {
+    if (isPointInTileHitzone(prop.x, prop.y, cell.col, cell.row)) return cell;
+  }
+  return guess;
+}
+
 // Garde reveal_cell synchronisé avec la nature réelle de la case pour TOUS
 // les props d'un coup (pas seulement ceux de la case qui vient d'être
 // repeinte) : recalculé à l'ouverture et à la sauvegarde d'une map en plus
@@ -730,7 +769,7 @@ function paintAt(evt) {
 // suivront sa révélation) ; toute autre tuile les rend visibles.
 function resyncPropsRevealCell(map) {
   for (const prop of map.props || []) {
-    const cell = pixelToCell(prop.x, prop.y);
+    const cell = cellContainingProp(prop);
     const tile = map.cells[`${cell.col},${cell.row}`];
     const isEmpty = tile && mapCanvas.tileDefs.get(tile.atlas.join(","))?.terrain_type === "empty1";
     if (isEmpty) {
