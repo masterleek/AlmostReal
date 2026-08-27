@@ -161,26 +161,32 @@ func load_map(id: String) -> void:
 
 # Horloge globale (comme côté MapEditor) : les tuiles/props qui partagent le
 # même fps restent animés en phase entre eux. On ne réécrit une case ou un
-# region_rect que quand l'index de frame a réellement changé.
+# region_rect que quand l'index de frame a réellement changé (cf advance_frame).
 func _process(_delta: float) -> void:
 	if animated_cells.is_empty() and animated_props.is_empty():
 		return
 	var now := Time.get_ticks_msec() / 1000.0
 
 	for anim: Dictionary in animated_cells:
-		var frames: Array = anim["frames"]
-		var idx := int(floor(now * anim["fps"])) % frames.size()
-		if idx == anim["last_idx"]:
-			continue
-		anim["last_idx"] = idx
-		var frame: Array = frames[idx]
-		tile_layer.set_cell(anim["coords"], anim["source_id"], Vector2i(int(frame[0]), int(frame[1])))
+		var frame = advance_frame(anim, now)
+		if frame != null:
+			tile_layer.set_cell(anim["coords"], anim["source_id"], Vector2i(int(frame[0]), int(frame[1])))
 
 	for anim: Dictionary in animated_props:
-		var frames: Array = anim["frames"]
-		var idx := int(floor(now * anim["fps"])) % frames.size()
-		if idx == anim["last_idx"]:
-			continue
-		anim["last_idx"] = idx
-		var frame: Array = frames[idx]
-		(anim["sprite"] as Sprite2D).region_rect = Rect2(frame[0], frame[1], frame[2], frame[3])
+		var frame = advance_frame(anim, now)
+		if frame != null:
+			(anim["sprite"] as Sprite2D).region_rect = Rect2(frame[0], frame[1], frame[2], frame[3])
+
+# Calcule l'index de frame courant de `anim` d'après l'horloge globale `now`
+# et le fait avancer (mute anim["last_idx"], un Dictionary est passé par
+# référence) ; renvoie la frame correspondante si l'index a changé, sinon
+# null — pour que l'appelant sache s'il doit réappliquer quelque chose.
+# Partagé entre tuiles et props : seule l'étape d'application diffère
+# (set_cell vs region_rect), pas le calcul de l'avancée.
+func advance_frame(anim: Dictionary, now: float) -> Variant:
+	var frames: Array = anim["frames"]
+	var idx := int(floor(now * anim["fps"])) % frames.size()
+	if idx == anim["last_idx"]:
+		return null
+	anim["last_idx"] = idx
+	return frames[idx]

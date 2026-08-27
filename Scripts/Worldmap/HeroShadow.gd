@@ -8,6 +8,10 @@ extends Sprite2D
 ## propre position à l'écran (pas Hero.current_cell, qui bascule sur la case
 ## de destination dès le début d'un pas, avant l'arrivée visuelle du Héros).
 
+# Préchargé plutôt que de compter sur la résolution globale de class_name
+# (peu fiable au tout premier chargement headless du projet).
+const TileGeometry = preload("res://Scripts/Worldmap/TileGeometry.gd")
+
 @export_range(0.0, 1.0) var shadow_alpha: float = 0.45
 ## Taille de l'ellipse en pixels (largeur, hauteur).
 @export var shadow_size: Vector2 = Vector2(22, 10)
@@ -28,6 +32,9 @@ func _ready() -> void:
 	modulate = Color(0.0, 0.0, 0.0, shadow_alpha)
 	material = ShaderMaterial.new()
 	material.shader = load("res://Shaders/hero_shadow_ellipse.gdshader")
+	# Source unique du contour hexagonal (cf TileGeometry) : posé une fois ici
+	# plutôt que recopié en dur dans le shader.
+	material.set_shader_parameter("hitzone_verts", TileGeometry.tile_art_hitzone())
 	z_as_relative = true
 	z_index = -1 # toujours juste derrière le Héros (jamais devant)
 

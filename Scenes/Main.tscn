@@ -23,6 +23,8 @@
 [ext_resource type="Script" uid="uid://brec3xkribfyf" path="res://Scripts/UI/ActionHintHUD.gd" id="22_action_hint_script"]
 [ext_resource type="Script" uid="uid://du0kp52m1m3uw" path="res://Scripts/Worldmap/HeroShadow.gd" id="23_hero_shadow"]
 [ext_resource type="Script" path="res://Scripts/Worldmap/HeroDustVFX.gd" id="24_hero_dust"]
+[ext_resource type="Script" path="res://Scripts/Worldmap/TileRevealController.gd" id="25_reveal_controller"]
+[ext_resource type="Script" path="res://Scripts/Worldmap/TileHoverVisuals.gd" id="26_hover_visuals"]
 
 [sub_resource type="TileSetAtlasSource" id="TileSetAtlasSource_hex"]
 texture = ExtResource("1_hex")
@@ -131,7 +133,7 @@ tracks/4/keys = {
 tracks/5/type = "method"
 tracks/5/imported = false
 tracks/5/enabled = true
-tracks/5/path = NodePath("WorldmapCursor")
+tracks/5/path = NodePath("TileRevealController")
 tracks/5/interp = 1
 tracks/5/loop_wrap = true
 tracks/5/keys = {
@@ -183,10 +185,11 @@ script = ExtResource("19_hitzone_debug")
 [node name="WorldmapCursor" type="Node2D" parent="." unique_id=182299582]
 z_index = 10
 script = ExtResource("3_cursor")
+
+[node name="TileHoverVisuals" type="Node2D" parent="."]
+script = ExtResource("26_hover_visuals")
 tile_select_offset = Vector2(0, -8)
 tile_select_empty_offset = Vector2(0, 3)
-tile_cost_bubble_anchor = Vector2(0, -16)
-tile_cost_bubble_arrow_offset = Vector2(0, -8)
 
 [node name="Sprite2D" type="Sprite2D" parent="WorldmapCursor" unique_id=1368578664]
 z_index = 1
@@ -196,7 +199,12 @@ offset = Vector2(0, -34)
 [node name="MoveSFX" type="AudioStreamPlayer" parent="WorldmapCursor" unique_id=1721430833]
 stream = ExtResource("8_move_sfx")
 
-[node name="RevealSFX" type="AudioStreamPlayer" parent="WorldmapCursor" unique_id=1721430834]
+[node name="TileRevealController" type="Node2D" parent="."]
+script = ExtResource("25_reveal_controller")
+tile_cost_bubble_anchor = Vector2(0, -16)
+tile_cost_bubble_arrow_offset = Vector2(0, -8)
+
+[node name="RevealSFX" type="AudioStreamPlayer" parent="TileRevealController"]
 stream = ExtResource("17_bling_sfx")
 
 [node name="Hero" type="Sprite2D" parent="." unique_id=-1245784550]
