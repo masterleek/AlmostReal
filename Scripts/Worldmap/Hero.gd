@@ -15,6 +15,16 @@ extends Sprite2D
 ## Vitesse du cycle de marche (jambes), en images par seconde — indépendante
 ## de move_duration (qui règle la vitesse de déplacement, pas l'animation).
 @export var walk_fps: float = 8.0
+## Délai d'inactivité (aucune entrée joueur : ni déplacement du curseur, ni
+## validation) avant que le Héros joue son animation d'inactivité (cf
+## IDLE_FIDGET_FRAMES) à la place de sa pose immobile habituelle.
+@export var idle_timeout: float = 5.0
+## Durée d'affichage de chaque frame de transition (6,4) de l'animation
+## d'inactivité, à l'entrée comme à la sortie.
+@export var idle_fidget_frame_duration: float = 0.2
+## Durée de la tenue sur la frame finale (6,5) avant de rejouer 6,4 puis de
+## revenir à la pose de repos normale.
+@export var idle_fidget_hold_duration: float = 3.0
 
 # 3 poses dessinées dans character.png (coordonnées "ligne,colonne" de la
 # feuille, cellules de 44x44) : FRONT (case caméra), BACK (dos), LEFT (3/4
@@ -55,9 +65,20 @@ const IDLE_FRAMES := {
 	Pose.BACK: Rect2(233, 186, 18, 34),
 	Pose.LEFT: Rect2(411, 185, 18, 35),
 }
+# Animation d'inactivité (au bout de idle_timeout secondes sans entrée
+# joueur) : 6,4 -> 6,5 (tenue idle_fidget_hold_duration secondes) -> 6,4 ->
+# retour à la pose de repos normale (cf process_idle). Dessinée de face
+# uniquement (pas une variante par Pose comme WALK_FRAMES/IDLE_FRAMES) : voir
+# process_idle() pour le flip_h forcé à false pendant qu'elle joue.
+const IDLE_FIDGET_FRAMES := [
+	Rect2(142, 229, 22, 35), # 6,4
+	Rect2(188, 229, 21, 35), # 6,5 (frame finale)
+]
 @onready var tile_layer: TileMapLayer = $"../TileMapLayer"
 @onready var cursor: Node2D = $"../WorldmapCursor"
 @onready var footstep_sfx: AudioStreamPlayer = $FootstepSFX
+@onready var validation_sfx: AudioStreamPlayer = $ValidationSFX
+@onready var error_sfx: AudioStreamPlayer = $ErrorSFX
 
 # Sons de pas par terrain_type : une paire par type, alternée à chaque pas
 # (cf _footstep_next_index) plutôt que rejouée à l'identique. Rien ne se joue
@@ -81,6 +102,13 @@ var move_elapsed: float = 0.0
 # d'où il vient plutôt que de revenir face caméra à chaque halte.
 var current_pose: Pose = Pose.FRONT
 
+# Temps écoulé sans la moindre entrée joueur pendant que le Héros est
+# immobile (remis à zéro dès qu'un pas démarre, cf start_next_step()) et état
+# de l'animation d'inactivité qui en dépend — cf process_idle().
+var _idle_elapsed: float = 0.0
+var _is_idle_fidgeting: bool = false
+var _idle_fidget_saved_flip_h: bool = false
+
 func _ready() -> void:
 	texture = load("res://Sprites/character.png")
 	region_enabled = true
@@ -94,8 +122,66 @@ func _process(delta: float) -> void:
 	if is_moving:
 		process_movement(delta)
 	else:
-		region_rect = IDLE_FRAMES[current_pose]
+		process_idle(delta)
 		handle_destination_input()
+
+## Pose au repos : la pose statique de la dernière direction de marche
+## (IDLE_FRAMES) tant que le joueur fait quoi que ce soit (déplace le
+## curseur ou valide), remplacée par IDLE_FIDGET_FRAMES au bout de
+## idle_timeout secondes sans la moindre entrée — remise à zéro dès qu'une
+## entrée est de nouveau détectée.
+func process_idle(delta: float) -> void:
+	if has_player_input():
+		_idle_elapsed = 0.0
+		stop_idle_fidget()
+		region_rect = IDLE_FRAMES[current_pose]
+		return
+
+	_idle_elapsed += delta
+	if _idle_elapsed < idle_timeout:
+		region_rect = IDLE_FRAMES[current_pose]
+		return
+
+	if not _is_idle_fidgeting:
+		_is_idle_fidgeting = true
+		_idle_fidget_saved_flip_h = flip_h
+		flip_h = false # IDLE_FIDGET_FRAMES est dessinée de face, jamais à retourner.
+
+	# Chronologie depuis le début de l'animation : 6,4 (entrée) -> 6,5 (tenue)
+	# -> 6,4 (sortie) -> fin (retour à la pose de repos normale plus bas, avec
+	# remise à zéro du minuteur pour permettre un nouveau cycle après un
+	# nouvel idle_timeout).
+	var t := _idle_elapsed - idle_timeout
+	if t < idle_fidget_frame_duration:
+		region_rect = IDLE_FIDGET_FRAMES[0] # 6,4
+		return
+	t -= idle_fidget_frame_duration
+	if t < idle_fidget_hold_duration:
+		region_rect = IDLE_FIDGET_FRAMES[1] # 6,5
+		return
+	t -= idle_fidget_hold_duration
+	if t < idle_fidget_frame_duration:
+		region_rect = IDLE_FIDGET_FRAMES[0] # 6,4
+		return
+
+	stop_idle_fidget()
+	_idle_elapsed = 0.0
+	region_rect = IDLE_FRAMES[current_pose]
+
+func stop_idle_fidget() -> void:
+	if not _is_idle_fidgeting:
+		return
+	_is_idle_fidgeting = false
+	flip_h = _idle_fidget_saved_flip_h
+
+## Mêmes actions que celles que WorldmapCursor traite lui-même (déplacement
+## + validation) : le Héros n'a pas accès à son état interne, donc on relit
+## les mêmes entrées brutes plutôt que de coupler les deux nœuds.
+func has_player_input() -> bool:
+	return (
+		Input.get_vector("ui_left", "ui_right", "ui_up", "ui_down").length() > 0.0
+		or Input.is_action_pressed("ui_accept")
+	)
 
 ## Dévoilée et marchable (custom_data "walkable" du TileSet, cf tile_meta.json
 ## — false uniquement pour "Empty" actuellement, mais piloté par la donnée
@@ -114,15 +200,26 @@ func handle_destination_input() -> void:
 	if not Input.is_action_just_pressed("ui_accept"):
 		return
 	var destination: Vector2i = cursor.current_cell
+	# is_walkable() exclut déjà les cases "Empty" (jamais dévoilées) : pas
+	# besoin d'un test de terrain_type séparé pour "tuile déjà dévoilée".
 	if destination == current_cell or not is_walkable(destination):
 		return
+	# Sélection confirmée (case dévoilée, différente de celle du Héros) : le
+	# son joué dépend de l'atteignabilité du chemin, jamais les deux à la fois.
 	var new_path := find_path(current_cell, destination)
 	if new_path.is_empty():
+		error_sfx.play()
 		return
+	validation_sfx.play()
 	path = new_path
 	start_next_step()
 
 func start_next_step() -> void:
+	# Chaque pas (départ comme arrivée) compte comme une activité : le délai
+	# avant l'animation d'inactivité repart de zéro à partir d'ici, pas depuis
+	# la validation initiale.
+	_idle_elapsed = 0.0
+	stop_idle_fidget()
 	if path.is_empty():
 		is_moving = false
 		return

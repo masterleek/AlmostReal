@@ -16,6 +16,8 @@
 [ext_resource type="Script" uid="uid://cgrwc7ahfkjw0" path="res://Scripts/UI/TileCostBubble.gd" id="14_tile_cost_bubble_script"]
 [ext_resource type="Shader" uid="uid://cxgmt27kex8ra" path="res://Shaders/white_tint.gdshader" id="16_white_tint_shader"]
 [ext_resource type="AudioStream" uid="uid://dj3pydrxmr6w5" path="res://Audio/bling_appear.wav" id="17_bling_sfx"]
+[ext_resource type="AudioStream" uid="uid://bpnw1pappc6e0" path="res://Audio/validation.wav" id="27_validation_sfx"]
+[ext_resource type="AudioStream" uid="uid://ninjsh5vumuf" path="res://Audio/error.wav" id="28_error_sfx"]
 [ext_resource type="AudioStream" uid="uid://cap1k7kxy07ox" path="res://Audio/worldmap_theme.mp3" id="18_worldmap_music"]
 [ext_resource type="Script" uid="uid://dudph00un0npq" path="res://Scripts/Worldmap/HitzoneDebugOverlay.gd" id="19_hitzone_debug"]
 [ext_resource type="Script" uid="uid://bw8v4rxe4h2s" path="res://Scripts/Worldmap/Hero.gd" id="20_hero"]
@@ -223,6 +225,12 @@ feet_offset = -1.0
 script = ExtResource("24_hero_dust")
 
 [node name="FootstepSFX" type="AudioStreamPlayer" parent="Hero"]
+
+[node name="ValidationSFX" type="AudioStreamPlayer" parent="Hero"]
+stream = ExtResource("27_validation_sfx")
+
+[node name="ErrorSFX" type="AudioStreamPlayer" parent="Hero"]
+stream = ExtResource("28_error_sfx")
 
 [node name="TileHighlight" type="Node2D" parent="." unique_id=1165930132]
 z_index = -1
