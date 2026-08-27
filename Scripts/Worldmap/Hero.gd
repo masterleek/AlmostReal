@@ -1,6 +1,6 @@
 extends Sprite2D
 
-## Héros (lyn.png) : se déplace par pathfinding sur les tuiles dévoilées
+## Héros (character.png) : se déplace par pathfinding sur les tuiles dévoilées
 ## (terrain_type != "empty1"), jamais sur une case "Empty" non dévoilée. Le
 ## joueur choisit sa destination en amenant WorldmapCursor sur une case
 ## dévoilée puis en appuyant sur "ui_accept" (même touche que pour révéler
@@ -13,15 +13,45 @@ extends Sprite2D
 ## WorldmapCursor.move_duration, pour un rythme de marche cohérent).
 @export var move_duration: float = 0.12
 
-# Cadres de la ligne "marche" de lyn.png (4 premières cases sur 5 — la 5e a
-# une pose différente, non utilisée ici), mesurés au pixel près sur la
-# feuille source.
-const FRAME_RECTS := [
-	Rect2(9, 73, 14, 15),
-	Rect2(42, 73, 18, 16),
-	Rect2(75, 72, 18, 17),
-	Rect2(107, 73, 16, 16),
-]
+# 3 poses dessinées dans character.png (coordonnées "ligne,colonne" de la
+# feuille, cellules de 44x44) : FRONT (case caméra), BACK (dos), LEFT (3/4
+# gauche, en course). Pas de pose "droite" dédiée : LEFT + flip_h la couvre,
+# comme un sprite de tactics-RPG classique.
+enum Pose { FRONT, BACK, LEFT }
+
+# Cycles de marche, mesurés au pixel près sur la feuille source.
+const WALK_FRAMES := {
+	Pose.FRONT: [ # 3,10 -> 4,5
+		Rect2(409, 99, 20, 33),
+		Rect2(14, 142, 18, 34),
+		Rect2(57, 141, 18, 35),
+		Rect2(99, 143, 20, 33),
+		Rect2(145, 142, 17, 34),
+		Rect2(189, 141, 18, 35),
+	],
+	Pose.BACK: [ # 4,6 -> 5,1
+		Rect2(230, 142, 21, 33),
+		Rect2(276, 141, 19, 35),
+		Rect2(320, 140, 19, 36),
+		Rect2(365, 142, 21, 33),
+		Rect2(409, 141, 19, 35),
+		Rect2(13, 184, 19, 36),
+	],
+	Pose.LEFT: [ # 3,4 -> 3,9
+		Rect2(146, 98, 20, 34),
+		Rect2(191, 97, 18, 35),
+		Rect2(235, 96, 19, 36),
+		Rect2(278, 98, 21, 33),
+		Rect2(323, 97, 18, 34),
+		Rect2(367, 96, 16, 35),
+	],
+}
+# Poses au repos : 5,2 (face) / 5,6 (dos) / 5,10 (gauche).
+const IDLE_FRAMES := {
+	Pose.FRONT: Rect2(57, 185, 18, 35),
+	Pose.BACK: Rect2(233, 186, 18, 34),
+	Pose.LEFT: Rect2(411, 185, 18, 35),
+}
 const WALK_FPS := 8.0
 
 @onready var tile_layer: TileMapLayer = $"../TileMapLayer"
@@ -33,23 +63,25 @@ var is_moving: bool = false
 var move_from: Vector2 = Vector2.ZERO
 var move_to: Vector2 = Vector2.ZERO
 var move_elapsed: float = 0.0
-var last_x: float = 0.0
+# Pose/orientation du dernier pas effectué (ou par défaut) : conservée à
+# l'arrêt, pour que le Héros reste visuellement tourné vers la direction
+# d'où il vient plutôt que de revenir face caméra à chaque halte.
+var current_pose: Pose = Pose.FRONT
 
 func _ready() -> void:
-	texture = load("res://Sprites/lyn.png")
+	texture = load("res://Sprites/character.png")
 	region_enabled = true
-	region_rect = FRAME_RECTS[0]
+	region_rect = IDLE_FRAMES[current_pose]
 	# Case de départ = la plus proche de l'endroit où le node a été placé dans
 	# la scène (même logique que WorldmapCursor), pas de position codée en dur.
 	current_cell = tile_layer.local_to_map(tile_layer.to_local(global_position))
 	global_position = tile_layer.to_global(tile_layer.map_to_local(current_cell))
-	last_x = global_position.x
 
 func _process(delta: float) -> void:
 	if is_moving:
 		process_movement(delta)
 	else:
-		region_rect = FRAME_RECTS[0]
+		region_rect = IDLE_FRAMES[current_pose]
 		handle_destination_input()
 
 ## Dévoilée et marchable (custom_data "walkable" du TileSet, cf tile_meta.json
@@ -88,18 +120,31 @@ func start_next_step() -> void:
 	is_moving = true
 	current_cell = next_cell
 
+	# Pose choisie une fois par pas (pas par frame) d'après le déplacement
+	# réel à l'écran : vers le bas -> FRONT, vers le haut -> BACK, purement
+	# horizontal -> LEFT (+ flip_h si le pas va vers la droite). Couvre les 6
+	# directions hexagonales avec seulement 3 poses dessinées.
+	var step_delta := move_to - move_from
+	if step_delta.y > 0.0:
+		current_pose = Pose.FRONT
+	elif step_delta.y < 0.0:
+		current_pose = Pose.BACK
+	else:
+		current_pose = Pose.LEFT
+	flip_h = step_delta.x > 0.0
+
 func process_movement(delta: float) -> void:
 	move_elapsed += delta
 	var t: float = clamp(move_elapsed / move_duration, 0.0, 1.0)
-	global_position = move_from.lerp(move_to, smoothstep(0.0, 1.0, t))
+	# Interpolation linéaire (pas smoothstep) : sur un chemin de plusieurs
+	# cases, un easing qui revient à vitesse nulle à chaque frontière de case
+	# crée une micro-pause à chaque changement de tuile au lieu d'une marche à
+	# vitesse constante.
+	global_position = move_from.lerp(move_to, t)
 
-	var dx := global_position.x - last_x
-	if absf(dx) > 0.5:
-		flip_h = dx > 0.0
-		last_x = global_position.x
-
-	var idx := int(floor(Time.get_ticks_msec() / 1000.0 * WALK_FPS)) % FRAME_RECTS.size()
-	region_rect = FRAME_RECTS[idx]
+	var frames: Array = WALK_FRAMES[current_pose]
+	var idx := int(floor(Time.get_ticks_msec() / 1000.0 * WALK_FPS)) % frames.size()
+	region_rect = frames[idx]
 
 	if t >= 1.0:
 		global_position = move_to

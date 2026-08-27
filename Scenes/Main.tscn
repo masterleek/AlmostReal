@@ -18,7 +18,10 @@
 [ext_resource type="AudioStream" uid="uid://dj3pydrxmr6w5" path="res://Audio/bling_appear.wav" id="17_bling_sfx"]
 [ext_resource type="AudioStream" uid="uid://cap1k7kxy07ox" path="res://Audio/worldmap_theme.mp3" id="18_worldmap_music"]
 [ext_resource type="Script" uid="uid://dudph00un0npq" path="res://Scripts/Worldmap/HitzoneDebugOverlay.gd" id="19_hitzone_debug"]
-[ext_resource type="Script" path="res://Scripts/Worldmap/Hero.gd" id="20_hero"]
+[ext_resource type="Script" uid="uid://bw8v4rxe4h2s" path="res://Scripts/Worldmap/Hero.gd" id="20_hero"]
+[ext_resource type="Texture2D" uid="uid://b7go6qgh16hg2" path="res://UI/ic_btn.png" id="21_action_btn_tex"]
+[ext_resource type="Script" uid="uid://brec3xkribfyf" path="res://Scripts/UI/ActionHintHUD.gd" id="22_action_hint_script"]
+[ext_resource type="Script" uid="uid://du0kp52m1m3uw" path="res://Scripts/Worldmap/HeroShadow.gd" id="23_hero_shadow"]
 
 [sub_resource type="TileSetAtlasSource" id="TileSetAtlasSource_hex"]
 texture = ExtResource("1_hex")
@@ -185,6 +188,7 @@ tile_cost_bubble_anchor = Vector2(0, -16)
 tile_cost_bubble_arrow_offset = Vector2(0, -8)
 
 [node name="Sprite2D" type="Sprite2D" parent="WorldmapCursor" unique_id=1368578664]
+z_index = 1
 texture = ExtResource("4_cursor_tex")
 offset = Vector2(0, -34)
 
@@ -197,8 +201,15 @@ stream = ExtResource("17_bling_sfx")
 [node name="Hero" type="Sprite2D" parent="." unique_id=-1245784550]
 z_index = 10
 position = Vector2(32, 22)
-offset = Vector2(0, -10)
+offset = Vector2(0, -16)
 script = ExtResource("20_hero")
+
+[node name="HeroShadow" type="Sprite2D" parent="Hero" unique_id=2064013334]
+script = ExtResource("23_hero_shadow")
+shadow_alpha = 0.265
+squash = 0.556
+feet_offset = 4.0
+shadow_skew = -1.067
 
 [node name="TileHighlight" type="Node2D" parent="." unique_id=1165930132]
 z_index = -1
@@ -277,6 +288,67 @@ theme_override_constants/outline_size = 4
 theme_override_fonts/font = ExtResource("9_pixel_font")
 theme_override_font_sizes/font_size = 64
 text = "10"
+vertical_alignment = 1
+
+[node name="ActionHint" type="HBoxContainer" parent="HUD" unique_id=433508571]
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -8.0
+offset_top = -8.0
+offset_right = -8.0
+offset_bottom = -8.0
+grow_horizontal = 0
+grow_vertical = 0
+theme_override_constants/separation = 6
+script = ExtResource("22_action_hint_script")
+
+[node name="ActionButton" type="Control" parent="HUD/ActionHint" unique_id=634577092]
+custom_minimum_size = Vector2(32, 32)
+layout_mode = 2
+
+[node name="Bg" type="TextureRect" parent="HUD/ActionHint/ActionButton" unique_id=1774157471]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -22.0
+offset_top = -14.0
+offset_right = -22.0
+offset_bottom = -14.0
+grow_horizontal = 2
+grow_vertical = 2
+scale = Vector2(1.5, 1.5)
+texture = ExtResource("21_action_btn_tex")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="Label" type="Label" parent="HUD/ActionHint/ActionButton" unique_id=1158009341]
+layout_mode = 0
+offset_left = -8.0
+offset_top = 7.0
+offset_right = 17.0
+offset_bottom = 47.0
+theme_override_colors/font_color = Color(0.25098, 0.521569, 0.929412, 1)
+theme_override_fonts/font = ExtResource("9_pixel_font")
+theme_override_font_sizes/font_size = 44
+text = "X"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="ActionLabel" type="Label" parent="HUD/ActionHint" unique_id=1190450613]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_colors/font_shadow_color = Color(0.411765, 0.203922, 0.054902, 1)
+theme_override_colors/font_outline_color = Color(0.411765, 0.203922, 0.054902, 1)
+theme_override_constants/shadow_offset_x = 4
+theme_override_constants/shadow_offset_y = 4
+theme_override_constants/outline_size = 4
+theme_override_fonts/font = ExtResource("9_pixel_font")
+theme_override_font_sizes/font_size = 64
+text = "Go to"
 vertical_alignment = 1
 
 [node name="TileCostBubble" type="Control" parent="HUD" unique_id=609416610]

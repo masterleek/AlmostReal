@@ -83,6 +83,7 @@ const TILE_SELECT_BEHIND_EPSILON := Vector2(0, 0.5)
 
 @onready var tile_layer: TileMapLayer = $"../TileMapLayer"
 @onready var sprite: Sprite2D = $Sprite2D
+@onready var hero: Node2D = $"../Hero"
 @onready var highlight: Node2D = $"../TileHighlight"
 @onready var highlight_sprite: Sprite2D = $"../TileHighlight/Sprite2D"
 @onready var hover_glow: Sprite2D = $"../HoverGlow"
@@ -479,8 +480,9 @@ func update_tile_state() -> void:
 	highlight.z_index = -1 if current_terrain_type == "empty1" else 0
 	# Sur la tuile "Empty", le curseur (cursor_worldmap.png) est masqué : ne
 	# garder que le highlight/la sélection, pour ne pas surcharger visuellement
-	# une case qui n'a elle-même pas de tuile visible.
-	sprite.visible = current_terrain_type != "empty1"
+	# une case qui n'a elle-même pas de tuile visible. Masqué aussi sur la
+	# case du Héros — inutile de superposer le pointeur au personnage lui-même.
+	sprite.visible = current_terrain_type != "empty1" and current_cell != hero.current_cell
 	hover_glow.visible = tile_data != null
 	tile_select_highlight.visible = tile_data != null
 

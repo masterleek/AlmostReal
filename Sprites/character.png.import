@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://bw5htssnw1kyt"
-path="res://.godot/imported/lyn.png-b9efe3b757a724dbd07a3512799ffc42.ctex"
+uid="uid://dypk147hl4fhl"
+path="res://.godot/imported/character.png-ee4932e4e8db66cf4fc01fdf2d78d81e.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://Sprites/lyn.png"
-dest_files=["res://.godot/imported/lyn.png-b9efe3b757a724dbd07a3512799ffc42.ctex"]
+source_file="res://Sprites/character.png"
+dest_files=["res://.godot/imported/character.png-ee4932e4e8db66cf4fc01fdf2d78d81e.ctex"]
 
 [params]
 
