@@ -22,6 +22,7 @@
 [ext_resource type="Texture2D" uid="uid://b7go6qgh16hg2" path="res://UI/ic_btn.png" id="21_action_btn_tex"]
 [ext_resource type="Script" uid="uid://brec3xkribfyf" path="res://Scripts/UI/ActionHintHUD.gd" id="22_action_hint_script"]
 [ext_resource type="Script" uid="uid://du0kp52m1m3uw" path="res://Scripts/Worldmap/HeroShadow.gd" id="23_hero_shadow"]
+[ext_resource type="Script" path="res://Scripts/Worldmap/HeroDustVFX.gd" id="24_hero_dust"]
 
 [sub_resource type="TileSetAtlasSource" id="TileSetAtlasSource_hex"]
 texture = ExtResource("1_hex")
@@ -201,15 +202,19 @@ stream = ExtResource("17_bling_sfx")
 [node name="Hero" type="Sprite2D" parent="." unique_id=-1245784550]
 z_index = 10
 position = Vector2(32, 22)
-offset = Vector2(0, -16)
+offset = Vector2(0, -20)
 script = ExtResource("20_hero")
+move_duration = 0.25
 
 [node name="HeroShadow" type="Sprite2D" parent="Hero" unique_id=2064013334]
 script = ExtResource("23_hero_shadow")
 shadow_alpha = 0.265
-squash = 0.556
-feet_offset = 4.0
-shadow_skew = -1.067
+feet_offset = -1.0
+
+[node name="HeroDustVFX" type="CPUParticles2D" parent="Hero"]
+script = ExtResource("24_hero_dust")
+
+[node name="FootstepSFX" type="AudioStreamPlayer" parent="Hero"]
 
 [node name="TileHighlight" type="Node2D" parent="." unique_id=1165930132]
 z_index = -1
@@ -345,7 +350,7 @@ theme_override_colors/font_shadow_color = Color(0.411765, 0.203922, 0.054902, 1)
 theme_override_colors/font_outline_color = Color(0.411765, 0.203922, 0.054902, 1)
 theme_override_constants/shadow_offset_x = 4
 theme_override_constants/shadow_offset_y = 4
-theme_override_constants/outline_size = 4
+theme_override_constants/outline_size = 16
 theme_override_fonts/font = ExtResource("9_pixel_font")
 theme_override_font_sizes/font_size = 64
 text = "Go to"

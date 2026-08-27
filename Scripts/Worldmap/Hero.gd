@@ -12,6 +12,9 @@ extends Sprite2D
 ## Durée de l'animation d'un pas d'une case à la voisine (même valeur que
 ## WorldmapCursor.move_duration, pour un rythme de marche cohérent).
 @export var move_duration: float = 0.12
+## Vitesse du cycle de marche (jambes), en images par seconde — indépendante
+## de move_duration (qui règle la vitesse de déplacement, pas l'animation).
+@export var walk_fps: float = 8.0
 
 # 3 poses dessinées dans character.png (coordonnées "ligne,colonne" de la
 # feuille, cellules de 44x44) : FRONT (case caméra), BACK (dos), LEFT (3/4
@@ -52,10 +55,20 @@ const IDLE_FRAMES := {
 	Pose.BACK: Rect2(233, 186, 18, 34),
 	Pose.LEFT: Rect2(411, 185, 18, 35),
 }
-const WALK_FPS := 8.0
-
 @onready var tile_layer: TileMapLayer = $"../TileMapLayer"
 @onready var cursor: Node2D = $"../WorldmapCursor"
+@onready var footstep_sfx: AudioStreamPlayer = $FootstepSFX
+
+# Sons de pas par terrain_type : une paire par type, alternée à chaque pas
+# (cf _footstep_next_index) plutôt que rejouée à l'identique. Rien ne se joue
+# pour un terrain_type sans entrée ici (Empty n'est de toute façon jamais
+# praticable, cf is_walkable).
+const FOOTSTEP_SOUNDS := {
+	"grass1": ["res://Audio/foot_grass1.wav", "res://Audio/foot_grass2.wav"],
+	"grass2": ["res://Audio/foot_grass1.wav", "res://Audio/foot_grass2.wav"],
+	"sand": ["res://Audio/foot_sand1.wav", "res://Audio/foot_sand2.wav"],
+}
+var _footstep_next_index: Dictionary = {}
 
 var current_cell: Vector2i = Vector2i.ZERO
 var path: Array[Vector2i] = []
@@ -133,6 +146,24 @@ func start_next_step() -> void:
 		current_pose = Pose.LEFT
 	flip_h = step_delta.x > 0.0
 
+	play_footstep_sound(next_cell)
+
+## Joue le son de pas correspondant au terrain_type de `cell` (rien si le
+## type n'a pas d'entrée dans FOOTSTEP_SOUNDS), en alternant entre les 2
+## variantes à chaque pas plutôt que de rejouer toujours la même.
+func play_footstep_sound(cell: Vector2i) -> void:
+	var data := tile_layer.get_cell_tile_data(cell)
+	if data == null:
+		return
+	var terrain_type: String = data.get_custom_data("terrain_type")
+	var sounds: Array = FOOTSTEP_SOUNDS.get(terrain_type, [])
+	if sounds.is_empty():
+		return
+	var idx: int = _footstep_next_index.get(terrain_type, 0)
+	footstep_sfx.stream = load(sounds[idx])
+	footstep_sfx.play()
+	_footstep_next_index[terrain_type] = (idx + 1) % sounds.size()
+
 func process_movement(delta: float) -> void:
 	move_elapsed += delta
 	var t: float = clamp(move_elapsed / move_duration, 0.0, 1.0)
@@ -143,7 +174,7 @@ func process_movement(delta: float) -> void:
 	global_position = move_from.lerp(move_to, t)
 
 	var frames: Array = WALK_FRAMES[current_pose]
-	var idx := int(floor(Time.get_ticks_msec() / 1000.0 * WALK_FPS)) % frames.size()
+	var idx := int(floor(Time.get_ticks_msec() / 1000.0 * walk_fps)) % frames.size()
 	region_rect = frames[idx]
 
 	if t >= 1.0:

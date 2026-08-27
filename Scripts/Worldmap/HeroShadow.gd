@@ -1,59 +1,42 @@
 extends Sprite2D
 
-## Ombre dynamique du Héros : silhouette aplatie au sol et inclinée
-## (shadow_skew) façon ombre portée par une lumière fixe, teintée en noir
-## semi-transparent. Toujours dans l'orientation "gauche" (profil, cf
-## Hero.Pose.LEFT) quelle que soit la pose réelle du Héros — un profil se lit
-## naturellement comme une ombre projetée une fois aplati, contrairement à une
-## pose face/dos ; jamais retournée (flip_h) non plus, pour rester un repère
-## visuel stable. Toujours animée (cycle de marche du Héros pendant qu'il se
-## déplace, pose statique à l'arrêt). Découpée par hex_tile_clip.gdshader pour
-## ne jamais dépasser le contour réel (pas la hitzone logique) de la tuile
-## visuellement sous elle — recalculée chaque frame d'après sa propre position
-## à l'écran (pas Hero.current_cell, qui bascule sur la case de destination dès
-## le début d'un pas, avant l'arrivée visuelle du Héros).
+## Ombre dynamique du Héros : simple ellipse sombre semi-transparente sous ses
+## pieds (dessinée procéduralement par hero_shadow_ellipse.gdshader, aucun
+## asset nécessaire), pas la silhouette du personnage. Découpée par ce même
+## shader pour ne jamais dépasser le contour réel (pas la hitzone logique) de
+## la tuile visuellement sous elle — recalculée chaque frame d'après sa
+## propre position à l'écran (pas Hero.current_cell, qui bascule sur la case
+## de destination dès le début d'un pas, avant l'arrivée visuelle du Héros).
 
 @export_range(0.0, 1.0) var shadow_alpha: float = 0.45
-@export_range(0.1, 1.0) var squash: float = 0.45
+## Taille de l'ellipse en pixels (largeur, hauteur).
+@export var shadow_size: Vector2 = Vector2(22, 10)
 ## Décalage vertical local additionnel (pixels), pour caler l'ombre pile aux
 ## pieds à l'oeil une fois en jeu.
 @export var feet_offset: float = 0.0
-## Inclinaison (radians) façon "ombre portée" par une lumière fixe en
-## haut-gauche : l'ombre s'étire vers le bas-droite au lieu de tomber pile à
-## la verticale sous les pieds. 0 = pas d'inclinaison.
-@export_range(-1.5, 1.5) var shadow_skew: float = 0.5
 
 @onready var hero: Sprite2D = get_parent()
 @onready var cursor := $"../../WorldmapCursor"
 @onready var tile_layer: TileMapLayer = $"../../TileMapLayer"
 
 func _ready() -> void:
-	region_enabled = true
+	# Pixel blanc 1x1 : la forme réelle de l'ellipse vient entièrement du
+	# shader (calculée depuis l'UV), pas besoin d'asset dédié.
+	var img := Image.create(1, 1, false, Image.FORMAT_RGBA8)
+	img.fill(Color.WHITE)
+	texture = ImageTexture.create_from_image(img)
 	modulate = Color(0.0, 0.0, 0.0, shadow_alpha)
-	flip_h = false
 	material = ShaderMaterial.new()
-	material.shader = load("res://Shaders/hex_tile_clip.gdshader")
+	material.shader = load("res://Shaders/hero_shadow_ellipse.gdshader")
 	z_as_relative = true
 	z_index = -1 # toujours juste derrière le Héros (jamais devant)
 
 func _process(_delta: float) -> void:
-	# Pas dans _ready() : les enfants sont initialisés avant leur parent en
-	# Godot, donc hero.texture (posé dans Hero._ready()) n'existerait pas
-	# encore à ce moment-là.
-	texture = hero.texture
-	if hero.is_moving:
-		var frames: Array = hero.WALK_FRAMES[hero.Pose.LEFT]
-		var idx := int(floor(Time.get_ticks_msec() / 1000.0 * hero.WALK_FPS)) % frames.size()
-		region_rect = frames[idx]
-	else:
-		region_rect = hero.IDLE_FRAMES[hero.Pose.LEFT]
-
-	scale.y = squash
-	skew = shadow_skew
+	scale = shadow_size
 	# hero.offset décale le rendu du Héros sans bouger son origine logique
 	# (ex. Vector2(0,-16) réglé dans l'éditeur) : l'ombre, enfant séparé, doit
 	# le reprendre pour rester alignée avec les pieds réellement affichés.
-	position.y = hero.offset.y + region_rect.size.y * (1.0 - squash) * 0.5 + feet_offset
+	position.y = hero.offset.y + hero.region_rect.size.y * 0.5 + feet_offset
 
 	var cell: Vector2i = cursor.find_hovered_cell(global_position)
 	var has_tile := tile_layer.get_cell_tile_data(cell) != null
