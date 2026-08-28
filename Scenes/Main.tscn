@@ -16,17 +16,17 @@
 [ext_resource type="Script" uid="uid://cgrwc7ahfkjw0" path="res://Scripts/UI/TileCostBubble.gd" id="14_tile_cost_bubble_script"]
 [ext_resource type="Shader" uid="uid://cxgmt27kex8ra" path="res://Shaders/white_tint.gdshader" id="16_white_tint_shader"]
 [ext_resource type="AudioStream" uid="uid://dj3pydrxmr6w5" path="res://Audio/bling_appear.wav" id="17_bling_sfx"]
-[ext_resource type="AudioStream" uid="uid://bpnw1pappc6e0" path="res://Audio/validation.wav" id="27_validation_sfx"]
-[ext_resource type="AudioStream" uid="uid://ninjsh5vumuf" path="res://Audio/error.wav" id="28_error_sfx"]
 [ext_resource type="AudioStream" uid="uid://cap1k7kxy07ox" path="res://Audio/worldmap_theme.mp3" id="18_worldmap_music"]
 [ext_resource type="Script" uid="uid://dudph00un0npq" path="res://Scripts/Worldmap/HitzoneDebugOverlay.gd" id="19_hitzone_debug"]
 [ext_resource type="Script" uid="uid://bw8v4rxe4h2s" path="res://Scripts/Worldmap/Hero.gd" id="20_hero"]
 [ext_resource type="Texture2D" uid="uid://b7go6qgh16hg2" path="res://UI/ic_btn.png" id="21_action_btn_tex"]
 [ext_resource type="Script" uid="uid://brec3xkribfyf" path="res://Scripts/UI/ActionHintHUD.gd" id="22_action_hint_script"]
 [ext_resource type="Script" uid="uid://du0kp52m1m3uw" path="res://Scripts/Worldmap/HeroShadow.gd" id="23_hero_shadow"]
-[ext_resource type="Script" path="res://Scripts/Worldmap/HeroDustVFX.gd" id="24_hero_dust"]
-[ext_resource type="Script" path="res://Scripts/Worldmap/TileRevealController.gd" id="25_reveal_controller"]
-[ext_resource type="Script" path="res://Scripts/Worldmap/TileHoverVisuals.gd" id="26_hover_visuals"]
+[ext_resource type="Script" uid="uid://6esxuecqjvr8" path="res://Scripts/Worldmap/HeroDustVFX.gd" id="24_hero_dust"]
+[ext_resource type="Script" uid="uid://c3pl5dnjpsl7x" path="res://Scripts/Worldmap/TileRevealController.gd" id="25_reveal_controller"]
+[ext_resource type="Script" uid="uid://d0kjp5gky6tre" path="res://Scripts/Worldmap/TileHoverVisuals.gd" id="26_hover_visuals"]
+[ext_resource type="AudioStream" uid="uid://bpnw1pappc6e0" path="res://Audio/validation.wav" id="27_validation_sfx"]
+[ext_resource type="AudioStream" uid="uid://ninjsh5vumuf" path="res://Audio/error.wav" id="28_error_sfx"]
 
 [sub_resource type="TileSetAtlasSource" id="TileSetAtlasSource_hex"]
 texture = ExtResource("1_hex")
@@ -188,11 +188,6 @@ script = ExtResource("19_hitzone_debug")
 z_index = 10
 script = ExtResource("3_cursor")
 
-[node name="TileHoverVisuals" type="Node2D" parent="."]
-script = ExtResource("26_hover_visuals")
-tile_select_offset = Vector2(0, -8)
-tile_select_empty_offset = Vector2(0, 3)
-
 [node name="Sprite2D" type="Sprite2D" parent="WorldmapCursor" unique_id=1368578664]
 z_index = 1
 texture = ExtResource("4_cursor_tex")
@@ -201,12 +196,17 @@ offset = Vector2(0, -34)
 [node name="MoveSFX" type="AudioStreamPlayer" parent="WorldmapCursor" unique_id=1721430833]
 stream = ExtResource("8_move_sfx")
 
-[node name="TileRevealController" type="Node2D" parent="."]
+[node name="TileHoverVisuals" type="Node2D" parent="." unique_id=575761509]
+script = ExtResource("26_hover_visuals")
+tile_select_offset = Vector2(0, -8)
+tile_select_empty_offset = Vector2(0, 3)
+
+[node name="TileRevealController" type="Node2D" parent="." unique_id=1187243561]
 script = ExtResource("25_reveal_controller")
 tile_cost_bubble_anchor = Vector2(0, -16)
 tile_cost_bubble_arrow_offset = Vector2(0, -8)
 
-[node name="RevealSFX" type="AudioStreamPlayer" parent="TileRevealController"]
+[node name="RevealSFX" type="AudioStreamPlayer" parent="TileRevealController" unique_id=1975931112]
 stream = ExtResource("17_bling_sfx")
 
 [node name="Hero" type="Sprite2D" parent="." unique_id=-1245784550]
@@ -221,15 +221,15 @@ script = ExtResource("23_hero_shadow")
 shadow_alpha = 0.265
 feet_offset = -1.0
 
-[node name="HeroDustVFX" type="CPUParticles2D" parent="Hero"]
+[node name="HeroDustVFX" type="CPUParticles2D" parent="Hero" unique_id=1543182053]
 script = ExtResource("24_hero_dust")
 
-[node name="FootstepSFX" type="AudioStreamPlayer" parent="Hero"]
+[node name="FootstepSFX" type="AudioStreamPlayer" parent="Hero" unique_id=692661576]
 
-[node name="ValidationSFX" type="AudioStreamPlayer" parent="Hero"]
+[node name="ValidationSFX" type="AudioStreamPlayer" parent="Hero" unique_id=796012948]
 stream = ExtResource("27_validation_sfx")
 
-[node name="ErrorSFX" type="AudioStreamPlayer" parent="Hero"]
+[node name="ErrorSFX" type="AudioStreamPlayer" parent="Hero" unique_id=521490274]
 stream = ExtResource("28_error_sfx")
 
 [node name="TileHighlight" type="Node2D" parent="." unique_id=1165930132]

@@ -61,6 +61,12 @@ var repeat_timer: float = 0.0
 @export var free_mode_cooldown: float = 0.15
 var free_mode_cooldown_timer: float = 0.0
 
+## Durée du fondu (apparition/disparition) de cursor_worldmap.png quand il se
+## masque (case du Héros ou case "Empty") ou réapparaît — cf set_sprite_faded_visible().
+@export var sprite_fade_duration: float = 0.15
+var _sprite_target_visible: bool = true
+var _sprite_fade_tween: Tween
+
 func _ready() -> void:
 	# La case de départ est celle la plus proche de l'endroit où le nœud a
 	# été placé dans la scène : pas besoin d'un @export dédié, on déplace
@@ -151,7 +157,7 @@ func enter_free_mode() -> void:
 	mode = Mode.FREE
 	is_moving = false
 	free_mode_cooldown_timer = free_mode_cooldown
-	sprite.visible = true
+	set_sprite_faded_visible(true)
 	hover_visuals.hide_all()
 	reveal_controller.hide_cost_bubble()
 
@@ -218,6 +224,21 @@ func find_hovered_cell(point: Vector2) -> Vector2i:
 			return neighbor
 	return grid_cell
 
+## Anime l'apparition/disparition de cursor_worldmap.png (fondu sur son alpha
+## via un Tween, pas un basculement instantané de `visible`) : `sprite.visible`
+## reste toujours true, seul modulate.a change, pour pouvoir l'animer dans les
+## deux sens. No-op si l'état cible demandé est déjà celui en cours/en train
+## de s'animer, pour ne pas relancer un tween à chaque frame sans changement
+## réel (update_tile_state() appelle ceci à chaque frame en mode grille).
+func set_sprite_faded_visible(should_be_visible: bool) -> void:
+	if should_be_visible == _sprite_target_visible:
+		return
+	_sprite_target_visible = should_be_visible
+	if _sprite_fade_tween != null and _sprite_fade_tween.is_running():
+		_sprite_fade_tween.kill()
+	_sprite_fade_tween = create_tween()
+	_sprite_fade_tween.tween_property(sprite, "modulate:a", 1.0 if should_be_visible else 0.0, sprite_fade_duration)
+
 # Le curseur libre vient de survoler une tuile : on rebascule en mode grille
 # en s'y laissant "aimanter" (même animation que pour un pas normal) plutôt
 # que de sauter instantanément dessus.
@@ -252,7 +273,8 @@ func update_tile_state() -> void:
 	# garder que le highlight/la sélection, pour ne pas surcharger visuellement
 	# une case qui n'a elle-même pas de tuile visible. Masqué aussi sur la
 	# case du Héros — inutile de superposer le pointeur au personnage lui-même.
-	sprite.visible = not TerrainTypes.is_empty(current_terrain_type) and current_cell != hero.current_cell
+	var should_show_sprite: bool = not TerrainTypes.is_empty(current_terrain_type) and current_cell != hero.current_cell
+	set_sprite_faded_visible(should_show_sprite)
 
 	if tile_data == null:
 		hover_visuals.hide_all()
