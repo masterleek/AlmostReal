@@ -22,3 +22,20 @@ static func tile_art_hitzone() -> PackedVector2Array:
 		Vector2(0, -32), Vector2(32, -17), Vector2(32, 17),
 		Vector2(0, 32), Vector2(-32, 17), Vector2(-32, -17),
 	])
+
+## Silhouette réelle SPÉCIFIQUE de la tuile "Empty" (atlas (1,0) de
+## hex_tiles.png) : mesurée pixel par pixel sur son canal alpha (première/
+## dernière ligne opaque, largeur à chaque ligne), PAS tile_art_hitzone() —
+## dont le sommet (0,-32) déborde de 11px au-dessus du vrai sommet peint de
+## CETTE tuile précise (qui s'arrête à y=-21), largement visible une fois
+## rempli entièrement (cf ombre de révélation, TileRevealController.gd) même
+## si négligeable pour un usage plus tolérant (survol, ombre du Héros — d'où
+## tile_art_hitzone(), pensé plus générique/"en moyenne correct" pour toutes
+## les tuiles, jamais remis en cause ici). N'est valable QUE pour "Empty" —
+## une tuile normale (relief plus haut) a probablement une silhouette plus
+## proche de tile_art_hitzone().
+static func tile_empty_hitzone() -> PackedVector2Array:
+	return PackedVector2Array([
+		Vector2(0, -21), Vector2(32, -6), Vector2(32, 16),
+		Vector2(0, 31), Vector2(-32, 16), Vector2(-32, -6),
+	])

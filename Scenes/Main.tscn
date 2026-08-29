@@ -320,15 +320,15 @@ script = ExtResource("32_water_reflection_script")
 height = 500.0
 
 [node name="LightRay1" parent="." unique_id=1593347059 instance=ExtResource("39_light_ray_scene")]
-offset_left = -257.0
+offset_left = -213.0
 offset_top = -228.0
-offset_right = 343.0
+offset_right = 387.0
 offset_bottom = 372.0
 
 [node name="LightRay2" parent="." unique_id=1450417747 instance=ExtResource("39_light_ray_scene")]
-offset_left = -116.0
+offset_left = -50.0
 offset_top = -279.0
-offset_right = 484.0
+offset_right = 550.0
 offset_bottom = 321.0
 
 [node name="LightRay3" parent="." unique_id=497816811 instance=ExtResource("39_light_ray_scene")]
@@ -436,10 +436,10 @@ offset = Vector2(0, 11)
 z_index = -1
 position = Vector2(128, 66)
 
-[node name="RevealShadow" type="Polygon2D" parent="RevealAnchor" unique_id=3568214907]
+[node name="RevealShadow" type="Polygon2D" parent="RevealAnchor" unique_id=-726752389]
 visible = false
-color = Color(0, 0, 0, 0.35)
 position = Vector2(0, -11)
+color = Color(0, 0, 0, 0.35)
 
 [node name="RevealLift" type="Node2D" parent="RevealAnchor" unique_id=1009112297]
 
