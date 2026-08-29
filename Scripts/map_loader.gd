@@ -11,7 +11,7 @@ extends Node2D
 @onready var music: AudioStreamPlayer = $WorldmapMusic
 
 var props_texture: Texture2D = load("res://Sprites/props.png")
-var tile_defs: Dictionary = {} # "x,y" (atlas) -> tuile complète de tile_meta.json
+var tile_defs: Dictionary = {} # Vector2i (atlas) -> tuile complète de tile_meta.json
 var animated_cells: Array = [] # cases posées dont la tuile a plusieurs frames
 var animated_props: Array = [] # props posés dont le prop a plusieurs frames
 var reveal_targets: Dictionary = {} # Vector2i (case) -> Vector2i (atlas de la tuile qu'elle révèle)
@@ -79,7 +79,7 @@ func load_tile_defs() -> void:
 		return
 	for tile: Dictionary in data:
 		var atlas: Array = tile.get("atlas", [0, 0])
-		tile_defs["%d,%d" % [int(atlas[0]), int(atlas[1])]] = tile
+		tile_defs[Vector2i(int(atlas[0]), int(atlas[1]))] = tile
 
 func load_map(id: String) -> void:
 	tile_layer.clear()
@@ -103,19 +103,20 @@ func load_map(id: String) -> void:
 		push_warning("Invalid map JSON: %s" % path)
 		return
 
-	for key: String in data["cells"].keys():
+	for key: String in data["cells"]:
 		var parts := key.split(",")
 		var coords := Vector2i(int(parts[0]), int(parts[1]))
 		var tile: Dictionary = data["cells"][key]
 		var source_id: int = tile.get("source_id", 0)
 		var atlas: Array = tile.get("atlas", [0, 0])
-		tile_layer.set_cell(coords, source_id, Vector2i(int(atlas[0]), int(atlas[1])))
+		var atlas_coords := Vector2i(int(atlas[0]), int(atlas[1]))
+		tile_layer.set_cell(coords, source_id, atlas_coords)
 
 		if tile.has("reveal_atlas"):
 			var reveal_atlas: Array = tile["reveal_atlas"]
 			reveal_targets[coords] = Vector2i(int(reveal_atlas[0]), int(reveal_atlas[1]))
 
-		var def: Dictionary = tile_defs.get("%d,%d" % [int(atlas[0]), int(atlas[1])], {})
+		var def: Dictionary = tile_defs.get(atlas_coords, {})
 		var frames: Array = def.get("frames", [])
 		if frames.size() > 1:
 			animated_cells.append({

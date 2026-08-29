@@ -29,10 +29,10 @@
 [ext_resource type="AudioStream" uid="uid://ninjsh5vumuf" path="res://Audio/error.wav" id="28_error_sfx"]
 [ext_resource type="Shader" uid="uid://24egm1vk3hse" path="res://Shaders/water_reflection.gdshader" id="31_water_reflection_shader"]
 [ext_resource type="Script" uid="uid://i8x4pxoyar5x" path="res://Scripts/Worldmap/WaterReflection.gd" id="32_water_reflection_script"]
-[ext_resource type="Script" uid="uid://8sxpcch3m7tj" path="res://Scripts/Worldmap/StartTileEffects.gd" id="33_start_tile_effects_script"]
 [ext_resource type="Shader" uid="uid://bgtjskyn5i83m" path="res://Shaders/tile_foam.gdshader" id="34_tile_foam_shader"]
-[ext_resource type="Shader" path="res://Shaders/tile_reflection_tint.gdshader" id="35_tile_reflection_tint_shader"]
-[ext_resource type="Script" path="res://Scripts/Worldmap/MapFoam.gd" id="36_map_foam_script"]
+[ext_resource type="Script" uid="uid://cxa2fib5hw3co" path="res://Scripts/Worldmap/MapFoam.gd" id="36_map_foam_script"]
+[ext_resource type="Shader" uid="uid://bkwcoxnllexj8" path="res://Shaders/tile_reflection_flat.gdshader" id="37_tile_reflection_flat_shader"]
+[ext_resource type="Script" uid="uid://dh2skd2un04la" path="res://Scripts/Worldmap/TileReflectionFlat.gd" id="38_tile_reflection_flat_script"]
 
 [sub_resource type="FastNoiseLite" id="FastNoiseLite_mid"]
 frequency = 0.014
@@ -62,6 +62,13 @@ frequency = 0.015
 noise = SubResource("FastNoiseLite_reflect_small")
 seamless = true
 
+[sub_resource type="FastNoiseLite" id="FastNoiseLite_reflect_warp"]
+frequency = 0.02
+
+[sub_resource type="NoiseTexture2D" id="NoiseTexture2D_reflect_warp"]
+noise = SubResource("FastNoiseLite_reflect_warp")
+seamless = true
+
 [sub_resource type="FastNoiseLite" id="FastNoiseLite_rock"]
 frequency = 0.02
 
@@ -74,13 +81,6 @@ frequency = 0.006
 
 [sub_resource type="NoiseTexture2D" id="NoiseTexture2D_shore"]
 noise = SubResource("FastNoiseLite_shore")
-seamless = true
-
-[sub_resource type="FastNoiseLite" id="FastNoiseLite_reflect_warp"]
-frequency = 0.02
-
-[sub_resource type="NoiseTexture2D" id="NoiseTexture2D_reflect_warp"]
-noise = SubResource("FastNoiseLite_reflect_warp")
 seamless = true
 
 [sub_resource type="Gradient" id="Gradient_water_albedo"]
@@ -123,12 +123,6 @@ shader_parameter/reflect_warp_noise = SubResource("NoiseTexture2D_reflect_warp")
 shader_parameter/reflect_warp_tiles = 1.4
 shader_parameter/reflect_warp_strength = 0.35
 
-[sub_resource type="ShaderMaterial" id="ShaderMaterial_tile_reflection_tint"]
-shader = ExtResource("35_tile_reflection_tint_shader")
-shader_parameter/tint_color = Color(0.6, 0.75, 1, 1)
-shader_parameter/tint_strength = 0.5
-shader_parameter/reflection_opacity = 0.7
-
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_tile_foam"]
 shader = ExtResource("34_tile_foam_shader")
 shader_parameter/hex_verts = PackedVector2Array(0, -32, 32, -17, 32, 17, 0, 32, -32, 17, -32, -17)
@@ -138,15 +132,30 @@ shader_parameter/color_foam = Color(0.95, 0.95, 0.95, 1)
 shader_parameter/color_outline = Color(0.16, 0.28, 0.52, 1)
 shader_parameter/outline_width_px = 0.0
 shader_parameter/wobble_amplitude_px = 1.0
-shader_parameter/wobble_speed = -1.8
-shader_parameter/wobble_frequency = -0.7
+shader_parameter/wobble_speed = 0.4
+shader_parameter/wobble_frequency = 0.3
 shader_parameter/foam_arc_deg = 124.0
 shader_parameter/foam_arc_fade_deg = -7.0
 shader_parameter/pixel_size_px = 1.0
-shader_parameter/tilt_x_deg = 7.0
-shader_parameter/tilt_y_deg = 1.0
+shader_parameter/tilt_x_deg = 6.0
+shader_parameter/tilt_y_deg = 0.0
 shader_parameter/tilt_z_deg = 0.0
-shader_parameter/tilt_pivot_px = Vector2(0, 0)
+shader_parameter/tilt_pivot_px = Vector2(0, 15)
+
+[sub_resource type="Gradient" id="Gradient_tile_reflection_flat"]
+colors = PackedColorArray(0.4, 0.6, 0.85, 1, 0.75, 0.85, 0.95, 1)
+
+[sub_resource type="GradientTexture1D" id="GradientTexture1D_tile_reflection_flat"]
+gradient = SubResource("Gradient_tile_reflection_flat")
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_tile_reflection_flat"]
+shader = ExtResource("37_tile_reflection_flat_shader")
+shader_parameter/flat_color = Color(0.00022700868, 0.07412539, 0.20087749, 1)
+shader_parameter/flat_gradient = SubResource("GradientTexture1D_tile_reflection_flat")
+shader_parameter/use_gradient = false
+shader_parameter/alpha = 0.4090000194275
+shader_parameter/gradient_y_min = 0.0
+shader_parameter/gradient_y_max = 1000.0
 
 [sub_resource type="TileSetAtlasSource" id="TileSetAtlasSource_hex"]
 texture = ExtResource("1_hex")
@@ -299,22 +308,19 @@ mouse_filter = 2
 color = Color(0, 0, 0, 0)
 script = ExtResource("32_water_reflection_script")
 
-[node name="StartTileEffects" type="Node2D" parent="." unique_id=1359401762]
-visible = false
-script = ExtResource("33_start_tile_effects_script")
-reflection_y_offset = -51.0
-reflection_opacity = 0.207
-reflection_tint_strength = 1.0
-
-[node name="StartTileReflection" type="Sprite2D" parent="StartTileEffects" unique_id=1090841058]
-material = SubResource("ShaderMaterial_tile_reflection_tint")
-
 [node name="MapFoam" type="Node2D" parent="." unique_id=585089238]
-visible = false
 z_index = -1
 y_sort_enabled = true
+position = Vector2(0, -2)
 script = ExtResource("36_map_foam_script")
 foam_material = SubResource("ShaderMaterial_tile_foam")
+
+[node name="TileReflectionFlat" type="TileMapLayer" parent="." unique_id=1284730501]
+z_index = -2
+material = SubResource("ShaderMaterial_tile_reflection_flat")
+position = Vector2(0, 7)
+tile_set = SubResource("TileSet_hex")
+script = ExtResource("38_tile_reflection_flat_script")
 
 [node name="TileMapLayer" type="TileMapLayer" parent="." unique_id=319968199]
 z_index = -1
