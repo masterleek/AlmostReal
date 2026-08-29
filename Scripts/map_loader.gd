@@ -9,6 +9,7 @@ extends Node2D
 @onready var worldmap_cursor: Node2D = $WorldmapCursor
 @onready var camera: Camera2D = $Camera2D
 @onready var music: AudioStreamPlayer = $WorldmapMusic
+@onready var water_reflection: ColorRect = $WaterReflection
 
 var props_texture: Texture2D = load("res://Sprites/props.png")
 var tile_defs: Dictionary = {} # Vector2i (atlas) -> tuile complète de tile_meta.json
@@ -53,6 +54,23 @@ func _ready() -> void:
 	# lecteur : on la force ici plutôt que de dépendre du réglage d'import.
 	music.stream.loop = true
 	music.play()
+
+	# WaterReflection.fit_to_map() (appelé par son propre _ready, un frère
+	# déclaré avant celui-ci dans l'arbre) est lui-même en call_deferred :
+	# comme il tourne avant nous dans la file, ce call_deferred-ci s'exécute
+	# après lui, une fois son rect réellement dimensionné sur la carte.
+	call_deferred("_setup_camera_limits")
+
+# Empêche la caméra de dépasser l'étendue réelle du fond d'eau (même rect
+# que WaterReflection, pas une valeur recalculée séparément) : sans ça, la
+# caméra peut montrer le fond gris par défaut du viewport dès qu'elle sort
+# de cette zone — Camera2D applique ces limites nativement (tient compte du
+# zoom automatiquement), aucune autre logique de caméra à toucher.
+func _setup_camera_limits() -> void:
+	camera.limit_left = int(water_reflection.position.x)
+	camera.limit_top = int(water_reflection.position.y)
+	camera.limit_right = int(water_reflection.position.x + water_reflection.size.x)
+	camera.limit_bottom = int(water_reflection.position.y + water_reflection.size.y)
 
 # Permet au bouton "Play" de MapEditor de lancer le jeu directement sur la
 # map en cours d'édition : `godot --path <projet> -- --map=<id>`. Les args

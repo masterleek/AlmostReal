@@ -33,6 +33,7 @@
 [ext_resource type="Script" uid="uid://cxa2fib5hw3co" path="res://Scripts/Worldmap/MapFoam.gd" id="36_map_foam_script"]
 [ext_resource type="Shader" uid="uid://bkwcoxnllexj8" path="res://Shaders/tile_reflection_flat.gdshader" id="37_tile_reflection_flat_shader"]
 [ext_resource type="Script" uid="uid://dh2skd2un04la" path="res://Scripts/Worldmap/TileReflectionFlat.gd" id="38_tile_reflection_flat_script"]
+[ext_resource type="PackedScene" path="res://Scenes/LightRay.tscn" id="39_light_ray_scene"]
 
 [sub_resource type="FastNoiseLite" id="FastNoiseLite_mid"]
 frequency = 0.014
@@ -307,6 +308,25 @@ material = SubResource("ShaderMaterial_water_reflection")
 mouse_filter = 2
 color = Color(0, 0, 0, 0)
 script = ExtResource("32_water_reflection_script")
+height = 500.0
+
+[node name="LightRay1" parent="." unique_id=1593347059 instance=ExtResource("39_light_ray_scene")]
+offset_left = -257.0
+offset_top = -228.0
+offset_right = 343.0
+offset_bottom = 372.0
+
+[node name="LightRay2" parent="." unique_id=1450417747 instance=ExtResource("39_light_ray_scene")]
+offset_left = -116.0
+offset_top = -279.0
+offset_right = 484.0
+offset_bottom = 321.0
+
+[node name="LightRay3" parent="." unique_id=497816811 instance=ExtResource("39_light_ray_scene")]
+offset_left = 2.0
+offset_top = -322.0
+offset_right = 602.0
+offset_bottom = 278.0
 
 [node name="MapFoam" type="Node2D" parent="." unique_id=585089238]
 z_index = -1

@@ -2,10 +2,11 @@ extends ColorRect
 
 ## Fond d'eau (water_reflection.gdshader), affiché derrière tout le
 ## TileMapLayer grâce à son propre z_index, pas un ordre particulier dans
-## l'arbre. Dimensionné ici sur l'étendue réelle des cellules chargées (avec
-## une marge), pas une taille codée en dur, pour rester correct quelle que
-## soit la carte.
-@export var margin_cells: int = 4
+## l'arbre. Taille fixe réglable directement (pas de découpage en tuiles ni
+## de marge à calculer) ; seule la POSITION est calculée, pour rester
+## centrée sur la carte quelle que soit sa géométrie.
+@export var width: float = 1536.0
+@export var height: float = 1536.0
 
 @onready var tile_layer: TileMapLayer = $"../TileMapLayer"
 
@@ -17,11 +18,11 @@ func _ready() -> void:
 	# call_deferred attend que ce chargement soit terminé.
 	call_deferred("fit_to_map")
 
-## Étend le rect (position/size) sur les positions monde réelles de toutes
-## les cellules chargées plutôt que sur min/max des coordonnées de cellule :
-## reste correct quelle que soit la géométrie de la grille (hexagonale ici),
-## où une cellule "extrême" en coordonnées n'est pas forcément celle la plus
-## excentrée à l'écran.
+## Centre le rect (taille fixe, cf width/height) sur les positions monde
+## réelles de toutes les cellules chargées plutôt que sur min/max des
+## coordonnées de cellule : reste correct quelle que soit la géométrie de la
+## grille (hexagonale ici), où une cellule "extrême" en coordonnées n'est
+## pas forcément celle la plus excentrée à l'écran.
 func fit_to_map() -> void:
 	var used := tile_layer.get_used_cells()
 	if used.is_empty():
@@ -35,6 +36,6 @@ func fit_to_map() -> void:
 		max_pos.x = maxf(max_pos.x, p.x)
 		max_pos.y = maxf(max_pos.y, p.y)
 
-	var margin_px: float = margin_cells * float(tile_layer.tile_set.tile_size.x)
-	position = min_pos - Vector2.ONE * margin_px
-	size = (max_pos - min_pos) + Vector2.ONE * margin_px * 2.0
+	var center := (min_pos + max_pos) / 2.0
+	size = Vector2(width, height)
+	position = center - size / 2.0
