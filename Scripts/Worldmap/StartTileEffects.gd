@@ -1,13 +1,10 @@
 extends Node2D
 
-## Prototype de test — scopé à UNE seule tuile (celle de départ du Héros) —
-## pour le reflet et la mousse, avant de généraliser à toute la carte une
-## fois le rendu validé. Deux enfants pré-déclarés dans la scène :
-## StartTileReflection (Sprite2D, copie retournée de l'art de la tuile) et
-## StartTileFoam (ColorRect + tile_foam.gdshader) — ce script se contente de
-## les positionner/dimensionner d'après la case réelle du Héros.
-
-const TileGeometry = preload("res://Scripts/Worldmap/TileGeometry.gd")
+## Reflet de la tuile de départ du Héros — scopé à cette UNIQUE tuile
+## (contrairement à la mousse, cf MapFoam.gd, appliquée à toute la carte).
+## Un enfant pré-déclaré dans la scène : StartTileReflection (Sprite2D,
+## copie retournée de l'art de la tuile) — ce script se contente de le
+## positionner/dimensionner d'après la case réelle du Héros.
 
 ## Décalage manuel (pixels monde, + = vers le bas) de la position verticale
 ## du reflet — s'ajoute au calcul automatique (juste sous le bord réel de la
@@ -45,7 +42,6 @@ const TileGeometry = preload("res://Scripts/Worldmap/TileGeometry.gd")
 @onready var tile_layer: TileMapLayer = $"../TileMapLayer"
 @onready var hero: Node2D = $"../Hero"
 @onready var reflection_sprite: Sprite2D = $StartTileReflection
-@onready var foam_rect: ColorRect = $StartTileFoam
 
 func _ready() -> void:
 	# hero.current_cell n'est fixé que dans Hero._ready() (un frère déclaré
@@ -75,14 +71,3 @@ func setup() -> void:
 		reflection_mat.set_shader_parameter("tint_color", reflection_tint)
 		reflection_mat.set_shader_parameter("tint_strength", reflection_tint_strength)
 		reflection_mat.set_shader_parameter("reflection_opacity", reflection_opacity)
-
-	# Mousse : rect centré sur la tuile, un peu plus grand que son art pour
-	# laisser la place à la bande de mousse à l'extérieur du contour réel.
-	var foam_size := Vector2(region.size) * 1.4
-	foam_rect.size = foam_size
-	foam_rect.position = tile_pos - foam_size / 2.0
-	foam_rect.z_index = -1
-	if foam_rect.material is ShaderMaterial:
-		var mat := foam_rect.material as ShaderMaterial
-		mat.set_shader_parameter("hex_verts", TileGeometry.tile_art_hitzone())
-		mat.set_shader_parameter("rect_size_px", foam_size)

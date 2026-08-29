@@ -38,6 +38,3 @@ func fit_to_map() -> void:
 	var margin_px: float = margin_cells * float(tile_layer.tile_set.tile_size.x)
 	position = min_pos - Vector2.ONE * margin_px
 	size = (max_pos - min_pos) + Vector2.ONE * margin_px * 2.0
-
-	if material is ShaderMaterial:
-		(material as ShaderMaterial).set_shader_parameter("map_size_px", size)
