@@ -66,6 +66,16 @@ uniform float reflect_hole_threshold : hint_range(0.0, 1.0) = 0.6;
 uniform float reflect_speed = 0.015;
 uniform vec2 reflect_direction = vec2(1.0, 0.3);
 
+// Déformation de domaine : distord la position d'échantillonnage des taches
+// par un bruit indépendant AVANT de lire big/small/hole — casse les
+// silhouettes trop rondes/lisses d'un simple bruit seuillé en formes plus
+// torturées (façon côte/amibe, avec des tendons qui relient les taches),
+// plutôt que des taches isolées bien circulaires. warp_strength = 0 revient
+// au comportement d'avant (aucune distorsion).
+uniform sampler2D reflect_warp_noise : repeat_enable;
+uniform float reflect_warp_tiles = 1.4;
+uniform float reflect_warp_strength = 0.35;
+
 void fragment() {
 	vec2 uv = UV;
 	if (uv.y >= level) {
@@ -85,9 +95,16 @@ void fragment() {
 		}
 
 		vec2 drift = TIME * reflect_speed * reflect_direction;
-		float big = texture(reflect_big_noise, uv * reflect_big_tiles + drift).x;
-		float small_n = texture(reflect_small_noise, uv * reflect_small_tiles + drift * 1.6).x;
-		float hole = texture(reflect_hole_noise, uv * reflect_hole_tiles + drift).x;
+		vec2 warp_uv = uv * reflect_warp_tiles;
+		vec2 warp = vec2(
+			texture(reflect_warp_noise, warp_uv).x,
+			texture(reflect_warp_noise, warp_uv + vec2(5.2, 1.7)).x
+		) - 0.5;
+		vec2 warped_uv = uv + warp * reflect_warp_strength;
+
+		float big = texture(reflect_big_noise, warped_uv * reflect_big_tiles + drift).x;
+		float small_n = texture(reflect_small_noise, warped_uv * reflect_small_tiles + drift * 1.6).x;
+		float hole = texture(reflect_hole_noise, warped_uv * reflect_hole_tiles + drift).x;
 
 		float big_thresh = mix(reflect_big_thresh_top, reflect_big_thresh_bottom, uv.y);
 		float small_thresh = mix(reflect_small_thresh_top, reflect_small_thresh_bottom, uv.y);

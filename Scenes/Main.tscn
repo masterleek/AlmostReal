@@ -76,6 +76,13 @@ frequency = 0.006
 noise = SubResource("FastNoiseLite_shore")
 seamless = true
 
+[sub_resource type="FastNoiseLite" id="FastNoiseLite_reflect_warp"]
+frequency = 0.02
+
+[sub_resource type="NoiseTexture2D" id="NoiseTexture2D_reflect_warp"]
+noise = SubResource("FastNoiseLite_reflect_warp")
+seamless = true
+
 [sub_resource type="Gradient" id="Gradient_water_albedo"]
 offsets = PackedFloat32Array(0, 0.2, 0.4, 0.6, 0.8, 1)
 colors = PackedColorArray(0.063, 0.239, 0.329, 1, 0.094, 0.376, 0.478, 1, 0.145, 0.522, 0.58, 1, 0.227, 0.659, 0.659, 1, 0.345, 0.804, 0.745, 1, 0.471, 0.886, 0.804, 1)
@@ -112,6 +119,9 @@ shader_parameter/reflect_hole_tiles = 4.5
 shader_parameter/reflect_hole_threshold = 0.0990000047025
 shader_parameter/reflect_speed = 0.015
 shader_parameter/reflect_direction = Vector2(1, 0.3)
+shader_parameter/reflect_warp_noise = SubResource("NoiseTexture2D_reflect_warp")
+shader_parameter/reflect_warp_tiles = 1.4
+shader_parameter/reflect_warp_strength = 0.35
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_tile_reflection_tint"]
 shader = ExtResource("35_tile_reflection_tint_shader")
