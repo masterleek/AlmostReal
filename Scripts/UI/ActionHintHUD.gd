@@ -8,6 +8,7 @@ extends HBoxContainer
 ## sur sa propre case.
 
 const TerrainTypes = preload("res://Scripts/Worldmap/TerrainTypes.gd")
+const WorldmapCursor = preload("res://Scripts/Worldmap/WorldmapCursor.gd")
 
 @onready var cursor: Node2D = $"../../WorldmapCursor"
 @onready var hero: Node2D = $"../../Hero"
@@ -28,7 +29,13 @@ var _cached_target_cell: Vector2i = Vector2i(-999999, -999999)
 var _cached_reachable: bool = false
 
 func _process(_delta: float) -> void:
-	visible = cursor.current_cell != hero.current_cell
+	# En mode libre, current_cell reste figé sur la dernière case connue (pas
+	# mise à jour tant qu'on ne survole pas une nouvelle case) : sans ce test
+	# explicite sur le mode, l'indice peut rester affiché avec un contenu
+	# obsolète (une case que le curseur ne survole plus réellement) plutôt
+	# que d'être masqué comme il se doit tant qu'aucune case valide n'est
+	# survolée.
+	visible = cursor.mode == WorldmapCursor.Mode.GRID and cursor.current_cell != hero.current_cell
 	if not visible:
 		return
 

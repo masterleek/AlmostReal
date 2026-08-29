@@ -164,6 +164,7 @@ func enter_free_mode() -> void:
 func process_free_mode(delta: float) -> void:
 	var input_dir := Input.get_vector("ui_left", "ui_right", "ui_up", "ui_down")
 	global_position += input_dir * free_speed * delta
+	global_position = clamp_to_screen(global_position)
 
 	# Court délai avant de réactiver la détection (cf commentaire sur
 	# free_mode_cooldown) — passé ce délai, elle reste active en continu.
@@ -179,6 +180,32 @@ func process_free_mode(delta: float) -> void:
 	var detected_cell := find_hovered_cell_near_sprite()
 	if tile_layer.get_cell_tile_data(detected_cell) != null:
 		enter_grid_mode(detected_cell)
+
+# En déplacement libre, rien n'empêche autrement le curseur de s'éloigner
+# indéfiniment (aucune tuile pour le "rattraper") : la caméra (qui le suit
+# avec un délai, cf CameraController) est elle-même bornée à l'étendue de la
+# carte (cf map_loader.gd), donc sans ce clamp le curseur peut sortir de
+# l'écran pendant qu'elle reste bloquée à son bord — un curseur invisible.
+# get_screen_center_position() (pas global_position) reflète le centre RÉEL
+# affiché par la caméra (lissage/limites/décalage de secousse déjà
+# appliqués), pas sa position logique brute.
+#
+# sprite.offset (ex. (0, -34), purement cosmétique — cf commentaire sur
+# find_hovered_cell_near_sprite) décale l'image AFFICHÉE par rapport à `pos` :
+# sans en tenir compte ici, on borne la position logique, pas le sprite
+# réellement visible à l'écran — d'où un bord qui coupe trop tôt et l'autre
+# pas assez (l'offset ajoute la même erreur des deux côtés, dans le même
+# sens, au lieu de s'annuler).
+func clamp_to_screen(pos: Vector2) -> Vector2:
+	var cam := get_viewport().get_camera_2d()
+	if cam == null:
+		return pos
+	var half_sprite := sprite.texture.get_size() / 2.0
+	var half_screen := get_viewport().get_visible_rect().size / (2.0 * cam.zoom)
+	var center := cam.get_screen_center_position()
+	var min_pos := center - half_screen - sprite.offset + half_sprite
+	var max_pos := center + half_screen - sprite.offset - half_sprite
+	return pos.clamp(min_pos, max_pos)
 
 # Teste plusieurs points autour du centre logique du curseur (global_position),
 # pas seulement ce point unique : le joueur juge "je survole la tuile" par
