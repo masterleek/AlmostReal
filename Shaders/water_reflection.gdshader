@@ -76,6 +76,39 @@ uniform sampler2D reflect_warp_noise : repeat_enable;
 uniform float reflect_warp_tiles = 1.4;
 uniform float reflect_warp_strength = 0.35;
 
+// Sillage continu sous le curseur en déplacement libre (cf WaterReflection.gd
+// qui sème un point de sillage dans wake_positions/wake_spawn_times à chaque
+// PETIT déplacement du curseur au-dessus de l'eau — contrairement à l'ancien
+// ripple, la distance de semis est volontairement petite pour que les points
+// se chevauchent et forment une traînée CONTINUE plutôt que des anneaux
+// espacés). Chaque point pousse localement la position d'échantillonnage des
+// reflets (cf warped_uv plus bas) — comme si la surface était repoussée par
+// le passage du curseur, façon sillage de bateau — plutôt que de dessiner un
+// anneau dessus : effet plus discret/physique, visible via la distorsion des
+// taches de lumière existantes + un léger éclaircissement là où la poussée
+// est la plus forte. wake_squash aplatit la distance verticale (même
+// perspective en biais que le reste du rendu). Chaque point s'efface
+// définitivement après wake_lifetime secondes (pas de boucle infinie).
+uniform vec2 wake_positions[16];
+uniform float wake_spawn_times[16];
+uniform float wake_time = 0.0;
+uniform float wake_lifetime = 0.6;
+uniform float wake_radius = 44.0;
+uniform float wake_squash : hint_range(0.1, 1.0) = 0.45;
+uniform float wake_warp_strength = 0.1;
+// wake_color.a sert directement de multiplicateur d'opacité (cf fragment()) —
+// pas seulement sa teinte : le canal alpha du sélecteur de couleur dans
+// l'éditeur contrôle donc réellement la transparence du sillage, en plus de
+// wake_highlight_strength (les deux se multiplient).
+uniform vec4 wake_color : source_color = vec4(1.0, 1.0, 1.0, 1.0);
+uniform float wake_highlight_strength : hint_range(0.0, 1.0) = 0.4;
+
+varying vec2 world_pos;
+
+void vertex() {
+	world_pos = (MODEL_MATRIX * vec4(VERTEX, 0.0, 1.0)).xy;
+}
+
 void fragment() {
 	vec2 uv = UV;
 	if (uv.y >= level) {
@@ -94,13 +127,34 @@ void fragment() {
 			col *= vec3(0.88, 0.94, 0.96);
 		}
 
+		vec2 wake_push = vec2(0.0);
+		float wake_highlight = 0.0;
+		for (int i = 0; i < 16; i++) {
+			float age = wake_time - wake_spawn_times[i];
+			if (age < 0.0 || age > wake_lifetime) {
+				continue;
+			}
+			vec2 diff = world_pos - wake_positions[i];
+			diff.y /= wake_squash;
+			float dist = length(diff);
+			if (dist > wake_radius) {
+				continue;
+			}
+			float falloff = 1.0 - smoothstep(0.0, wake_radius, dist);
+			float life_fade = 1.0 - age / wake_lifetime;
+			float amount = falloff * life_fade;
+			vec2 dir = dist > 0.001 ? diff / dist : vec2(0.0);
+			wake_push += dir * amount;
+			wake_highlight = max(wake_highlight, amount);
+		}
+
 		vec2 drift = TIME * reflect_speed * reflect_direction;
 		vec2 warp_uv = uv * reflect_warp_tiles;
 		vec2 warp = vec2(
 			texture(reflect_warp_noise, warp_uv).x,
 			texture(reflect_warp_noise, warp_uv + vec2(5.2, 1.7)).x
 		) - 0.5;
-		vec2 warped_uv = uv + warp * reflect_warp_strength;
+		vec2 warped_uv = uv + warp * reflect_warp_strength + wake_push * wake_warp_strength;
 
 		float big = texture(reflect_big_noise, warped_uv * reflect_big_tiles + drift).x;
 		float small_n = texture(reflect_small_noise, warped_uv * reflect_small_tiles + drift * 1.6).x;
@@ -114,6 +168,8 @@ void fragment() {
 		if (big_hit || small_hit) {
 			col = reflection_color.rgb;
 		}
+
+		col = mix(col, wake_color.rgb, wake_highlight * wake_highlight_strength * wake_color.a);
 
 		COLOR = vec4(col, 1.0);
 	} else {

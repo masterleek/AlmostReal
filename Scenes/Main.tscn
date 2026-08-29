@@ -123,6 +123,15 @@ shader_parameter/reflect_direction = Vector2(1, 0.3)
 shader_parameter/reflect_warp_noise = SubResource("NoiseTexture2D_reflect_warp")
 shader_parameter/reflect_warp_tiles = 1.4
 shader_parameter/reflect_warp_strength = 0.35
+shader_parameter/wake_positions = PackedVector2Array(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+shader_parameter/wake_spawn_times = PackedFloat32Array(-1000, -1000, -1000, -1000, -1000, -1000, -1000, -1000, -1000, -1000, -1000, -1000, -1000, -1000, -1000, -1000)
+shader_parameter/wake_time = 0.0
+shader_parameter/wake_lifetime = 0.6
+shader_parameter/wake_radius = 44.0
+shader_parameter/wake_squash = 0.45
+shader_parameter/wake_warp_strength = 0.1
+shader_parameter/wake_color = Color(1, 1, 1, 1)
+shader_parameter/wake_highlight_strength = 0.4
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_tile_foam"]
 shader = ExtResource("34_tile_foam_shader")
