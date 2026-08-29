@@ -130,8 +130,8 @@ shader_parameter/wake_lifetime = 0.6
 shader_parameter/wake_radius = 44.0
 shader_parameter/wake_squash = 0.45
 shader_parameter/wake_warp_strength = 0.1
-shader_parameter/wake_color = Color(1, 1, 1, 1)
-shader_parameter/wake_highlight_strength = 0.4
+shader_parameter/wake_color = Color(0.3254902, 0.9764706, 1, 1)
+shader_parameter/wake_highlight_strength = 0.098000004655
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_tile_foam"]
 shader = ExtResource("34_tile_foam_shader")
@@ -435,6 +435,11 @@ offset = Vector2(0, 11)
 [node name="RevealAnchor" type="Node2D" parent="." unique_id=1009112296]
 z_index = -1
 position = Vector2(128, 66)
+
+[node name="RevealShadow" type="Polygon2D" parent="RevealAnchor" unique_id=3568214907]
+visible = false
+color = Color(0, 0, 0, 0.35)
+position = Vector2(0, -11)
 
 [node name="RevealLift" type="Node2D" parent="RevealAnchor" unique_id=1009112297]
 
