@@ -172,11 +172,13 @@ func reveal(cell: Vector2i) -> void:
 	camera.frozen = true
 	camera.shake(reveal_shake_amplitude, reveal_shake_duration)
 	reveal_sfx.play()
-	# hover_glow n'est piloté par aucune piste de l'animation (contrairement à
-	# la bulle/au highlight/à la sélection) : sans ce masquage explicite, il
-	# reste figé, visible, à la position et la forme de la tuile "empty"
-	# pendant toute la séquence. cursor.update_tile_state() le restaure à la fin.
+	# hover_glow et plus_icon ne sont pilotés par aucune piste de l'animation
+	# (contrairement à la bulle/au highlight/à la sélection) : sans ce
+	# masquage explicite, ils restent figés, visibles, à la position et la
+	# forme de la tuile "empty" pendant toute la séquence.
+	# cursor.update_tile_state() les restaure à la fin.
 	hover_visuals.hide_glow_only()
+	hover_visuals.hide_plus_icon()
 
 	pending_reveal_target = main.get_reveal_target(cell)
 	var tile_center: Vector2 = tile_layer.to_global(tile_layer.map_to_local(cell))

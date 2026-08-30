@@ -34,6 +34,7 @@
 [ext_resource type="Shader" uid="uid://bkwcoxnllexj8" path="res://Shaders/tile_reflection_flat.gdshader" id="37_tile_reflection_flat_shader"]
 [ext_resource type="Script" uid="uid://dh2skd2un04la" path="res://Scripts/Worldmap/TileReflectionFlat.gd" id="38_tile_reflection_flat_script"]
 [ext_resource type="PackedScene" path="res://Scenes/LightRay.tscn" id="39_light_ray_scene"]
+[ext_resource type="Texture2D" uid="uid://djvyfpm0f82f7" path="res://UI/ic_plus.png" id="40_plus_icon_tex"]
 
 [sub_resource type="FastNoiseLite" id="FastNoiseLite_mid"]
 frequency = 0.014
@@ -417,6 +418,11 @@ scale = Vector2(0.95, 0.95)
 [node name="Sprite2D" type="Sprite2D" parent="TileHighlight" unique_id=758934971]
 texture = ExtResource("5_highlight_tex")
 offset = Vector2(0, -3)
+
+[node name="PlusIcon" type="Sprite2D" parent="TileHighlight" unique_id=-403939732]
+visible = false
+texture = ExtResource("40_plus_icon_tex")
+offset = Vector2(0, -8)
 
 [node name="HoverGlow" type="Sprite2D" parent="." unique_id=164122880]
 visible = false

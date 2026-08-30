@@ -64,6 +64,7 @@ const TEXTURE_REGION_SIZE := 64
 
 @onready var highlight: Node2D = $"../TileHighlight"
 @onready var highlight_sprite: Sprite2D = $"../TileHighlight/Sprite2D"
+@onready var plus_icon: Sprite2D = $"../TileHighlight/PlusIcon"
 @onready var hover_glow: Sprite2D = $"../HoverGlow"
 @onready var tile_select_highlight: Sprite2D = $"../TileSelectHighlight"
 
@@ -71,6 +72,7 @@ func _ready() -> void:
 	highlight.visible = false
 	hover_glow.visible = false
 	tile_select_highlight.visible = false
+	plus_icon.visible = false
 
 func _process(delta: float) -> void:
 	update_pulses()
@@ -83,6 +85,10 @@ func show_at(cell_pos: Vector2, atlas: Vector2i, is_empty: bool) -> void:
 	highlight.visible = true
 	hover_glow.visible = true
 	tile_select_highlight.visible = true
+	# Signale "case révélable" uniquement sur une tuile "Empty" — sprite fixe,
+	# jamais concernée par le pulse de highlight_sprite (update_pulses) ni par
+	# le wiggle de tile_select_highlight : juste montrée/masquée.
+	plus_icon.visible = is_empty
 	position_highlight(cell_pos, is_empty)
 	hover_glow.global_position = cell_pos + HIGHLIGHT_SORT_NUDGE
 	hover_glow.offset = glow_offset - HIGHLIGHT_SORT_NUDGE
@@ -100,6 +106,7 @@ func hide_all() -> void:
 	highlight.visible = false
 	hover_glow.visible = false
 	tile_select_highlight.visible = false
+	plus_icon.visible = false
 
 ## Masque juste le glow, immédiatement — utilisé par TileRevealController au
 ## tout début d'une révélation, avant que la case ne soit effacée du
@@ -107,6 +114,14 @@ func hide_all() -> void:
 ## contrairement au highlight/à la sélection).
 func hide_glow_only() -> void:
 	hover_glow.visible = false
+
+## Masque juste plus_icon, immédiatement — utilisé par TileRevealController au
+## tout début d'une révélation : plus_icon n'est piloté par aucune piste de
+## l'animation (même raison que hide_glow_only), donc resterait sinon affiché
+## par-dessus toute la séquence de révélation. cursor.update_tile_state() le
+## restaure à la fin (show_at() le remet à jour si la case redevenait "Empty").
+func hide_plus_icon() -> void:
+	plus_icon.visible = false
 
 ## Positionne highlight et tile_select_highlight sur la case dont le centre
 ## monde est `cell_pos` — `is_empty` choisit entre le calage normal et celui
@@ -119,9 +134,14 @@ func position_highlight(cell_pos: Vector2, is_empty: bool) -> void:
 	if is_empty:
 		highlight.global_position = cell_pos + HIGHLIGHT_SORT_NUDGE
 		highlight_sprite.position = empty_tile_highlight_offset - HIGHLIGHT_SORT_NUDGE
+		# Même compensation que highlight_sprite : plus_icon n'est jamais
+		# montré hors "Empty" (cf show_at), mais doit rester calé pile au
+		# centre visuel de highlight_sprite quand il l'est.
+		plus_icon.position = empty_tile_highlight_offset - HIGHLIGHT_SORT_NUDGE
 	else:
 		highlight.global_position = cell_pos + highlight_offset
 		highlight_sprite.position = Vector2.ZERO
+		plus_icon.position = Vector2.ZERO
 	# Reprend exactement la logique de TileHighlight (qui fonctionne sans
 	# clipping) plutôt que le mécanisme de tri "profondeur réelle" du glow,
 	# qui s'est avéré peu fiable pour cet asset. Un tout petit nudge négatif
