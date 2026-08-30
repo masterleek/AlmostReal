@@ -412,10 +412,11 @@ stream = ExtResource("28_error_sfx")
 
 [node name="TileHighlight" type="Node2D" parent="." unique_id=1165930132]
 z_index = -1
-position = Vector2(128, 55)
+scale = Vector2(0.95, 0.95)
 
 [node name="Sprite2D" type="Sprite2D" parent="TileHighlight" unique_id=758934971]
 texture = ExtResource("5_highlight_tex")
+offset = Vector2(0, -3)
 
 [node name="HoverGlow" type="Sprite2D" parent="." unique_id=164122880]
 visible = false
