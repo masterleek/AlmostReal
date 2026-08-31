@@ -28,6 +28,37 @@ Repo git, remote `origin` → github.com/masterleek/AlmostReal, branche `main`.
 - Un asset à fond vert uni (chroma-key) doit être dékeyé (alpha) avant import
   — jamais utilisé tel quel.
 
+## Qualité de code attendue
+
+- Code propre, logique, optimisé côté performance.
+- Découper fichiers et méthodes pour qu'ils soient réutilisables ailleurs dans
+  le projet — éviter autant que possible le code spécifique à un seul cas
+  d'usage.
+
+Deux nuances à garder en tête avant d'appliquer ça trop littéralement, pour ne
+pas partir en guerre contre des choix déjà faits et documentés dans ce repo :
+
+- **Le scaffolding de debug temporaire** (cf. workflow de vérification
+  ci-dessous) est hors sujet : par construction jetable, jamais commité,
+  jamais généralisé — "pas de code spécifique" vise le code livré, pas ces
+  vérifications ponctuelles.
+- **Une fonction délibérément spécifique à un seul cas reste parfois la
+  bonne décision**, quand la version générique existante s'est avérée
+  mesurablement fausse pour ce cas précis — voir
+  `TileGeometry.tile_empty_hitzone()` (silhouette mesurée pixel par pixel
+  pour "Empty" uniquement ; `tile_art_hitzone()` reste la version générique
+  pour tout le reste). Le commentaire du fichier explique pourquoi la
+  généricité a été sacrifiée là : si le même besoin se reproduit, spécialiser
+  consciemment et documenter pourquoi vaut mieux que forcer une solution
+  générique inexacte.
+- **"Optimisé" ne veut pas dire micro-optimiser sans discernement** : cf.
+  `TileGeometry` qui réalloue volontairement un petit tableau à chaque appel
+  plutôt que d'utiliser un `const` (qui, lui, casse la résolution
+  inter-scripts sur cette version de Godot) — un coût jugé négligeable
+  (tableau minuscule, appels rares) a été accepté pour la fiabilité. Une
+  "optimisation" qui complexifie le code pour un gain non mesurable n'est pas
+  souhaitable.
+
 ## Conventions de code (GDScript)
 
 - **`preload()` plutôt que `class_name` global** pour accéder à un autre

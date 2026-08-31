@@ -2,7 +2,7 @@ extends Node2D
 
 ## Charge une map depuis res://maps/<id>.json au runtime (tuiles + props) et
 ## fait le lien entre les données du MapEditor et la scène Godot.
-@export var map_id: String = "Test"
+@export var map_id: String = "Worldmap"
 
 @onready var tile_layer: TileMapLayer = $TileMapLayer
 @onready var props_layer: Node2D = $PropsLayer
