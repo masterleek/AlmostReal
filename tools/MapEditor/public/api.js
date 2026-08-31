@@ -9,13 +9,33 @@ export async function loadMap(id) {
   return res.json();
 }
 
+// Levée par saveMap() quand le serveur refuse la sauvegarde (verrou
+// optimiste, cf. server.js) : la map a changé sur disque depuis le dernier
+// chargement de ce client (autre onglet/session). `message` est déjà prêt à
+// afficher tel quel à l'utilisateur.
+export class MapConflictError extends Error {
+  constructor(message, currentRev) {
+    super(message);
+    this.name = "MapConflictError";
+    this.currentRev = currentRev;
+  }
+}
+
 export async function saveMap(id, map) {
   const res = await fetch(`/api/maps/${id}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(map),
   });
-  return res.json();
+  const body = await res.json();
+  if (res.status === 409) {
+    throw new MapConflictError(body.message, body.currentRev);
+  }
+  // Garde `map._rev` en phase avec le serveur : nécessaire pour que la
+  // PROCHAINE sauvegarde de ce même objet (muté en place par les appelants)
+  // soit acceptée sans devoir recharger entre chaque save.
+  if (body.rev !== undefined) map._rev = body.rev;
+  return body;
 }
 
 export async function deleteMap(id) {

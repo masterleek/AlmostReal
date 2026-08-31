@@ -28,6 +28,18 @@ Repo git, remote `origin` → github.com/masterleek/AlmostReal, branche `main`.
 - Un asset à fond vert uni (chroma-key) doit être dékeyé (alpha) avant import
   — jamais utilisé tel quel.
 
+## MapEditor (`tools/MapEditor`)
+
+- **Verrou optimiste sur les maps** (`server.js` : `POST /api/maps/:id`) :
+  chaque map a un compteur `_rev`, incrémenté à chaque sauvegarde. Un onglet
+  qui essaie de sauvegarder avec une `_rev` périmée (quelqu'un d'autre a
+  sauvegardé depuis son dernier chargement) se fait refuser (409) plutôt que
+  d'écraser silencieusement — cf. l'incident `Test.json`/`Worldmap.json` (un
+  onglet resté ouvert sur l'ancien état a régénéré le fichier par-dessus du
+  travail fait ailleurs). Si `server.js`, `api.js`, `app.js` ou `maps.js` sont
+  retouchés côté sauvegarde de map, préserver ce mécanisme (ne pas
+  réintroduire un `fs.writeFile` sans vérifier `_rev` d'abord).
+
 ## Qualité de code attendue
 
 - Code propre, logique, optimisé côté performance.

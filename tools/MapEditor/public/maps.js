@@ -1,4 +1,4 @@
-import { listMaps, deleteMap, loadMap, saveMap } from "./api.js";
+import { listMaps, deleteMap, loadMap, saveMap, MapConflictError } from "./api.js";
 
 // Liste de toutes les maps dans la popup "Maps" : clic = ouvrir, double-clic =
 // renommer, bouton = supprimer.
@@ -80,7 +80,16 @@ function startRename(nameEl, map, onRename) {
     if (commit && newName && newName !== map.name) {
       const full = await loadMap(map.id);
       full.name = newName;
-      await saveMap(map.id, full);
+      try {
+        await saveMap(map.id, full);
+      } catch (err) {
+        if (err instanceof MapConflictError) {
+          alert(err.message);
+          nameEl.textContent = map.name || map.id;
+          return;
+        }
+        throw err;
+      }
       map.name = newName;
       onRename?.(map.id, newName);
     } else {

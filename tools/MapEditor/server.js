@@ -42,22 +42,54 @@ app.get("/api/maps/:id", async (req, res) => {
   const filePath = path.join(MAPS_DIR, `${id}.json`);
   try {
     const raw = await fs.readFile(filePath, "utf-8");
-    res.json(JSON.parse(raw));
+    const data = JSON.parse(raw);
+    // _rev absent = fichier créé avant l'ajout du verrou optimiste ci-dessous
+    // (cf. POST) : traité comme révision 0, compatible sans migration.
+    if (data._rev === undefined) data._rev = 0;
+    res.json(data);
   } catch {
     res.status(404).json({ error: "map not found" });
   }
 });
 
+// Verrou optimiste : plusieurs onglets/sessions du MapEditor peuvent ouvrir
+// la même map en même temps (pas de vrai backend, tout est fichier-based) —
+// sans ça, un onglet resté ouvert sur un vieil état peut sauvegarder par-
+// dessus le travail fait entre-temps ailleurs, en silence (c'est ce qui est
+// arrivé à Worldmap.json/Test.json). `_rev` est un compteur écrit dans le
+// JSON à chaque sauvegarde ; le client doit renvoyer la révision qu'il a
+// chargée (cf. GET ci-dessus) — si elle ne correspond plus à celle sur
+// disque, quelqu'un d'autre a sauvegardé depuis : on refuse (409) plutôt que
+// d'écraser, le client doit recharger avant de réessayer.
 app.post("/api/maps/:id", async (req, res) => {
   const { id } = req.params;
   if (!isValidId(id)) return res.status(400).json({ error: "invalid id" });
   const map = req.body;
+  const filePath = path.join(MAPS_DIR, `${id}.json`);
+
+  let currentRev = 0;
+  try {
+    const existing = JSON.parse(await fs.readFile(filePath, "utf-8"));
+    currentRev = existing._rev || 0;
+  } catch {
+    // Le fichier n'existe pas encore (nouvelle map) : rien à comparer.
+  }
+  const clientRev = map._rev || 0;
+  if (clientRev !== currentRev) {
+    return res.status(409).json({
+      error: "conflict",
+      message:
+        `Cette map a été modifiée ailleurs depuis ton dernier chargement ` +
+        `(révision ${currentRev} sur disque, tu as la révision ${clientRev}). ` +
+        `Recharge-la avant de sauvegarder pour ne pas écraser ces changements.`,
+      currentRev,
+    });
+  }
+
   map.id = id;
-  await fs.writeFile(
-    path.join(MAPS_DIR, `${id}.json`),
-    JSON.stringify(map, null, 2)
-  );
-  res.json({ ok: true });
+  map._rev = currentRev + 1;
+  await fs.writeFile(filePath, JSON.stringify(map, null, 2));
+  res.json({ ok: true, rev: map._rev });
 });
 
 app.delete("/api/maps/:id", async (req, res) => {

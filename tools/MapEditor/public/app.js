@@ -1,4 +1,4 @@
-import { loadMap, saveMap, getProps, playGame } from "./api.js";
+import { loadMap, saveMap, getProps, playGame, MapConflictError } from "./api.js";
 import { renderMapBrowser } from "./maps.js";
 import { buildPalette, loadImage } from "./palette.js";
 import { openTileManager } from "./tiles.js";
@@ -187,7 +187,15 @@ modalNewMapBtn.onclick = async () => {
   const id = prompt("Identifiant de la map (lettres/chiffres/tirets) :");
   if (!id || !/^[a-zA-Z0-9_-]+$/.test(id)) return;
   const map = { id, name: id, width: 480, height: 270, cells: {}, props: [] };
-  await saveMap(id, map);
+  try {
+    await saveMap(id, map);
+  } catch (err) {
+    if (err instanceof MapConflictError) {
+      alert(`Une map "${id}" existe déjà. Choisis un autre identifiant.`);
+      return;
+    }
+    throw err;
+  }
   openMaps.set(id, map);
   undoStacks.set(id, []);
   tabOrder.push(id);
@@ -471,7 +479,18 @@ async function saveActiveMap() {
   map.width = parseInt(widthInput.value, 10) || map.width;
   map.height = parseInt(heightInput.value, 10) || map.height;
   resyncPropsRevealCell(map);
-  await saveMap(map.id, map);
+  try {
+    await saveMap(map.id, map);
+  } catch (err) {
+    if (err instanceof MapConflictError) {
+      // Ne PAS écraser : on prévient et on laisse l'utilisateur décider
+      // (recharger cet onglet perd ses modifs locales non sauvegardées,
+      // donc pas de rechargement automatique).
+      alert(err.message);
+      return null;
+    }
+    throw err;
+  }
   mapCanvas.setMap(map);
   renderTabStrip();
   return map;
