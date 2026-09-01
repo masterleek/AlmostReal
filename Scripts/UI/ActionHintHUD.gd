@@ -6,13 +6,19 @@ extends HBoxContainer
 ## que le compteur de hex (cf HexCounterHUD). Masqué en entier quand le
 ## curseur survole la case du Héros — aucune action de ce type n'a de sens
 ## sur sa propre case.
+##
+## Les deux textes viennent de Localization.gd (catalogue édité depuis la
+## page "Textes" de MapEditor) plutôt que d'être codés en dur ici — cf
+## Localization/texts.json, ids "action_hint.reveal"/"action_hint.go_to".
+## ActionLabel est un RichTextLabel (pas un Label) : les traductions peuvent
+## contenir du BBCode ([b], [color=...]) posé depuis l'éditeur web.
 
 const TerrainTypes = preload("res://Scripts/Worldmap/TerrainTypes.gd")
 const WorldmapCursor = preload("res://Scripts/Worldmap/WorldmapCursor.gd")
 
 @onready var cursor: Node2D = $"../../WorldmapCursor"
 @onready var hero: Node2D = $"../../Hero"
-@onready var action_label: Label = $ActionLabel
+@onready var action_label: RichTextLabel = $ActionLabel
 
 # Couleur du texte quand la case visée par "Go to" est inatteignable en
 # pathfinding depuis le Héros (cf Hero.find_path) — le blanc normal
@@ -40,13 +46,13 @@ func _process(_delta: float) -> void:
 		return
 
 	if TerrainTypes.is_empty(cursor.current_terrain_type):
-		action_label.text = "Reveal"
-		action_label.add_theme_color_override("font_color", NORMAL_COLOR)
+		action_label.text = Localization.get_text("action_hint.reveal")
+		action_label.add_theme_color_override("default_color", NORMAL_COLOR)
 		return
 
-	action_label.text = "Go to"
+	action_label.text = Localization.get_text("action_hint.go_to")
 	if hero.current_cell != _cached_hero_cell or cursor.current_cell != _cached_target_cell:
 		_cached_hero_cell = hero.current_cell
 		_cached_target_cell = cursor.current_cell
 		_cached_reachable = not hero.find_path(hero.current_cell, cursor.current_cell).is_empty()
-	action_label.add_theme_color_override("font_color", NORMAL_COLOR if _cached_reachable else UNREACHABLE_COLOR)
+	action_label.add_theme_color_override("default_color", NORMAL_COLOR if _cached_reachable else UNREACHABLE_COLOR)

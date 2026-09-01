@@ -1,0 +1,69 @@
+{
+  "languages": [
+    {
+      "code": "en",
+      "label": "English"
+    },
+    {
+      "code": "fr",
+      "label": "French"
+    }
+  ],
+  "default_language": "en",
+  "texts": [
+    {
+      "id": "action_hint.reveal",
+      "category": "ui",
+      "translations": {
+        "en": "Revelio",
+        "fr": "Révéler"
+      },
+      "style": {
+        "font_size": 64
+      },
+      "usage": {
+        "script": "res://Scripts/UI/ActionHintHUD.gd",
+        "scene": "res://Scenes/Main.tscn",
+        "node_path": "HUD/ActionHint/ActionLabel",
+        "preview_image": "action_hint.png",
+        "node_rect": [
+          1772,
+          1016,
+          140,
+          56
+        ],
+        "viewport_size": [
+          1920,
+          1080
+        ]
+      }
+    },
+    {
+      "id": "action_hint.go_to",
+      "category": "ui",
+      "translations": {
+        "en": "Go to",
+        "fr": "Aller à"
+      },
+      "style": {
+        "font_size": 64
+      },
+      "usage": {
+        "script": "res://Scripts/UI/ActionHintHUD.gd",
+        "scene": "res://Scenes/Main.tscn",
+        "node_path": "HUD/ActionHint/ActionLabel",
+        "preview_image": "action_hint.png",
+        "node_rect": [
+          1772,
+          1016,
+          140,
+          56
+        ],
+        "viewport_size": [
+          1920,
+          1080
+        ]
+      }
+    }
+  ]
+}

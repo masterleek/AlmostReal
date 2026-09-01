@@ -4,6 +4,7 @@ import { buildPalette, loadImage } from "./palette.js";
 import { openTileManager } from "./tiles.js";
 import { openPropManager } from "./props.js";
 import { openSystemsManager } from "./systems.js";
+import { openTextsManager } from "./texts.js";
 import { MapCanvas, currentFrameIndex, isPointInTileHitzone } from "./canvas.js";
 import { pixelToCell, cellToPixel, TILE_W, TILE_H } from "./hexgrid.js";
 
@@ -16,6 +17,7 @@ const statusEl = document.getElementById("status");
 
 const menuMapsBtn = document.getElementById("menu-maps");
 const menuSystemsBtn = document.getElementById("menu-systems");
+const menuTextsBtn = document.getElementById("menu-texts");
 const modalOverlay = document.getElementById("modal-overlay");
 const modalClose = document.getElementById("modal-close");
 const modalMapList = document.getElementById("modal-map-list");
@@ -178,6 +180,7 @@ async function refreshModalList() {
 
 menuMapsBtn.onclick = openModal;
 menuSystemsBtn.onclick = openSystemsManager;
+menuTextsBtn.onclick = () => openTextsManager({});
 modalClose.onclick = closeModal;
 modalOverlay.onclick = (evt) => {
   if (evt.target === modalOverlay) closeModal();

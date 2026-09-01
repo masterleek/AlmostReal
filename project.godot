@@ -17,6 +17,7 @@ config/features=PackedStringArray("4.6", "Forward Plus")
 [autoload]
 
 PlayerCurrency="*res://Scripts/PlayerCurrency.gd"
+Localization="*res://Scripts/Localization.gd"
 
 [display]
 

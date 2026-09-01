@@ -728,3 +728,223 @@ button:hover { border-color: var(--accent); }
   border-radius: 4px;
   max-width: 100%;
 }
+
+/* Catalogue de textes / localisation */
+@font-face {
+  font-family: "GamePixelFont";
+  src: url("/fonts/BoldPixels1.4.ttf") format("truetype");
+  font-display: swap;
+}
+
+#texts-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  /* Décalé à gauche (pas centré) : laisse la place, à droite, au panneau
+     "Aperçu" (non-bloquant, ancré top-right, cf #text-preview-overlay) sans
+     que les deux ne se recouvrent — le bouton "Aperçu"/supprimer d'une ligne
+     de texte doit rester cliquable même preview ouverte. */
+  justify-content: flex-start;
+  padding-left: 40px;
+  z-index: 100;
+}
+
+#texts-modal-overlay.hidden { display: none; }
+
+#texts-modal { width: 720px; max-width: calc(100vw - 460px); }
+
+#texts-category-tabs {
+  display: flex;
+  gap: 6px;
+}
+
+.texts-tab {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 4px;
+  padding: 6px 12px;
+  font-size: 12px;
+}
+
+.texts-tab.selected {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+#texts-list {
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 40px;
+}
+
+#texts-add-btn { width: 100%; }
+
+.text-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  border-radius: 4px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+}
+
+.text-row-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.text-id {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: monospace;
+}
+
+.text-fontsize-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: #9aa0ab;
+  flex-shrink: 0;
+}
+
+.text-fontsize-label input {
+  width: 56px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 4px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.text-preview-btn { flex-shrink: 0; }
+
+.text-shared-warning {
+  font-size: 11px;
+  color: #e0b84a;
+}
+
+.text-languages {
+  display: flex;
+  gap: 10px;
+}
+
+.text-lang-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.text-lang-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #9aa0ab;
+}
+
+.bbcode-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.bbcode-btn {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.bbcode-color {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: none;
+}
+
+.text-lang-textarea {
+  width: 100%;
+  min-height: 56px;
+  resize: vertical;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-size: 12px;
+  font-family: monospace;
+}
+
+/* Modal "Aperçu" d'un texte UI — PAS un overlay bloquant plein écran : reste
+   ouvert à côté du catalogue de textes pendant l'édition, pour un vrai
+   aperçu "en live" en tapant (sinon la sélection de texte/le clic sur les
+   boutons gras/couleur, cachés dessous, seraient impossibles). */
+#text-preview-overlay {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 120;
+  pointer-events: none;
+}
+
+#text-preview-overlay.hidden { display: none; }
+
+#text-preview-modal {
+  width: min(30vw, 380px);
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+  gap: 12px;
+  pointer-events: auto;
+}
+
+#text-preview-modal header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+#text-preview-modal h2 { font-size: 15px; margin: 0; }
+
+#text-preview-frame {
+  position: relative;
+  width: 100%;
+  line-height: 0;
+}
+
+#text-preview-image {
+  display: block;
+  width: 100%;
+  border-radius: 4px;
+}
+
+#text-preview-text {
+  position: absolute;
+  font-family: "GamePixelFont", monospace;
+  color: #fff;
+  text-shadow: 0 0 4px rgba(0, 0, 0, 0.6);
+  white-space: nowrap;
+  line-height: 1;
+  pointer-events: none;
+}

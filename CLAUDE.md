@@ -85,6 +85,32 @@ pas partir en guerre contre des choix déjà faits et documentés dans ce repo :
   "quoi". Le code existant explique systématiquement le raisonnement (pourquoi
   ce mécanisme plutôt qu'un autre), pas seulement l'action. Suivre ce style
   pour tout nouveau code.
+- **Jamais de commentaire `#` en dehors d'un script GDScript** — un `.tscn`
+  n'accepte PAS de ligne `#` libre dans sa section ressources (avant les
+  `[node]`) : ça corrompt silencieusement la table de résolution des
+  `SubResource`/`ExtResource` du parseur (erreur obscure
+  `int_resources.has(id)` à l'ouverture, sans lien évident avec la vraie
+  cause). Toute la documentation "pourquoi" reste dans les `.gd`, jamais
+  directement dans un `.tscn`.
+- **`RichTextLabel` avec `bbcode_enabled` a des pièges de layout propres à
+  ce nœud**, rencontrés en migrant `ActionLabel` (`Label` → `RichTextLabel`
+  pour `Scripts/Localization.gd`) : `autowrap_mode` n'est pas désactivé par
+  défaut comme sur `Label` — dans un `HBoxContainer`, ça peut écraser sa
+  largeur à ~1px tant qu'il n'est pas explicitement mis à `0` (`AUTOWRAP_OFF`).
+  Et `[b]` (BBCode) utilise l'item de thème `bold_font_size`, PAS
+  `normal_font_size` — sans l'assigner aussi, le texte en gras retombe sur une
+  taille de police par défaut du moteur (bien plus petite), pas juste "sans
+  effet gras". Toujours régler explicitement `autowrap_mode = 0`,
+  `bold_font_size` (= `normal_font_size`) et un `bold_font` réel
+  (`FontVariation` avec `variation_embolden`, cf `Main.tscn`) plutôt que de
+  compter sur des valeurs par défaut cohérentes avec `Label`. Autre piège du
+  même genre : `clip_contents` vaut `true` par défaut sur `RichTextLabel`
+  (`false` sur `Label`) — avec `fit_content = true`, la boîte est ajustée
+  pile aux métriques nominales des glyphes, et l'outline/l'ombre (qui
+  déborde de cette boîte, ex. `outline_size = 16`) se fait rogner sur les
+  bords, surtout visible à gauche du premier caractère. Toujours mettre
+  `clip_contents = false` explicitement sur un `RichTextLabel` qui a un
+  outline/une ombre de thème.
 - **Tri Y vs `z_index`** : `z_index` prime toujours sur le tri Y — deux nœuds
   dans des buckets `z_index` différents ne s'interclassent jamais. Pour qu'un
   overlay (ombre, highlight...) se laisse recouvrir par une tuile voisine tout
@@ -109,7 +135,10 @@ pas partir en guerre contre des choix déjà faits et documentés dans ce repo :
    scratchpad de la session.
 3. **Toujours retirer le scaffolding de debug et supprimer les PNG temporaires
    avant de terminer le tour** — `git diff --stat Scripts/map_loader.gd` doit
-   revenir vide.
+   revenir vide. Exception explicite : un PNG généré délibérément comme asset
+   livré (ex. `Localization/previews/*.png`, consommé par la page "Textes"
+   de MapEditor) se conserve — cette règle vise les captures de vérification
+   ponctuelles, pas un asset généré intentionnellement.
 4. L'environnement de debug peut tourner à une cadence irrégulière (plus
    vite/lentement que 60 fps réel) : éviter de compter sur un nombre de
    frames fixe pour viser un instant précis d'animation. Préférer

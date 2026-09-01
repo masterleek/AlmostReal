@@ -14,11 +14,17 @@ const PROPS_META_PATH = path.join(SPRITES_DIR, "props_meta.json");
 const SCRIPTS_DIR = path.join(PROJECT_ROOT, "Scripts");
 const SCENES_DIR = path.join(PROJECT_ROOT, "Scenes");
 const PROJECT_GODOT_PATH = path.join(PROJECT_ROOT, "project.godot");
+const LOCALIZATION_DIR = path.join(PROJECT_ROOT, "Localization");
+const TEXTS_PATH = path.join(LOCALIZATION_DIR, "texts.json");
+const PREVIEWS_DIR = path.join(LOCALIZATION_DIR, "previews");
+const FONTS_DIR = path.join(PROJECT_ROOT, "Fonts");
 
 const app = express();
 app.use(express.json({ limit: "5mb" }));
 app.use(express.static(path.join(__dirname, "public")));
 app.use("/sprites", express.static(SPRITES_DIR));
+app.use("/localization-previews", express.static(PREVIEWS_DIR));
+app.use("/fonts", express.static(FONTS_DIR));
 
 function isValidId(id) {
   return /^[a-zA-Z0-9_-]+$/.test(id);
@@ -99,26 +105,45 @@ app.delete("/api/maps/:id", async (req, res) => {
   res.json({ ok: true });
 });
 
-function metaRoutes(urlPath, filePath) {
+// `defaultValue` généralise ce qui était autrefois toujours un tableau ([])
+// : un tableau vide pour tiles/props (comportement inchangé), un objet vide
+// de catalogue pour /api/texts (cf plus bas) — la forme attendue du PUT
+// s'aligne sur celle de `defaultValue` (Array.isArray ou objet avec `texts`).
+function metaRoutes(urlPath, filePath, defaultValue = []) {
   app.get(urlPath, async (req, res) => {
     try {
       const raw = await fs.readFile(filePath, "utf-8");
       res.json(JSON.parse(raw));
     } catch {
-      res.json([]);
+      res.json(defaultValue);
     }
   });
 
   app.put(urlPath, async (req, res) => {
-    const list = req.body;
-    if (!Array.isArray(list)) return res.status(400).json({ error: "expected an array" });
-    await fs.writeFile(filePath, JSON.stringify(list, null, 2));
+    const body = req.body;
+    const valid = Array.isArray(defaultValue)
+      ? Array.isArray(body)
+      : body && typeof body === "object" && Array.isArray(body.texts);
+    if (!valid) return res.status(400).json({ error: "invalid payload" });
+    await fs.writeFile(filePath, JSON.stringify(body, null, 2));
     res.json({ ok: true });
   });
 }
 
 metaRoutes("/api/tiles", TILE_META_PATH);
 metaRoutes("/api/props", PROPS_META_PATH);
+// Pas de verrou optimiste (_rev) ici contrairement aux maps : catalogue
+// mono-utilisateur pour l'instant (cf CLAUDE.md) — même logique que
+// tiles/props, rétrofitable avec le mécanisme des maps si l'édition
+// concurrente devient un vrai problème.
+metaRoutes("/api/texts", TEXTS_PATH, {
+  languages: [
+    { code: "en", label: "English" },
+    { code: "fr", label: "French" },
+  ],
+  default_language: "en",
+  texts: [],
+});
 
 // ---------- Systèmes : catalogue auto-détecté à partir de Scripts/ ----------
 // Rien n'est déclaré à la main : le simple fait d'ajouter un .gd sous

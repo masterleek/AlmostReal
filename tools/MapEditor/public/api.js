@@ -76,6 +76,20 @@ export async function getSystems() {
   return res.json();
 }
 
+export async function getTexts() {
+  const res = await fetch("/api/texts");
+  return res.json();
+}
+
+export async function saveTexts(catalog) {
+  const res = await fetch("/api/texts", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(catalog),
+  });
+  return res.json();
+}
+
 export async function playGame(mapId) {
   const res = await fetch("/api/play", {
     method: "POST",

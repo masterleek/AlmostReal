@@ -11,7 +11,7 @@
     <nav id="menubar">
       <button id="menu-maps" class="menu-item">Maps</button>
       <button id="menu-systems" class="menu-item">Systèmes</button>
-      <button id="menu-autres" class="menu-item" disabled>Autres</button>
+      <button id="menu-texts" class="menu-item">Textes</button>
     </nav>
     <div id="status"></div>
   </header>
@@ -168,6 +168,40 @@
         apparaître ici.
       </p>
       <div id="systems-list"></div>
+    </div>
+  </div>
+
+  <div id="texts-modal-overlay" class="hidden">
+    <div id="texts-modal" class="crud-modal">
+      <header>
+        <h2>Textes</h2>
+        <button id="texts-modal-close" class="icon-btn" title="Fermer">✕</button>
+      </header>
+      <nav id="texts-category-tabs">
+        <button class="texts-tab selected" data-category="ui">UI</button>
+        <button class="texts-tab" data-category="dialogue">Dialogues</button>
+      </nav>
+      <p id="texts-empty-hint" class="hint hidden"></p>
+      <div id="texts-list"></div>
+      <button id="texts-add-btn">+ Ajouter un texte</button>
+    </div>
+  </div>
+
+  <div id="text-preview-overlay" class="hidden">
+    <div id="text-preview-modal">
+      <header>
+        <h2>Aperçu</h2>
+        <button id="text-preview-close" class="icon-btn" title="Fermer">✕</button>
+      </header>
+      <p class="hint">
+        Capture réelle du jeu en fond ; le texte affiché par-dessus est une
+        approximation web (police/taille/couleur/gras réels, mais pas un
+        rendu pixel-identique à Godot).
+      </p>
+      <div id="text-preview-frame">
+        <img id="text-preview-image" alt="Capture du jeu" />
+        <div id="text-preview-text"></div>
+      </div>
     </div>
   </div>
 
