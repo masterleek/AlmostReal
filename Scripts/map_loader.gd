@@ -61,6 +61,33 @@ func _ready() -> void:
 	# après lui, une fois son rect réellement dimensionné sur la carte.
 	call_deferred("_setup_camera_limits")
 
+	if "--battle" in OS.get_cmdline_user_args():
+		_open_battle_deferred(5)
+
+# Deux entrées provisoires vers l'écran de combat, tant que le déclenchement
+# d'un combat en jeu n'est pas conçu (rencontre aléatoire ? ennemi posé sur une
+# case depuis MapEditor ? — cf. docs/plan_systeme_combat.md §7) :
+#   - l'action `battle_start` (touche Z), pour tester à la main ;
+#   - `godot --path <projet> -- --battle`, même mécanique que `--map=`, pour
+#     ouvrir l'écran directement au lancement.
+func _unhandled_input(event: InputEvent) -> void:
+	if event.is_action_pressed("battle_start"):
+		get_viewport().set_input_as_handled()
+		_open_battle_deferred(0)
+
+# `extra_frames` laisse le temps à la carte d'être réellement rendue avant la
+# capture du fond quand le combat s'ouvre dès le démarrage (tuiles, props et
+# caméra se mettent en place via des call_deferred en cascade, cf.
+# _setup_camera_limits). Inutile quand le joueur déclenche le combat lui-même,
+# la scène tourne alors depuis longtemps.
+func _open_battle_deferred(extra_frames: int) -> void:
+	# BattleLauncher met le worldmap en PROCESS_MODE_DISABLED : ce nœud cesse
+	# donc de recevoir des entrées, et un second appui ne peut pas empiler un
+	# deuxième combat.
+	for i in extra_frames:
+		await get_tree().process_frame
+	await preload("res://Scripts/Battle/BattleLauncher.gd").open(self)
+
 # Empêche la caméra de dépasser l'étendue réelle du fond d'eau (même rect
 # que WaterReflection, pas une valeur recalculée séparément) : sans ça, la
 # caméra peut montrer le fond gris par défaut du viewport dès qu'elle sort

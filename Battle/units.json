@@ -1,0 +1,66 @@
+{
+  "_comment": "Catalogue des unités de combat. Lu au runtime par Scripts/Battle/BattleData.gd, sur le modèle de Sprites/tile_meta.json : la donnée vit en JSON pour être éditable depuis MapEditor plus tard, sans recompiler ni toucher aux scènes. Aucun libellé ici — les noms passent par Localization (id 'unit.<id>.name').",
+  "units": {
+    "noah": {
+      "portrait": "res://UI/Battle/battle_face_noah.png",
+      "stats": {
+        "hp_max": 62,
+        "ap_max": 3,
+        "force": 12,
+        "defense": 9,
+        "agility": 11,
+        "luck": 7
+      },
+      "animations": {
+        "idle": {
+          "sheet": "res://Sprites/Battle/noah_idle.png",
+          "columns": 3,
+          "rows": 2,
+          "frames": 4,
+          "fps": 6
+        }
+      }
+    },
+    "iris": {
+      "portrait": "res://UI/Battle/battle_face_iris.png",
+      "stats": {
+        "hp_max": 82,
+        "ap_max": 2,
+        "force": 10,
+        "defense": 8,
+        "agility": 13,
+        "luck": 9
+      },
+      "animations": {
+        "idle": {
+          "sheet": "res://Sprites/Battle/iris_idle.png",
+          "columns": 3,
+          "rows": 2,
+          "frames": 4,
+          "fps": 6
+        }
+      }
+    },
+    "cactoon": {
+      "portrait": "",
+      "stats": {
+        "hp_max": 30,
+        "ap_max": 0,
+        "force": 7,
+        "defense": 5,
+        "agility": 8,
+        "luck": 4
+      },
+      "animations": {
+        "idle": {
+          "sheet": "res://Sprites/Battle/cactoon_idle.png",
+          "columns": 5,
+          "rows": 1,
+          "frames": 1,
+          "fps": 6,
+          "_comment": "frames: 1 — les 5 frames de la planche sont une course (avec un flash blanc au milieu), pas un repos. On fige donc l'ennemi sur la premiere."
+        }
+      }
+    }
+  }
+}

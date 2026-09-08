@@ -15,7 +15,7 @@
       "id": "action_hint.reveal",
       "category": "ui",
       "translations": {
-        "en": "Revelio",
+        "en": "Reveal",
         "fr": "Révéler"
       },
       "style": {
@@ -63,6 +63,72 @@
           1920,
           1080
         ]
+      }
+    },
+    {
+      "id": "battle.menu.attack",
+      "category": "ui",
+      "translations": {
+        "en": "Attack",
+        "fr": "Attaquer"
+      },
+      "style": {
+        "font_size": 16
+      }
+    },
+    {
+      "id": "battle.menu.eko",
+      "category": "ui",
+      "translations": {
+        "en": "Eko",
+        "fr": "Eko"
+      },
+      "style": {
+        "font_size": 16
+      }
+    },
+    {
+      "id": "battle.menu.items",
+      "category": "ui",
+      "translations": {
+        "en": "Items",
+        "fr": "Objets"
+      },
+      "style": {
+        "font_size": 16
+      }
+    },
+    {
+      "id": "battle.menu.guard",
+      "category": "ui",
+      "translations": {
+        "en": "Guard",
+        "fr": "Garde"
+      },
+      "style": {
+        "font_size": 16
+      }
+    },
+    {
+      "id": "battle.prompt.cancel",
+      "category": "ui",
+      "translations": {
+        "en": "Cancel",
+        "fr": "Annuler"
+      },
+      "style": {
+        "font_size": 16
+      }
+    },
+    {
+      "id": "battle.prompt.confirm",
+      "category": "ui",
+      "translations": {
+        "en": "Confirm",
+        "fr": "Valider"
+      },
+      "style": {
+        "font_size": 16
       }
     }
   ]

@@ -111,6 +111,16 @@ pas partir en guerre contre des choix déjà faits et documentés dans ce repo :
   bords, surtout visible à gauche du premier caractère. Toujours mettre
   `clip_contents = false` explicitement sur un `RichTextLabel` qui a un
   outline/une ombre de thème.
+- **Les avertissements d'inférence sont traités comme des ERREURS** dans ce
+  projet : `var x := <expression Variant>` refuse de compiler. Deux cas
+  rencontrés qui ne sautent pas aux yeux : `round()` (et les autres fonctions
+  globales surchargées float/Vector) renvoie un `Variant`, et un appel de
+  méthode statique via un `const Truc = preload(...)` aussi. Annoter
+  explicitement (`var w: float = round(...)`) plutôt que de retirer le `:=`.
+- **`PackedStringArray([...])` n'est pas une expression constante** : un
+  `const X := PackedStringArray([...])` ne compile pas. Écrire
+  `const X: PackedStringArray = ["a", "b"]` (littéral de tableau + type
+  déclaré). Même famille de pièges que les `const` de tableaux, cf. plus haut.
 - **Tri Y vs `z_index`** : `z_index` prime toujours sur le tri Y — deux nœuds
   dans des buckets `z_index` différents ne s'interclassent jamais. Pour qu'un
   overlay (ombre, highlight...) se laisse recouvrir par une tuile voisine tout
@@ -123,6 +133,179 @@ pas partir en guerre contre des choix déjà faits et documentés dans ce repo :
   `canvas_item` en espace MONDE (voir `HeroShadow.gd` +
   `hero_shadow_ellipse.gdshader`, ou `reveal_shadow_mask.gdshader`) plutôt que
   de compter sur la forme du `Polygon2D`/son `scale` seul.
+
+## Écran de combat (`Scenes/Battle.tscn`, `Scripts/Battle/`)
+
+- **Deux échelles cohabitent dans le projet.** Le worldmap est dessiné à
+  l'échelle du viewport (1920×1080) ; les assets de combat, eux, sont dessinés
+  pour un écran de **480×270** (= 1920/4). La scène de combat vit donc sous un
+  nœud `Stage` à `scale = 4`, et **toutes ses coordonnées sont en unités de
+  design 480×270**. Elles doivent rester ENTIÈRES : une position à virgule
+  devient un demi-pixel flou une fois multipliée par 4 (d'où le
+  `centered = false` + `offset` explicite de `UnitSprite`, plutôt que le
+  centrage automatique qui casse sur une cellule de largeur impaire).
+- Corollaire pour le texte : les `font_size` du combat sont eux aussi en
+  unités de design (12 pour les libellés HP/AP, 15 pour les menus, 18 pour le
+  compteur de PV). `BoldPixels1.4.ttf` a une hauteur de capitale qui vaut
+  exactement **la moitié du corps** — c'est ce qui permet de déduire une
+  taille depuis une mesure sur maquette.
+- **Zoom de l'écran de combat** (`Scripts/UI/CanvasZoom.gd`, générique pour
+  n'importe quel CanvasLayer) : mêmes gestes que la caméra du worldmap
+  (molette, pincement, `0` pour revenir à la taille réelle). Une Camera2D
+  n'agit pas sur un CanvasLayer — c'est justement sa raison d'être — donc le
+  zoom passe par la transformation du calque : `offset = centre · (1 − zoom)`
+  garde le centre de l'écran immobile. Deux écarts délibérés avec le
+  worldmap : pas de dézoom sous la taille réelle (l'écran occupe exactement le
+  cadre, réduire montrerait le vide), et les niveaux sont quantifiés au quart
+  — un pixel de design occupe 4·zoom pixels d'écran, et ce produit doit rester
+  entier pour que les blocs restent réguliers.
+- **Quantifier une valeur accumulée : garder la valeur continue à part.** Le
+  zoom stocke le niveau demandé (continu) ET le niveau appliqué (arrondi au
+  quart) ; réinjecter l'arrondi dans le calcul suivant détruit les petits
+  incréments. Symptôme rencontré : le pincement au trackpad ne faisait
+  strictement rien, chacun de ses événements valant ~×1,02 et retombant sur le
+  même palier — alors que la molette, qui avance par pas de 0,25, marchait.
+- **`godot --path . -- --battle`** ouvre le combat par-dessus le worldmap, avec
+  une vraie capture de fond. Même mécanique que `--map=` (`map_loader.gd`).
+  C'est l'entrée de travail tant que le déclenchement d'un combat en jeu n'est
+  pas conçu.
+- `BattleLauncher` masque le HUD **avant** de capturer le fond, puis le décor
+  **après** : masquer tout avant la capture ne donne qu'une image vide.
+- **Le texte de combat est suréchantillonné, pas agrandi** (`BattleText.SUPERSAMPLE`) :
+  les glyphes sont rasterisés ×4 puis le nœud est contre-échelonné d'autant.
+  L'échelle cumulée vaut 1, donc la police sort nette à la résolution de
+  l'écran, alors que le décor reste volontairement en blocs de 4×4. Sans ça,
+  le texte hérite de l'agrandissement du Stage et sort en escaliers. Les
+  coordonnées restent en unités de design : le décalage boîte → glyphe est une
+  métrique de police, il suit la taille proportionnellement.
+- **`get_viewport().get_texture()` rend la taille du FRAMEBUFFER, pas celle du
+  canvas.** Avec `stretch/mode = canvas_items`, le canvas fait toujours
+  1920×1080 mais la fenêtre peut faire autre chose (1676×942 dans la vue
+  intégrée de l'éditeur). Une capture posée à l'échelle 1 ne couvre alors
+  qu'un coin de l'écran. Toujours la remettre à l'échelle
+  (`Vector2(canvas) / texture.get_size()`).
+- **Une fenêtre de taille non multiple de 480×270 casse le pixel-art** : à
+  1676 px de large le facteur vaut 3,49, donc les blocs alternent 3 et 4 px et
+  tout paraît sale. Mesuré : à 1920×1080 les blocs font tous exactement 4 px et
+  les pixels opaques d'un sprite sortent à la couleur source exacte. Pour juger
+  du rendu, lancer en 1920×1080 (ou 960×540), pas dans la vue intégrée
+  redimensionnée.
+- **Les groupes d'interface du combat sont INCLINÉS** (menu −3°, HUD −4,2°,
+  légende −5,5°), et les positions relevées sur la maquette contiennent déjà
+  cette inclinaison. Les constantes du code sont donc les positions « à plat »,
+  obtenues par rotation inverse — sinon l'inclinaison s'applique deux fois.
+  `BattleScene._tilted_group()` fait pivoter un groupe autour d'un point tout
+  en laissant écrire ses enfants en coordonnées absolues. Contrôle de
+  cohérence : à plat, les deux blocs du HUD tombent sur la même ligne (y = 21)
+  et les deux pastilles de touche de la légende aussi (y = 230).
+- **Tous les assets ne sont pas du pixel-art — vérifier avant d'agrandir.**
+  Beaucoup d'icônes d'interface du combat sont dessinées AVEC de
+  l'anticrénelage : `ic_ap_on.png` avait la moitié de ses pixels en alpha
+  partiel, `ic_ap_off.png` les deux tiers, `synergie_full.png` 40 %. Les
+  agrandir au plus proche voisin transforme ce dégradé en escalier de blocs,
+  c'est-à-dire détruit le travail de l'auteur. Test pour trancher sur un
+  asset donné : compter ses pixels à alpha partiel. Les sprites de
+  personnages et le décor, eux, sont bien du pixel-art et restent au plus
+  proche voisin (`PixelScale.upscaled(texture)`, `smooth` par défaut à
+  `false`).
+- **Pour un PNG anticrénelé sans source vectorielle**, `PixelScale.upscaled(
+  texture, smooth = true)` interpole en BILINÉAIRE — jamais Lanczos ni
+  cubique : ces deux-là dépassent aux transitions et éclaircissent le halo,
+  ce qui avait fait grossir les losanges d'AP au point de les souder entre
+  eux (cœur mesuré à 7 px au lieu de 5, cf. asset ic_ap_on.png). Le
+  bilinéaire n'invente aucune valeur plus vive que la source.
+- **Quand l'asset EXISTE en vectoriel, préférer le SVG au PNG+interpolation**
+  (toute la UI de combat est passée par là : pastilles, jauges, icônes,
+  boutons de légende — cf. `UI/Battle/*.svg`) : net à l'écran, visiblement plus
+  que le meilleur agrandissement d'un petit PNG (vérifié côte à côte, arêtes
+  franches contre diffuses). Import : régler `svg/scale` sur
+  `PixelScale.SCALE` (4) dans le `.import` — Godot rastérise le SVG une seule
+  fois, AU MOMENT DE L'IMPORT, jamais au runtime ; sans ce réglage il
+  rastérise à la taille nominale et perd tout l'intérêt du vectoriel. Un tel
+  asset est déjà à la résolution de l'écran : le poser avec
+  `PixelScale.upscaled()`/`sprite()` l'agrandirait une seconde fois pour
+  rien — utiliser `PixelScale.sprite_native()` à la place.
+- **Après un remplacement PNG → SVG natif, auditer CHAQUE usage de
+  `texture.get_width()`/`get_height()`/`get_size()` sur cet asset** — pas
+  seulement le `preload()`. Avant le remplacement, ces appels renvoyaient la
+  taille de DESIGN (le PNG faisant cette taille-là) ; après, ils renvoient la
+  taille RASTÉRISÉE (×4), silencieusement. Deux formes de bug rencontrées en
+  généralisant le changement à `SynergyGauge`/`HpBar` :
+  - un calcul qui servait à repasser en espace texture (`design * SCALE` pour
+    un `region_rect`/`size` de `TextureProgressBar`) devient un double
+    agrandissement (`SCALE` appliqué deux fois) — repérable : le calcul
+    contenait déjà `* PixelScale.SCALE` quelque part ;
+  - un calcul purement en espace DESIGN (centrer une icône dans une piste,
+    calculer une largeur de remplissage proportionnelle à un ratio) devient
+    4× trop grand, sans qu'aucun `SCALE` n'apparaisse nulle part dans le code
+    à corriger — le bug est dans la valeur renvoyée par `get_width()`
+    elle-même, pas dans une formule visible.
+  Remède dans les deux cas : `PixelScale.design_size(texture)` plutôt que
+  `Vector2(texture.get_width(), texture.get_height())` pour tout calcul en
+  espace design. Vérifié après coup par introspection directe des nœuds en
+  jeu (tailles/`region_rect` réels comparés à la valeur attendue), pas
+  seulement par relecture — cf. `HpBar` à ratio 0,4/0,7 : régions attendues
+  92×12 et 68×12, obtenues au pixel près.
+- **ThorVG (le rendu SVG de Godot) ne rastérise pas une balise `<image>`
+  (raster PNG/JPEG embarqué en base64 dans le SVG)** — rencontré sur les
+  portraits (`battle_face_iris.svg`/`_noah.svg`, exportés avec la photo comme
+  calque `<image>` sous un clip-path). Symptôme : un aplat de couleur uni, à
+  la place du portrait — pas une erreur, pas un avertissement, un rendu
+  silencieusement incomplet. Diagnostic sans ambiguïté : dumper
+  `texture.get_image()` en PNG et comparer à un rendu de référence
+  spec-compliant (`qlmanage -t` sur macOS suffit, WebKit rend les SVG
+  correctement) — l'écart révèle immédiatement le calque manquant. Dans ce
+  cas, revenir au PNG (`PixelScale.sprite(texture, offset, smooth=true)`) :
+  ces portraits sont de l'illustration anticrénelée, pas du pixel-art, donc
+  `smooth=true` (bilinéaire) reste la bonne interpolation même en PNG — c'est
+  ce qui manquait déjà avant (défaut `smooth=false`), corrigé au passage.
+  Un SVG dont TOUT le contenu est en formes vectorielles natives (paths,
+  rects, circles, gradients — sans `<image>`) n'a pas ce problème ; vérifier
+  par `grep -c '<image' fichier.svg` avant de se lancer dans un remplacement.
+- **Ne pas déduire un espacement de la taille d'un asset** : l'icône « on »
+  fait 11 px de large parce qu'elle porte un halo qui déborde, alors que les
+  losanges sont espacés de 9 px sur la maquette (mesuré : 9,0 entre trois
+  centres consécutifs) — ils se chevauchent donc légèrement. Un pas de 11
+  étalait toute la rangée.
+- **La jauge de synergie est une SPIRALE, pas un anneau** : mesuré angle par
+  angle sur `synergie_underlayer.png`, plus aucune matière entre 200° et 260°.
+  Sa bande utile ne fait donc que 300°, de 270° (extrémité épaisse et orange)
+  à 200° (fine queue jaune) — le sens dans lequel court aussi le dégradé.
+  D'où, dans `SynergyGauge`, un remplissage HORAIRE partant de 270° et une
+  charge ramenée sur ces 300° : sur un balayage de 360°, la jauge paraîtrait
+  pleine bien avant sa charge maximale.
+- **Un élément TOURNÉ doit être amené à la résolution de l'écran avant la
+  rotation** (`PixelScale`, même principe que le suréchantillonnage du texte) :
+  sa texture est agrandie ×4 au plus proche voisin — les gros pixels d'origine
+  sont donc préservés tels quels — puis le nœud est contre-échelonné d'autant
+  et repasse en filtrage linéaire. Sans ça, le plus proche voisin n'a rien à
+  interpoler et le bord descend par marches de 4 px au lieu de suivre la
+  diagonale ; la maquette, elle, lisse ses bords tournés. Convention :
+  `position` reste en unités de design (espace du parent), mais tout ce qui se
+  mesure dans la TEXTURE — `offset`, `size`, `region_rect`, marges de 9-slice —
+  est multiplié par `PixelScale.SCALE`.
+  Deux corollaires : un `ColorRect` tourné garde des bords durs (Godot ne lisse
+  pas les arêtes de quad) — passer par une texture unie ; et un enfant d'un
+  nœud contre-échelonné hérite de cette échelle, d'où le libellé des pastilles
+  de menu sorti de sa pastille (il a déjà la sienne).
+- **Un gabarit horizontal recalé sur une maquette inclinée donne une position
+  biaisée** : c'est ce qui avait décalé le menu de 2 px vers le haut. Mesurer
+  l'angle d'abord (ajustement linéaire d'un bord franc, ou ACP sur les glyphes
+  d'une ligne de texte), corriger les positions ensuite.
+- **Style de texte de l'UI** : contour brun FIN + ombre portée de la même
+  couleur, un seizième du corps chacun — c'est le compteur de hex du worldmap
+  (`HexCounter/Count`), pas l'`ActionLabel` (contour d'un quart du corps, une
+  exception pour un texte posé sur décor clair). C'est l'ombre qui donne son
+  poids au texte ; épaissir le contour ne fait qu'empâter les petits corps.
+  Les deux valeurs se calculent dans l'espace suréchantillonné, ce qui permet
+  un contour plus fin qu'un pixel de design.
+- **Ombre peinte et corps se séparent par l'alpha** : sur les trois planches de
+  personnage, le corps est entièrement opaque et l'ombre portée est la seule
+  zone semi-transparente. Un tri sur l'alpha suffit donc à les séparer, sans
+  découpe manuelle ni asset supplémentaire — utile le jour où il faudra animer
+  un personnage sans faire bouger son ombre. (Rien ne s'en sert aujourd'hui :
+  les ennemis sont volontairement figés sur leur première frame, `frames: 1`
+  dans units.json.)
 
 ## Workflow de vérification (avant de considérer une tâche terminée)
 
@@ -161,6 +344,18 @@ pas partir en guerre contre des choix déjà faits et documentés dans ce repo :
   Passer par un script temporaire (`ProjectSettings.set_setting(...)` +
   `ProjectSettings.save()`, exécuté une fois en headless) pour que Godot
   génère lui-même la sérialisation correcte.
+- **Toujours `keycode`, jamais `physical_keycode`** pour une touche de clavier
+  (c'est ce qu'utilisent toutes les actions existantes du projet).
+  `physical_keycode` désigne une POSITION référencée sur un QWERTY US, alors
+  que la machine de dev est en **AZERTY** : `physical_keycode = KEY_Z` y
+  correspond à la touche marquée **W**, pas Z. Symptôme : l'action ne se
+  déclenche jamais alors que tout le reste semble correct.
+- **Corollaire pour les tests** : `Input.parse_input_event()` avec un
+  `physical_keycode` fabriqué à la main NE teste PAS la disposition clavier —
+  il court-circuite la traduction que fait l'OS. Pour vérifier une touche,
+  injecter l'événement tel que le clavier réel l'enverrait (sur AZERTY, touche
+  marquée Z = `keycode = KEY_Z` ET `physical_keycode = KEY_W`), sinon le test
+  passe au vert sur un binding qui ne marche pas en vrai.
 - **L'éditeur Godot ne recharge pas `project.godot` à chaud** si le fichier
   est modifié depuis l'extérieur pendant qu'une session d'éditeur est déjà
   ouverte. Si un test en direct ne voit pas un changement (nouvelle action
