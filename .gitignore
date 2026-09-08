@@ -10,3 +10,7 @@
 
 # Éditeur de maps (Node.js) : dépendances régénérées via `npm install`
 tools/MapEditor/node_modules/
+
+# Export web : artefact de build régénéré via --export-release "Web",
+# jamais à versionner (cf export_presets.cfg pour la config elle-même).
+web_export/
