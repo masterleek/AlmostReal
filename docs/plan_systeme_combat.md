@@ -393,7 +393,7 @@ passer devant.
 |---|---|---|
 | **1** | Écran de préparation, rendu statique au pixel près (assets préparés, `Stage` ×4, fond capturé, plateforme, unités animées, HUD, menu au repos) | **fait** |
 | 2 | Navigation du menu racine (haut/bas, confirm/cancel), sons | **fait** |
-| 3 | Ciblage : Attack → 1 ennemi ; surbrillance, nom + jauge de vie de la cible | |
+| 3 | Ciblage : Attack → 1 ennemi ; surbrillance, nom + jauge de vie de la cible | **fait** |
 | 4 | Ekos / Items : listes défilantes, coût AP, panneau de description, ciblage multiple | |
 | 5 | Garde, fin de tour, enchaînement des alliés, boucle préparation complète | |
 | 6 | Phase d'assaut : ordre par agilité, exécution des actions, dégâts, morts | |
@@ -451,6 +451,78 @@ précision de l'auteur des maquettes :
 
 Reste non reproduit : l'**ombre portée douce** sous les pastilles du menu
 (effet de calque du mockup, pas un asset).
+
+## 5 ter. Résultat du Lot 3
+
+Le ciblage est un composant à part, `TargetSelector`, écrit pour servir aussi
+au ciblage d'un allié (objet, Eko de soin) au Lot 4 : rien dedans ne suppose de
+quel camp est la cible, l'appelant fournit la liste des unités visables. Il
+suit le même contrat que `CommandMenu` — drapeau `active` arbitré par la scène,
+signaux `selection_changed` / `confirmed` / `cancelled` — pour que les deux
+listes ne se disputent jamais les entrées.
+
+Trajet câblé : `Attack` → première cible vivante, `←`/`→` pour changer de
+cible, `Confirm` ou `Back` pour revenir au menu. Valider une cible ne met
+encore rien en file : la file d'actions arrive au Lot 5.
+
+### Ce que montre `mockup_preparation_select_attack.png`
+
+Le fichier contient **trois vignettes de 480×270 natif** empilées
+(y = 140, 460 et 780 dans l'export) : menu du premier allié, ciblage, puis menu
+du second allié. La deuxième est la référence du Lot 3 ; les deux autres
+documentent la boucle de tour et servent au Lot 5.
+
+Le ciblage y change quatre choses en plus de la cible elle-même :
+
+1. **Le menu se réduit à l'action retenue.** Eko / Items / Guard disparaissent,
+   et la pastille « Attack » va se poser près de la cible, curseur à sa gauche
+   et incliné vers elle. C'est `CommandMenu` qui gère ce mode réduit
+   (`focus_selection`) plutôt qu'une seconde pastille dessinée ailleurs : la
+   pastille garde ainsi son balayage lumineux et son curseur.
+2. **La plaque « nom + jauge » est SOUS la cible**, pas au-dessus, posée au
+   sol. Le nom est au corps 14 — un cran sous la légende de combat, mesuré sur
+   les avances de glyphes (39 px cumulés contre 41,25 au corps 15).
+3. **La jauge de la cible fait 32 px, contre 59 au HUD.** Même asset :
+   `HpBar` accepte désormais une largeur, la gouttière est découpée en 9
+   tranches et le dégradé ramené à la longueur de la piste.
+4. **L'invite « cercle » de la légende est alignée à DROITE**, pas posée à une
+   abscisse fixe : « Cancel » (40 px) et « Back » (27 px) se terminent au même
+   endroit, c'est l'icône qui recule. La règle redonne exactement l'abscisse
+   333 relevée au Lot 1 pour « Cancel ». Sur la première vignette, l'invite est
+   d'ailleurs **absente** : au tour du premier allié il n'y a rien à annuler.
+
+Recalage du rendu contre la vignette, par corrélation sur chaque élément :
+pastille, curseur, nom, jauge et libellé « Back » tombent tous à (0, 0) — écart
+nul. Le bord gauche du texte « Back » est à 365 dans les deux images, et les
+sept glyphes de « Cactoon » à moins de 0,5 px de leurs positions relevées.
+
+### Points relevés en cours de route
+
+1. **Les planches d'ennemis sont en niveaux de gris** (le cactoon n'a que des
+   pixels r = v = b). Une surbrillance blanche y est donc bien moins lisible
+   que sur un sprite coloré : le battement ne descend pas sous 0,6, ce qui
+   maintient le gris médian de la cible à ~180 quand celui de ses voisines est
+   à 74.
+2. **L'ombre au sol fait partie de la cellule du sprite** (rangées 52 à 66 de
+   la planche du cactoon : une ellipse noire opaque). Blanchir la cellule
+   entière allumait un halo sous les pieds de la cible. `white_tint.gdshader`
+   reçoit donc un seuil de luminance (`dark_cutoff`) sous lequel un pixel garde
+   sa couleur — l'ombre et le contour du personnage restent sombres, la
+   silhouette est blanche. Valeur par défaut 0.0 : la tuile de révélation du
+   worldmap, seul autre usage du shader, est inchangée.
+
+### Vu sur la maquette, PAS implémenté (relève du Lot 5)
+
+Ces éléments appartiennent à la boucle de tour, pas au ciblage :
+
+- l'allié dont c'est le tour prend une **pose d'attaque** pendant qu'il vise ;
+- l'autre allié est rendu en **fantôme vert translucide** ;
+- une fois son action validée, l'allié passe en **silhouette sombre** et son
+  panneau de HUD affiche une **coche verte** à la place du portrait
+  (`ic_checkmark.svg`, déjà présent dans `_assets/battle/`) ;
+- l'invite « Cancel » réapparaît alors, pour revenir au tour précédent.
+
+---
 
 ## 6. Vérification (Lot 1)
 
@@ -552,6 +624,10 @@ le reste est reproductible au pixel près.
 - La compétence spéciale débloquée par la synergie (bloque le Lot 8).
 - Les coefficients de réduction de dégâts Perfect/Great/Good (bloque le Lot 7).
 - L'écran de récompense argent/expérience (bloque la fin du Lot 9).
+- **Le comportement de la pastille d'action quand la cible change** : la
+  maquette ne montre qu'une cible (l'ennemi de droite). La pastille est
+  actuellement ANCRÉE SUR LA CIBLE, donc elle suit la sélection ; une position
+  fixe à l'écran est l'autre lecture possible de la même image.
 
 ---
 

@@ -34,6 +34,18 @@ const ON := preload("res://UI/Battle/command_on.svg")
 const CURSOR := preload("res://UI/cursor_worldmap.png")
 const CURSOR_OFFSET := Vector2(79, -1)
 
+## CIBLAGE. Pendant le choix d'une cible, la liste se réduit à l'entrée
+## retenue, qui va se poser près de la cible (cf. focus_selection). La maquette
+## mockup_preparation_select_attack montre alors « Attack » seul, curseur à sa
+## GAUCHE et incliné vers la cible — soit le même asset tourné autrement, pas
+## une seconde version du curseur.
+##
+## Le décalage et l'angle sont relevés sur cette maquette : curseur ajusté à
+## 30° dans le repère de l'écran (résidu minimal sur un balayage de 25° à 40°),
+## donc 33° ici puisque le menu est déjà incliné de −3°.
+const CURSOR_FOCUS_OFFSET := Vector2(-13, -6)
+const CURSOR_FOCUS_ROTATION_DEG := 33.0
+
 const X_NORMAL := 280
 const X_SELECTED := 263
 ## Décalé de 2 px par rapport au recalage initial : celui-ci avait été fait
@@ -69,6 +81,9 @@ var active: bool = false
 
 var _entries: Array[Dictionary] = []
 var _selected: int = 0
+## Mode « réduit » : voir focus_selection().
+var _focused: bool = false
+var _focus_position: Vector2 = Vector2.ZERO
 var _shine: TextureRect
 var _cursor: Sprite2D
 
@@ -125,6 +140,25 @@ func setup(labels: PackedStringArray, selected: int = 0) -> void:
 	add_child(_cursor)
 	_refresh()
 
+## Réduit la liste à sa seule entrée sélectionnée, posée à `at`. Les autres
+## entrées disparaissent : pendant le ciblage, la maquette ne garde que
+## l'action retenue, affichée à côté de la cible.
+##
+## `at` s'exprime dans le repère du menu, comme les positions de pastilles —
+## c'est-à-dire AVANT l'inclinaison du groupe. Convertir un point de l'écran
+## (la position d'une unité, par exemple) est le travail de l'appelant, qui
+## seul connaît le pivot.
+func focus_selection(at: Vector2) -> void:
+	_focused = true
+	_focus_position = at
+	_refresh()
+
+func restore() -> void:
+	if not _focused:
+		return
+	_focused = false
+	_refresh()
+
 ## `index` peut déborder des deux côtés : la liste boucle (descendre depuis la
 ## dernière entrée revient à la première).
 func select(index: int) -> void:
@@ -163,15 +197,24 @@ func _refresh() -> void:
 	for i in _entries.size():
 		var selected := i == _selected
 		var pill: NinePatchRect = _entries[i]["pill"]
+		var label: RichTextLabel = _entries[i]["label"]
+		# En mode réduit, seule l'entrée retenue reste visible.
+		var shown := selected or not _focused
+		pill.visible = shown
+		label.visible = shown
+		if not shown:
+			continue
 		# Déjà à la résolution de l'écran (SVG, cf. PixelScale.sprite_native) :
 		# poser directement, pas d'agrandissement au runtime à faire ici.
 		pill.texture = ON if selected else OFF
-		pill.position = Vector2(X_SELECTED if selected else X_NORMAL, Y_FIRST + i * PITCH)
+		pill.position = (
+			_focus_position if _focused
+			else Vector2(X_SELECTED if selected else X_NORMAL, Y_FIRST + i * PITCH)
+		)
 		# L'entrée sélectionnée passe au-dessus de ses voisines : avec un pas
 		# inférieur à la hauteur des pastilles, celle du dessous la
 		# recouvrirait sinon partiellement.
 		pill.z_index = 1 if selected else 0
-		var label: RichTextLabel = _entries[i]["label"]
 		label.position = pill.position + TEXT_PADDING
 		label.z_index = pill.z_index
 		label.add_theme_color_override(
@@ -182,7 +225,7 @@ func _refresh() -> void:
 		# bruns ne ferait qu'empâter les glyphes.
 		BattleText.set_outlined(label, TEXT_SIZE, not selected)
 		if selected:
-			_cursor.position = pill.position + CURSOR_OFFSET
+			_place_cursor(pill.position)
 			if _shine.get_parent() != pill:
 				if _shine.get_parent() != null:
 					_shine.get_parent().remove_child(_shine)
@@ -190,6 +233,21 @@ func _refresh() -> void:
 				# Sous le texte : la lumière traverse la pastille, elle ne
 				# passe pas par-dessus les glyphes.
 				pill.move_child(_shine, 0)
+
+## Le curseur change d'orientation avec le mode : à droite de la pastille et
+## tourné vers elle dans la liste, à sa gauche et incliné vers la cible pendant
+## le ciblage. La rotation se faisant autour de l'origine du sprite, chaque
+## orientation a son propre décalage de texture — d'où le réglage conjoint des
+## deux, plutôt qu'un décalage unique qui ne vaudrait que pour un angle.
+func _place_cursor(pill_position: Vector2) -> void:
+	if _focused:
+		_cursor.offset = Vector2.ZERO
+		_cursor.rotation = deg_to_rad(CURSOR_FOCUS_ROTATION_DEG)
+		_cursor.position = pill_position + CURSOR_FOCUS_OFFSET
+	else:
+		_cursor.offset = Vector2(0, -CURSOR.get_width()) * PixelScale.SCALE
+		_cursor.rotation = PI / 2.0
+		_cursor.position = pill_position + CURSOR_OFFSET
 
 func _process(_delta: float) -> void:
 	if _shine == null or _shine.get_parent() == null:

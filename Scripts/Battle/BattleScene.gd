@@ -1,8 +1,9 @@
 extends CanvasLayer
 
-## Écran de combat — phase de préparation. Le rendu est complet (Lot 1) et le
-## menu racine est navigable (Lot 2) ; valider une entrée ne déclenche encore
-## aucune action, le ciblage arrive au Lot 3.
+## Écran de combat — phase de préparation. Le rendu est complet (Lot 1), le
+## menu racine est navigable (Lot 2) et « Attack » ouvre le choix d'une cible
+## (Lot 3) ; valider une cible ne met encore aucune action en file, c'est la
+## boucle de préparation (Lot 5) qui la consommera.
 ##
 ## RÉSOLUTION. Les assets de combat sont dessinés pour un écran de 480×270,
 ## soit exactement 1920/4 (démontré par dark_lines.png qui fait 480 de large,
@@ -22,6 +23,8 @@ const UnitSprite = preload("res://Scripts/Battle/Stage/UnitSprite.gd")
 const UnitStatusPanel = preload("res://Scripts/Battle/UI/UnitStatusPanel.gd")
 const SynergyGauge = preload("res://Scripts/Battle/UI/SynergyGauge.gd")
 const CommandMenu = preload("res://Scripts/Battle/UI/CommandMenu.gd")
+const TargetSelector = preload("res://Scripts/Battle/UI/TargetSelector.gd")
+const BattleUnit = preload("res://Scripts/Battle/BattleUnit.gd")
 const BattleData = preload("res://Scripts/Battle/BattleData.gd")
 const BattleText = preload("res://Scripts/Battle/UI/BattleText.gd")
 const PixelScale = preload("res://Scripts/Battle/UI/PixelScale.gd")
@@ -94,14 +97,37 @@ const HUD_PIVOT := Vector2(304, 21)
 const LEGEND_TILT_DEG := -5.5
 const LEGEND_PIVOT := Vector2(333, 232)
 
-const LEGEND_CANCEL_ICON := Vector2(333, 232)
+## Légende. Le groupe « cercle » est aligné à DROITE, pas posé à une abscisse
+## fixe : sur les maquettes le libellé se termine toujours au même endroit,
+## qu'il dise « Cancel » (40 px) ou « Back » (27 px), et c'est l'icône qui
+## recule. LEGEND_CANCEL_RIGHT est ce bord droit commun — il redonne bien
+## l'abscisse 333 relevée au Lot 1 pour « Cancel ».
+const LEGEND_CANCEL_RIGHT := 393
+const LEGEND_ICON_Y := 232
 const LEGEND_CONFIRM_ICON := Vector2(401, 232)
 const LEGEND_TEXT_OFFSET := Vector2(19, -1)
 const LEGEND_TEXT_SIZE := 15
 
+## Seul « Attack » est nommé : c'est la seule entrée dont le code doit
+## reconnaître l'id (elle ouvre le ciblage). Les trois autres n'ont pas encore
+## d'action, les nommer d'avance ne servirait à rien.
+const MENU_ATTACK := "battle.menu.attack"
 const MENU_ENTRIES: PackedStringArray = [
-	"battle.menu.attack", "battle.menu.eko", "battle.menu.items", "battle.menu.guard",
+	MENU_ATTACK, "battle.menu.eko", "battle.menu.items", "battle.menu.guard",
 ]
+
+## Libellé de la touche « cercle » de la légende pendant le ciblage. Au menu
+## racine l'invite est absente des maquettes (cf. _close_targeting).
+const PROMPT_BACK := "battle.prompt.back"
+
+## Position de la pastille de l'action retenue pendant le ciblage, en décalage
+## depuis le point « pieds » de la cible. Réglée par recalage du rendu sur la
+## deuxième vignette de mockup_preparation_select_attack.png, la cible y étant
+## l'ennemi de l'emplacement 2 (pieds en 195, 169).
+##
+## Ce décalage est en coordonnées d'ÉCRAN ; le menu étant incliné, il faut le
+## repasser dans son repère (cf. _menu_local).
+const FOCUS_PILL_OFFSET := Vector2(23, -87)
 
 ## Composition par défaut, utilisée quand la scène est lancée seule (F6) sans
 ## passer par setup(). Elle reproduit le mockup.
@@ -112,10 +138,25 @@ const DEFAULT_ALLIES: PackedStringArray = ["noah", "iris"]
 @onready var background_dim: ColorRect = $BackgroundDim
 @onready var stage: Node2D = $Stage
 
+## Qui a la main sur les entrées. Le menu racine reste monté pendant le
+## ciblage (il faut y revenir sur « Back », et sa pastille reste affichée à
+## côté de la cible) : c'est le drapeau `active` de chaque composant, arbitré
+## ici, qui décide lequel des deux écoute.
+enum State { MENU, TARGETING }
+
 var _enemies: PackedStringArray = DEFAULT_ENEMIES
 var _allies: PackedStringArray = DEFAULT_ALLIES
 var _status_panels: Array[Node2D] = []
-var _menu: Node2D
+var _menu: CommandMenu
+var _state: State = State.MENU
+## Les sprites d'ennemis sont CONSERVÉS : le ciblage les met en surbrillance
+## et s'ancre sur eux (cf. TargetSelector). Les états de combat correspondants
+## vivent en parallèle, dans le même ordre.
+var _enemy_sprites: Array[AnimatedSprite2D] = []
+var _enemy_units: Array[BattleUnit] = []
+var _target_selector: TargetSelector
+var _legend_cancel_icon: Sprite2D
+var _legend_cancel_label: RichTextLabel
 var _pending_background: Texture2D
 var _sfx_move: AudioStreamPlayer
 var _sfx_confirm: AudioStreamPlayer
@@ -142,6 +183,7 @@ func _ready() -> void:
 	_setup_background()
 	_build_decor()
 	_build_units()
+	_build_targeting()
 	_build_sfx()
 	_build_hud()
 
@@ -204,17 +246,40 @@ func _build_units() -> void:
 		# Aucun décalage de phase entre eux : sur le mockup les trois cactoons
 		# sont exactement sur la même frame. UnitSprite.offset_phase() reste
 		# disponible si on décide plus tard de les désynchroniser.
-		_spawn_unit(units, _enemies[i], ENEMY_SLOTS[i], true)
+		var sprite := _spawn_unit(units, _enemies[i], ENEMY_SLOTS[i], true)
+		if sprite == null:
+			continue
+		_enemy_sprites.append(sprite)
+		_enemy_units.append(BattleUnit.new(_enemies[i]))
 	for i in mini(_allies.size(), ALLY_SLOTS.size()):
 		_spawn_unit(units, _allies[i], ALLY_SLOTS[i], false)
 
-func _spawn_unit(parent: Node2D, unit_id: String, feet: Vector2i, mirrored: bool) -> void:
+func _spawn_unit(
+	parent: Node2D, unit_id: String, feet: Vector2i, mirrored: bool
+) -> AnimatedSprite2D:
 	var config: Dictionary = BattleData.get_animation(unit_id, "idle")
 	if config.is_empty():
-		return
+		return null
 	var sprite: AnimatedSprite2D = UnitSprite.new()
 	parent.add_child(sprite)
 	sprite.setup(config, feet, mirrored)
+	return sprite
+
+## Le sélecteur est posé sur le Stage APRÈS le conteneur d'unités et AVANT les
+## groupes d'interface : sa plaque passe donc au-dessus des combattants, et
+## sous le menu et le HUD.
+##
+## Son ordre dans l'arbre compte aussi pour les entrées : `_unhandled_input`
+## est distribué à l'envers de l'arbre, le menu — ajouté plus tard — voit donc
+## chaque touche en premier. C'est ce qui fait que la validation qui OUVRE le
+## ciblage n'est pas aussitôt reconsommée par celui-ci : le menu la marque
+## traitée avant que le sélecteur ne soit interrogé.
+func _build_targeting() -> void:
+	_target_selector = TargetSelector.new()
+	stage.add_child(_target_selector)
+	_target_selector.selection_changed.connect(_on_target_moved)
+	_target_selector.confirmed.connect(_on_target_confirmed)
+	_target_selector.cancelled.connect(_on_target_cancelled)
 
 ## Renvoie le nœud auquel ajouter des enfants EN COORDONNÉES ABSOLUES pour
 ## qu'ils se retrouvent inclinés de `degrees` autour de `pivot`.
@@ -262,7 +327,7 @@ func _build_hud() -> void:
 	synergy_label.position = SYNERGY_LABEL_POS
 	hud.add_child(synergy_label)
 
-	_menu = CommandMenu.new() as Node2D
+	_menu = CommandMenu.new()
 	_tilted_group(MENU_PIVOT, MENU_TILT_DEG).add_child(_menu)
 	# Sélection par défaut sur la PREMIÈRE entrée (Attack). Le mockup fige
 	# « Eko » parce qu'il illustre un état de navigation, pas l'état d'entrée.
@@ -291,9 +356,16 @@ func _add_sfx(stream: AudioStream) -> AudioStreamPlayer:
 func _on_menu_moved(_index: int) -> void:
 	_sfx_move.play()
 
-## Lot 2 : valider ne déclenche encore aucune action. Le ciblage (Lot 3) et
-## les listes d'Ekos/objets (Lot 4) viendront se brancher ici.
-func _on_menu_confirmed(_id: String) -> void:
+## « Attack » ouvre le choix de la cible (Lot 3). Les listes d'Ekos et
+## d'objets (Lot 4) et la garde (Lot 5) viendront se brancher ici de la même
+## façon ; d'ici là elles se contentent du son de validation.
+func _on_menu_confirmed(id: String) -> void:
+	if id == MENU_ATTACK:
+		if not _open_targeting():
+			# Plus rien à viser : le son d'erreur vaut mieux qu'un écran de
+			# ciblage vide.
+			_sfx_cancel.play()
+		return
 	_sfx_confirm.play()
 
 ## Au menu racine il n'y a rien à annuler. Le Lot 5 y branchera le retour au
@@ -302,19 +374,96 @@ func _on_menu_confirmed(_id: String) -> void:
 func _on_menu_cancelled() -> void:
 	_sfx_cancel.play()
 
+## Renvoie false si aucun ennemi n'est ciblable, auquel cas rien n'a changé.
+func _open_targeting() -> bool:
+	var targets: Array[Dictionary] = []
+	for i in _enemy_units.size():
+		if _enemy_units[i].is_alive():
+			targets.append({"unit": _enemy_units[i], "sprite": _enemy_sprites[i]})
+	if targets.is_empty():
+		return false
+	_sfx_confirm.play()
+	_state = State.TARGETING
+	_menu.active = false
+	# Première cible vivante par défaut, comme le menu s'ouvre sur sa première
+	# entrée : une sélection par défaut stable vaut mieux qu'une sélection
+	# « intelligente » qui changerait d'un tour à l'autre.
+	_target_selector.open(targets)
+	_follow_target()
+	_set_legend_cancel(PROMPT_BACK)
+	return true
+
+func _close_targeting() -> void:
+	_target_selector.close()
+	_menu.restore()
+	_state = State.MENU
+	_menu.active = true
+	# Rien à annuler au menu racine tant qu'un seul allié y passe : la maquette
+	# n'y affiche aucune invite « cercle ». Le Lot 5 la fera réapparaître avec
+	# le libellé `battle.prompt.cancel`, pour revenir au tour de l'allié
+	# précédent.
+	_set_legend_cancel("")
+
+## Réduit le menu à l'action retenue et la pose près de la cible courante.
+func _follow_target() -> void:
+	_menu.focus_selection(
+		_menu_local(_target_selector.get_selected_feet() + FOCUS_PILL_OFFSET)
+	)
+
+## Convertit un point de l'écran vers le repère interne du menu, qui est
+## incliné. Les positions de pastilles y sont exprimées « à plat » (cf. la note
+## sur l'inclinaison plus haut) : sans cette conversion, une position lue sur
+## le terrain subirait l'inclinaison une seconde fois.
+func _menu_local(point: Vector2) -> Vector2:
+	return (point - MENU_PIVOT).rotated(-deg_to_rad(MENU_TILT_DEG)) + MENU_PIVOT
+
+func _on_target_moved(_index: int) -> void:
+	_sfx_move.play()
+	_follow_target()
+
+## Lot 3 : valider une cible ne fait que confirmer le choix — il n'y a pas
+## encore de file d'actions où le déposer, c'est le Lot 5 qui l'introduira. On
+## revient donc au menu, ce qui laisse quand même vérifier tout le trajet
+## aller-retour.
+func _on_target_confirmed(_index: int) -> void:
+	_sfx_confirm.play()
+	_close_targeting()
+
+func _on_target_cancelled() -> void:
+	_sfx_cancel.play()
+	_close_targeting()
+
+## `text_id` vide masque l'invite entière (icône comprise). Sinon le groupe est
+## reconstruit aligné à droite sur LEGEND_CANCEL_RIGHT.
+func _set_legend_cancel(text_id: String) -> void:
+	var shown := text_id != ""
+	_legend_cancel_icon.visible = shown
+	_legend_cancel_label.visible = shown
+	if not shown:
+		return
+	var text := Localization.get_text(text_id)
+	var icon_x := LEGEND_CANCEL_RIGHT - BattleText.text_width(text, LEGEND_TEXT_SIZE) - LEGEND_TEXT_OFFSET.x
+	_legend_cancel_icon.position = Vector2(roundf(icon_x), LEGEND_ICON_Y)
+	_legend_cancel_label.text = text
+	_legend_cancel_label.position = _legend_cancel_icon.position + LEGEND_TEXT_OFFSET
+
 func _build_legend() -> void:
 	var legend := _tilted_group(LEGEND_PIVOT, LEGEND_TILT_DEG)
-	for entry in [
-		[MINI_CIRCLE, LEGEND_CANCEL_ICON, "battle.prompt.cancel"],
-		[MINI_CROSS, LEGEND_CONFIRM_ICON, "battle.prompt.confirm"],
-	]:
-		# SVG déjà à la résolution de l'écran : pas d'agrandissement à faire.
-		var icon: Sprite2D = PixelScale.sprite_native(entry[0])
-		icon.position = entry[1]
-		legend.add_child(icon)
 
-		var label: RichTextLabel = BattleText.make(
-			Localization.get_text(entry[2]), LEGEND_TEXT_SIZE, Color(1, 1, 1)
-		)
-		label.position = entry[1] + LEGEND_TEXT_OFFSET
-		legend.add_child(label)
+	# SVG déjà à la résolution de l'écran : pas d'agrandissement à faire.
+	# L'invite « cercle » est posée par _set_legend_cancel, qui l'aligne à
+	# droite sur son libellé ; celle de « croix » ne bouge jamais.
+	_legend_cancel_icon = PixelScale.sprite_native(MINI_CIRCLE)
+	legend.add_child(_legend_cancel_icon)
+	_legend_cancel_label = BattleText.make("", LEGEND_TEXT_SIZE, Color(1, 1, 1))
+	legend.add_child(_legend_cancel_label)
+	_set_legend_cancel("")
+
+	var confirm_icon: Sprite2D = PixelScale.sprite_native(MINI_CROSS)
+	confirm_icon.position = LEGEND_CONFIRM_ICON
+	legend.add_child(confirm_icon)
+	var confirm_label: RichTextLabel = BattleText.make(
+		Localization.get_text("battle.prompt.confirm"), LEGEND_TEXT_SIZE, Color(1, 1, 1)
+	)
+	confirm_label.position = LEGEND_CONFIRM_ICON + LEGEND_TEXT_OFFSET
+	legend.add_child(confirm_label)

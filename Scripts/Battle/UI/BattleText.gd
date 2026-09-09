@@ -132,6 +132,43 @@ static func make(
 	label.text = bbcode
 	return label
 
+## Libellé CENTRÉ dans une boîte de `design_width` pixels de design, à poser
+## par son coin haut-gauche comme les autres.
+##
+## Sert à caler un texte sur un point (le nom d'une cible au-dessus de sa
+## tête, par exemple) sans avoir à mesurer sa largeur rendue : celle-ci n'est
+## connue qu'après une passe de rendu, alors que la boîte, elle, est fixée
+## d'avance. On resserre donc la boîte à la largeur voulue et on laisse le
+## moteur centrer le texte dedans.
+static func make_centered(
+	bbcode: String, design_width: float, font_size: int, color: Color
+) -> RichTextLabel:
+	var label := make("", font_size, color)
+	label.size.x = design_width * SUPERSAMPLE
+	set_centered_text(label, bbcode)
+	return label
+
+## Change le contenu d'un libellé construit par `make_centered`. Passe par ici
+## plutôt que par `label.text` : le centrage est porté par une balise BBCode,
+## qu'une écriture directe effacerait.
+static func set_centered_text(label: RichTextLabel, bbcode: String) -> void:
+	label.text = "[center]%s[/center]" % bbcode
+
+## Largeur qu'occupera `text` en pixels de design, connue AVANT tout rendu.
+##
+## Sert aux mises en page alignées à droite — la légende de combat cale le bord
+## droit du libellé « Cancel »/« Back » sur un point fixe, ce qui demande sa
+## largeur au moment où on pose l'icône. La mesurer sur la police évite d'avoir
+## à attendre une passe de rendu pour lire `get_content_width()`.
+##
+## Le BBCode n'est pas interprété ici : passer une chaîne balisée compterait
+## les balises comme des caractères.
+static func text_width(text: String, font_size: int) -> float:
+	var font: Font = load(FONT_PATH)
+	return font.get_string_size(
+		text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size * SUPERSAMPLE
+	).x / float(SUPERSAMPLE)
+
 ## Convertit une valeur en pixels de design vers l'espace suréchantillonné du
 ## libellé, où sont exprimés les items de thème de Godot.
 static func to_supersampled(design_pixels: float) -> int:

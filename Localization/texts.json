@@ -130,6 +130,50 @@
       "style": {
         "font_size": 16
       }
+    },
+    {
+      "id": "battle.prompt.back",
+      "category": "ui",
+      "translations": {
+        "en": "Back",
+        "fr": "Retour"
+      },
+      "style": {
+        "font_size": 16
+      }
+    },
+    {
+      "id": "unit.noah.name",
+      "category": "ui",
+      "translations": {
+        "en": "Noah",
+        "fr": "Noah"
+      },
+      "style": {
+        "font_size": 12
+      }
+    },
+    {
+      "id": "unit.iris.name",
+      "category": "ui",
+      "translations": {
+        "en": "Iris",
+        "fr": "Iris"
+      },
+      "style": {
+        "font_size": 12
+      }
+    },
+    {
+      "id": "unit.cactoon.name",
+      "category": "ui",
+      "translations": {
+        "en": "Cactoon",
+        "fr": "Cactoon"
+      },
+      "style": {
+        "font_size": 12
+      }
     }
   ]
 }

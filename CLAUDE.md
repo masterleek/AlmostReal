@@ -314,6 +314,37 @@ pas partir en guerre contre des choix déjà faits et documentés dans ce repo :
   un personnage sans faire bouger son ombre. (Rien ne s'en sert aujourd'hui :
   les ennemis sont volontairement figés sur leur première frame, `frames: 1`
   dans units.json.)
+- **Les planches de personnage portent leur ombre au sol DANS la cellule** :
+  sur celle du cactoon, les rangées 52 à 66 sont une ellipse noire. Toute
+  teinte appliquée au sprite entier l'atteint donc aussi — une surbrillance
+  blanche y allume un halo sous les pieds. `Shaders/white_tint.gdshader` a pour
+  ça un seuil `dark_cutoff` : sous cette luminance, le pixel garde sa couleur.
+  L'alpha ne sert à rien ici, l'ombre étant quasi opaque en son centre ; c'est
+  la luminance qui sépare (l'ombre et les contours sont sous 0,05, le premier
+  pixel de corps est au-dessus).
+- **Les planches d'ennemis sont en NIVEAUX DE GRIS** (le cactoon n'a que des
+  pixels r = v = b, du noir au blanc). Un effet qui repose sur la clarté —
+  surbrillance blanche, flash de dégâts — y est donc bien moins lisible que sur
+  un allié coloré : il faut mesurer le contraste obtenu contre les unités NON
+  affectées, pas juger l'effet sur la seule cible.
+- **Une UI « fantôme » dans l'écran de combat est presque toujours un double
+  lancement, pas un bug de rendu.** Le fond du combat est une capture du
+  viewport : si un combat est déjà ouvert au moment où un second se lance, la
+  première interface se retrouve peinte dans le fond du second, assombrie par
+  `background_dim` — d'où des textes figés qui résistent à `queue_redraw()` et
+  réapparaissent dès qu'un libellé raccourcit. Vérifier le nombre d'enfants de
+  `get_tree().root` avant de chercher plus loin.
+- **Les maquettes de combat peuvent contenir PLUSIEURS vignettes empilées**
+  (`mockup_preparation_select_attack.png` en aligne trois de 480×270 sur un
+  fond gris semi-transparent). Les découper d'abord — chercher les lignes dont
+  l'alpha vaut 255 — plutôt que de mesurer sur l'export entier.
+- **Recaler un élément d'écran contre une maquette : corréler, pas comparer des
+  boîtes englobantes.** Un seuil sur les pixels clairs donne une largeur qui
+  varie avec l'anticrénelage (« Cactoon » mesure 43 px sur la maquette et 47 au
+  rendu au même corps). Faire glisser une fenêtre du rendu sur la maquette et
+  garder le décalage de moindre écart donne la position au pixel près, même
+  quand les deux fonds diffèrent. Pour le CORPS d'un texte, ce sont les
+  positions de départ des glyphes qui tranchent, pas la largeur d'encre.
 
 ## Workflow de vérification (avant de considérer une tâche terminée)
 
