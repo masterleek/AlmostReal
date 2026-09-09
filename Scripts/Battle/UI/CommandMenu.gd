@@ -13,6 +13,13 @@ extends Node2D
 ## est décalée de 17 px vers la GAUCHE, à largeur identique : c'est le seul
 ## effet de la sélection sur la géométrie.
 
+## `selection_changed` ne part que sur un CHANGEMENT réel d'entrée : c'est lui
+## qui déclenche le son de navigation, il ne doit donc pas sonner au montage de
+## la liste ni sur une sélection déjà en place.
+signal selection_changed(index: int)
+signal confirmed(id: String)
+signal cancelled
+
 const BattleText = preload("res://Scripts/Battle/UI/BattleText.gd")
 const PixelScale = preload("res://Scripts/Battle/UI/PixelScale.gd")
 
@@ -53,6 +60,12 @@ const TEXT_COLOR_SELECTED := Color8(0x27, 0x04, 0x00)
 ## statique à reproduire tel quel.
 const SHINE_WIDTH := 46.0
 const SHINE_PERIOD := 1.6
+
+## Ne réagit aux entrées que si `active`. Plusieurs listes coexisteront à
+## l'écran (menu racine + liste d'Ekos ou d'objets, cf. Lot 4) et une seule
+## doit avoir la main à un instant donné : c'est l'appelant qui arbitre, la
+## liste ne se donne jamais le focus d'elle-même.
+var active: bool = false
 
 var _entries: Array[Dictionary] = []
 var _selected: int = 0
@@ -112,12 +125,39 @@ func setup(labels: PackedStringArray, selected: int = 0) -> void:
 	add_child(_cursor)
 	_refresh()
 
+## `index` peut déborder des deux côtés : la liste boucle (descendre depuis la
+## dernière entrée revient à la première).
 func select(index: int) -> void:
-	_selected = posmod(index, _entries.size())
+	if _entries.is_empty():
+		return
+	var next := posmod(index, _entries.size())
+	if next == _selected:
+		return
+	_selected = next
 	_refresh()
+	selection_changed.emit(_selected)
 
 func get_selected_id() -> String:
 	return _entries[_selected]["id"] if _entries.size() > 0 else ""
+
+## Navigation au clavier/manette. `ui_up`/`ui_down` sont les actions natives de
+## Godot (flèches + croix directionnelle) ; `battle_confirm`/`battle_cancel`
+## sont propres au combat, pour rester indépendantes du `ui_accept` que le
+## worldmap utilise déjà pour ses propres actions.
+func _unhandled_input(event: InputEvent) -> void:
+	if not active or _entries.is_empty():
+		return
+	if event.is_action_pressed("ui_down"):
+		select(_selected + 1)
+	elif event.is_action_pressed("ui_up"):
+		select(_selected - 1)
+	elif event.is_action_pressed("battle_confirm"):
+		confirmed.emit(get_selected_id())
+	elif event.is_action_pressed("battle_cancel"):
+		cancelled.emit()
+	else:
+		return
+	get_viewport().set_input_as_handled()
 
 func _refresh() -> void:
 	for i in _entries.size():

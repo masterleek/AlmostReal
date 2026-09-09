@@ -1,6 +1,8 @@
 extends CanvasLayer
 
-## Écran de combat — phase de préparation (Lot 1 : rendu seul, pas de logique).
+## Écran de combat — phase de préparation. Le rendu est complet (Lot 1) et le
+## menu racine est navigable (Lot 2) ; valider une entrée ne déclenche encore
+## aucune action, le ciblage arrive au Lot 3.
 ##
 ## RÉSOLUTION. Les assets de combat sont dessinés pour un écran de 480×270,
 ## soit exactement 1920/4 (démontré par dark_lines.png qui fait 480 de large,
@@ -29,6 +31,10 @@ const DARK_LINES := preload("res://Sprites/Battle/dark_lines.png")
 const PLATFORM := preload("res://Sprites/Battle/platform_grass.png")
 const MINI_CIRCLE := preload("res://UI/Battle/mini_btn_circle.svg")
 const MINI_CROSS := preload("res://UI/Battle/mini_btn_cross.svg")
+
+const SFX_MOVE := preload("res://Audio/move.wav")
+const SFX_CONFIRM := preload("res://Audio/validation.wav")
+const SFX_CANCEL := preload("res://Audio/error.wav")
 
 const DESIGN_SIZE := Vector2i(480, 270)
 const STAGE_SCALE := 4
@@ -111,6 +117,9 @@ var _allies: PackedStringArray = DEFAULT_ALLIES
 var _status_panels: Array[Node2D] = []
 var _menu: Node2D
 var _pending_background: Texture2D
+var _sfx_move: AudioStreamPlayer
+var _sfx_confirm: AudioStreamPlayer
+var _sfx_cancel: AudioStreamPlayer
 
 ## Point d'entrée depuis le worldmap. Appeler AVANT d'ajouter la scène à
 ## l'arbre : _ready() monte l'écran avec ce qui a été fourni ici, ou avec la
@@ -133,6 +142,7 @@ func _ready() -> void:
 	_setup_background()
 	_build_decor()
 	_build_units()
+	_build_sfx()
 	_build_hud()
 
 func _setup_background() -> void:
@@ -254,9 +264,43 @@ func _build_hud() -> void:
 
 	_menu = CommandMenu.new() as Node2D
 	_tilted_group(MENU_PIVOT, MENU_TILT_DEG).add_child(_menu)
-	_menu.setup(MENU_ENTRIES, 1)
+	# Sélection par défaut sur la PREMIÈRE entrée (Attack). Le mockup fige
+	# « Eko » parce qu'il illustre un état de navigation, pas l'état d'entrée.
+	_menu.setup(MENU_ENTRIES, 0)
+	_menu.active = true
+	_menu.selection_changed.connect(_on_menu_moved)
+	_menu.confirmed.connect(_on_menu_confirmed)
+	_menu.cancelled.connect(_on_menu_cancelled)
 
 	_build_legend()
+
+## Sons repris tels quels du worldmap plutôt que dupliqués : c'est le même
+## vocabulaire sonore d'un écran à l'autre (déplacement, validation, action
+## impossible), cf. WorldmapCursor.move_sfx et Hero.validation_sfx/error_sfx.
+func _build_sfx() -> void:
+	_sfx_move = _add_sfx(SFX_MOVE)
+	_sfx_confirm = _add_sfx(SFX_CONFIRM)
+	_sfx_cancel = _add_sfx(SFX_CANCEL)
+
+func _add_sfx(stream: AudioStream) -> AudioStreamPlayer:
+	var player := AudioStreamPlayer.new()
+	player.stream = stream
+	add_child(player)
+	return player
+
+func _on_menu_moved(_index: int) -> void:
+	_sfx_move.play()
+
+## Lot 2 : valider ne déclenche encore aucune action. Le ciblage (Lot 3) et
+## les listes d'Ekos/objets (Lot 4) viendront se brancher ici.
+func _on_menu_confirmed(_id: String) -> void:
+	_sfx_confirm.play()
+
+## Au menu racine il n'y a rien à annuler. Le Lot 5 y branchera le retour au
+## tour de l'allié précédent ; d'ici là le son d'erreur signale simplement que
+## l'entrée n'a pas d'effet.
+func _on_menu_cancelled() -> void:
+	_sfx_cancel.play()
 
 func _build_legend() -> void:
 	var legend := _tilted_group(LEGEND_PIVOT, LEGEND_TILT_DEG)

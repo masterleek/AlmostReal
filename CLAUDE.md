@@ -165,6 +165,14 @@ pas partir en guerre contre des choix déjà faits et documentés dans ce repo :
   incréments. Symptôme rencontré : le pincement au trackpad ne faisait
   strictement rien, chacun de ses événements valant ~×1,02 et retombant sur le
   même palier — alors que la molette, qui avance par pas de 0,25, marchait.
+- **Entrées du combat** : navigation par les actions natives `ui_up`/`ui_down`
+  (flèches + croix directionnelle), validation/annulation par `battle_confirm`
+  et `battle_cancel` — des actions PROPRES au combat, volontairement distinctes
+  du `ui_accept` que le worldmap utilise déjà pour ses propres actions, pour
+  qu'un rebind d'un écran ne déplace pas l'autre. Une liste (`CommandMenu`) ne
+  lit les entrées que si son drapeau `active` est vrai : plusieurs listes
+  coexisteront (menu racine + liste d'Ekos), et c'est l'appelant qui arbitre
+  laquelle a la main — une liste ne se donne jamais le focus d'elle-même.
 - **`godot --path . -- --battle`** ouvre le combat par-dessus le worldmap, avec
   une vraie capture de fond. Même mécanique que `--map=` (`map_loader.gd`).
   C'est l'entrée de travail tant que le déclenchement d'un combat en jeu n'est

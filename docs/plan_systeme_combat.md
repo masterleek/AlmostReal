@@ -392,7 +392,7 @@ passer devant.
 | Lot | Contenu | État |
 |---|---|---|
 | **1** | Écran de préparation, rendu statique au pixel près (assets préparés, `Stage` ×4, fond capturé, plateforme, unités animées, HUD, menu au repos) | **fait** |
-| 2 | Navigation du menu racine (haut/bas, confirm/cancel), sons | |
+| 2 | Navigation du menu racine (haut/bas, confirm/cancel), sons | **fait** |
 | 3 | Ciblage : Attack → 1 ennemi ; surbrillance, nom + jauge de vie de la cible | |
 | 4 | Ekos / Items : listes défilantes, coût AP, panneau de description, ciblage multiple | |
 | 5 | Garde, fin de tour, enchaînement des alliés, boucle préparation complète | |
@@ -526,22 +526,32 @@ le reste est reproductible au pixel près.
 - **Décalage de phase entre les 3 cactoons** : ils partagent la même frame
   dans le mockup, donc rien ne dit s'ils doivent s'animer en phase ou non.
 
-### Questions ouvertes (non spécifiées, à trancher avant les lots concernés)
+### Règles tranchées (réponses de l'auteur, à appliquer dans les lots concernés)
 
-1. **Tour ennemi + rythme** : le joueur appuie aussi pendant le tour d'un
-   ennemi. Un bon timing réduit-il les dégâts subis ? les annule-t-il ?
-   (`mockup_assault_ennemies` montre un « GOOD » et Iris perd quand même 5 HP,
-   donc la mitigation n'est pas totale.) — Lot 7.
-2. **Effet de la synergie** : la jauge monte jusqu'au niveau 4, mais son effet
-   n'est pas décrit. — Lot 8.
-3. **Fin de combat** : conditions de victoire/défaite, récompenses, retour au
-   worldmap. — Lot 9.
-4. **Déclenchement du combat** depuis le worldmap : rencontre aléatoire ?
-   ennemi posé sur une case dans MapEditor ? — Lot 9.
-5. **Composition de l'équipe** : 2 alliés fixes (Noah, Iris) ou jusqu'à 3 ?
-   Le HUD du mockup n'en montre que 2.
-6. **Nombre de PA max** : le mockup « Action Points » montre 6 états (5 → 0),
-   donc 5 AP max — à confirmer.
+1. **Tour ennemi + rythme** (Lot 7) : un bon timing pendant le tour d'un ennemi
+   RÉDUIT les dégâts subis, sans jamais les annuler. Trois paliers :
+   Perfect → réduction forte, Great → moyenne, Good → faible. (Miss = aucune
+   réduction.) Les coefficients restent à chiffrer.
+2. **Effet de la synergie** (Lot 8) : la jauge débloque une **compétence
+   spéciale**, utilisable uniquement pendant la phase d'assaut et seulement si
+   la jauge est au moins au niveau 1. La compétence elle-même n'est pas encore
+   définie — à spécifier avant le Lot 8.
+3. **Fin de combat** (Lot 9) : victoire quand tous les ennemis sont à 0 PV ou
+   moins, défaite quand tous les alliés le sont. Le joueur gagne de l'argent
+   et de l'expérience ; l'écran de récompense n'a pas encore de maquette.
+4. **Déclenchement du combat** (Lot 9) : rencontre **aléatoire** sur le
+   worldmap. La touche Z reste l'entrée de test (déjà en place).
+5. **Composition de l'équipe** : **2 alliés fixes**, Noah et Iris. Le HUD à
+   deux blocs est donc définitif, pas un provisoire.
+6. **PA maximum : 5** — c'est le plafond du SYSTÈME (la rangée de losanges ne
+   dépasse jamais 5), pas la valeur de chaque unité : Noah en a 3 et Iris 2
+   dans `Battle/units.json`, conformément au mockup.
+
+### Reste à spécifier
+
+- La compétence spéciale débloquée par la synergie (bloque le Lot 8).
+- Les coefficients de réduction de dégâts Perfect/Great/Good (bloque le Lot 7).
+- L'écran de récompense argent/expérience (bloque la fin du Lot 9).
 
 ---
 
