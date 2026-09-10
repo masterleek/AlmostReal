@@ -649,14 +649,29 @@ contour flou l'étale encore. **La bonne référence est le TEXTE** — son encr
 mesure sans ambiguïté, et l'écart texte/pastille est connu par le menu racine,
 déjà calibré au pixel près sur un PNG.
 
+### La colonne de droite : coût pour un Eko, QUANTITÉ pour un objet
+
+Un objet ne consomme pas de points d'action ; sa colonne de droite affiche donc
+le nombre en réserve (« x13 ») à la place des losanges. Les deux ne coexistent
+jamais, et le nombre reprend exactement la place qu'occupaient les losanges :
+même bord droit, même centre vertical, mêmes couleurs que le libellé de la
+rangée (sombre sur la pastille sélectionnée, saumon ailleurs). Il est aligné à
+DROITE, sa largeur variant avec le nombre de chiffres.
+
+Un objet à zéro reste affiché — la maquette en montre un — mais le valider est
+refusé : le « x0 » de la ligne le disait déjà, le son d'erreur ne fait que le
+confirmer. Symétrique du refus d'un Eko trop cher.
+
+L'inventaire (id → quantité) est pour l'instant une constante de `BattleScene`,
+en attendant un véritable inventaire de partie.
+
 ### Non implémenté, faute de spécification
 
-- La **quantité** d'un objet : le jeu n'a pas d'inventaire de partie, et
-  aucune maquette ne montre comment un nombre s'afficherait sur une pastille.
-- La **dépense** effective des PA : choisir un Eko ne débite rien encore, les
-  PA ne sont consommés qu'au moment où l'action entre en file (Lot 5).
-- L'**icône d'élément**, la teinte des ennemis pendant le choix, et les poses
-  d'alliés — cf. « Reste à spécifier ».
+- La **dépense** effective des PA et la **consommation** d'un objet : choisir
+  ne débite rien encore, cela n'arrive qu'au moment où l'action entre en file
+  (Lot 5).
+- La teinte des ennemis pendant le choix et les poses d'alliés — cf. « Reste à
+  spécifier ».
 
 ---
 

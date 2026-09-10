@@ -603,6 +603,17 @@
       "style": {
         "font_size": 12
       }
+    },
+    {
+      "id": "battle.item.quantity",
+      "category": "ui",
+      "translations": {
+        "en": "x%d",
+        "fr": "x%d"
+      },
+      "style": {
+        "font_size": 15
+      }
     }
   ]
 }

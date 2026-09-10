@@ -145,6 +145,13 @@ const TEXT_SIZE := 15
 ## losanges éteints — c'est exactement le sens que l'asset a déjà sur la ligne
 ## de PA, et ça évite d'inventer un état « désactivé » que la maquette ne
 ## montre pas.
+## Quantité d'un objet, à la place du coût en PA — un objet ne consomme pas de
+## PA, c'est le nombre en réserve qui compte. Le nombre prend exactement la
+## place des losanges qu'il remplace : même bord droit, même centre vertical
+## (relevés sur menu_long_list.png). L'ordonnée est celle de la BOÎTE du
+## libellé ; l'encre descend d'environ 2 px de plus.
+const QUANTITY_PADDING := Vector2(5, 2)
+
 ## Coût en PA, aligné sur le bord DROIT de la pastille.
 ##
 ## Le décalage est appliqué DANS LE REPÈRE DE LA RANGÉE, pas à plat : les
@@ -234,7 +241,10 @@ var _cursor: Sprite2D
 ##   id          identifiant rendu par get_selected_id() ;
 ##   text_id     id Localization du libellé ;
 ##   cost        coût en PA (facultatif, 0 = pas de losanges) ;
-##   affordable  false pour afficher le coût en losanges éteints (facultatif).
+##   affordable  false pour afficher le coût en losanges éteints (facultatif) ;
+##   quantity    quantité en réserve, affichée en nombre À LA PLACE du coût
+##               (facultatif, -1 = rien). Les deux ne coexistent jamais : un
+##               objet ne coûte pas de PA, un Eko n'a pas de réserve.
 func setup(entries: Array[Dictionary], selected: int = 0) -> void:
 	# remove_child AVANT queue_free : la libération est différée à la fin de
 	# la frame, et les anciens nœuds resteraient donc affichés par-dessus les
@@ -290,6 +300,20 @@ func setup(entries: Array[Dictionary], selected: int = 0) -> void:
 			icon.rotation_degrees = _row_tilt_deg
 			add_child(icon)
 			_entries[i]["icon"] = icon
+		var quantity := int(_entries[i].get("quantity", -1))
+		if quantity >= 0:
+			var amount: RichTextLabel = BattleText.make(
+				Localization.get_text("battle.item.quantity") % quantity,
+				TEXT_SIZE, TEXT_COLOR,
+			)
+			amount.rotation_degrees = _row_tilt_deg
+			add_child(amount)
+			_entries[i]["amount"] = amount
+			# La largeur ne dépend que du nombre : mesurée une fois, pas à
+			# chaque redessin.
+			_entries[i]["amount_width"] = BattleText.text_width(
+				amount.get_parsed_text(), TEXT_SIZE
+			)
 		var cost := int(_entries[i].get("cost", 0))
 		if cost > 0:
 			var dots: Node2D = ApDots.new()
@@ -382,6 +406,7 @@ func _refresh() -> void:
 		var label: RichTextLabel = _entries[i]["label"]
 		var dots: Node2D = _entries[i].get("dots")
 		var icon: Sprite2D = _entries[i].get("icon")
+		var amount: RichTextLabel = _entries[i].get("amount")
 		# En mode réduit, seule l'entrée retenue reste visible ; sinon, seules
 		# les rangées de la fenêtre de défilement le sont.
 		var shown := selected if _focused else _is_visible_row(i)
@@ -391,6 +416,8 @@ func _refresh() -> void:
 			dots.visible = shown
 		if icon != null:
 			icon.visible = shown
+		if amount != null:
+			amount.visible = shown
 		if not shown:
 			continue
 		# Les rangées de bord s'estompent pour dire que la liste continue.
@@ -401,6 +428,8 @@ func _refresh() -> void:
 			dots.modulate.a = alpha
 		if icon != null:
 			icon.modulate.a = alpha
+		if amount != null:
+			amount.modulate.a = alpha
 		# Déjà à la résolution de l'écran (SVG, cf. PixelScale.sprite_native) :
 		# poser directement, pas d'agrandissement au runtime à faire ici.
 		pill.texture = ON if selected else OFF
@@ -424,6 +453,18 @@ func _refresh() -> void:
 				_width - COST_PADDING.x - span, COST_PADDING.y
 			).rotated(deg_to_rad(_row_tilt_deg))
 			dots.z_index = pill.z_index
+		if amount != null:
+			# Aligné à droite : c'est la largeur du nombre qui décide, et elle
+			# change avec lui (« x1 » contre « x13 »).
+			var span_q: float = _entries[i].get("amount_width", 0.0)
+			amount.position = pill.position + Vector2(
+				_width - QUANTITY_PADDING.x - span_q, QUANTITY_PADDING.y
+			).rotated(deg_to_rad(_row_tilt_deg))
+			amount.z_index = pill.z_index
+			amount.add_theme_color_override(
+				"default_color", TEXT_COLOR_SELECTED if selected else TEXT_COLOR
+			)
+			BattleText.set_outlined(amount, TEXT_SIZE, not selected)
 		if icon != null:
 			icon.position = pill.position + TYPE_ICON_OFFSET
 			# Au-dessus de sa propre pastille, et de celle du dessous : l'icône

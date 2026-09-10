@@ -121,10 +121,18 @@ const MENU_ENTRIES: PackedStringArray = [
 	MENU_ATTACK, MENU_EKO, MENU_ITEMS, "battle.menu.guard",
 ]
 
-## Objets portés par l'équipe. PROVISOIRE : le jeu n'a pas encore d'inventaire
-## de partie, et aucune maquette ne montre comment s'afficherait une quantité —
-## d'où une simple liste d'ids, sans nombre.
-const DEFAULT_ITEMS: PackedStringArray = ["potion", "grand_baume", "bombe", "eclat"]
+## Objets portés par l'équipe : id → quantité, dans l'ordre d'affichage.
+## PROVISOIRE, en attendant un véritable inventaire de partie. Un objet à zéro
+## reste dans la liste — la maquette en montre un — mais ne peut pas être
+## utilisé.
+## Quantités choisies pour le test : un nombre à deux chiffres, un à un
+## chiffre et un zéro, de quoi vérifier l'alignement à droite et le refus.
+const DEFAULT_INVENTORY := {
+	"potion": 13,
+	"grand_baume": 10,
+	"bombe": 2,
+	"eclat": 0,
+}
 
 ## Coin haut-gauche du cadre « INFO », relevé sur
 ## mockup_preparation_select_eko.jpg.
@@ -488,13 +496,15 @@ func _eko_entries() -> Array[Dictionary]:
 		})
 	return entries
 
-## Les objets ne coûtent pas de PA : pas de losanges sur ces lignes.
+## Un objet ne coûte pas de PA : la colonne de droite y affiche la QUANTITÉ en
+## réserve à la place des losanges.
 func _item_entries() -> Array[Dictionary]:
 	var entries: Array[Dictionary] = []
-	for id in DEFAULT_ITEMS:
+	for id: String in DEFAULT_INVENTORY:
 		entries.append({
 			"id": id,
 			"text_id": "item.%s.name" % id,
+			"quantity": int(DEFAULT_INVENTORY[id]),
 			"type": int(BattleData.get_item(id).get("type", 1)),
 		})
 	return entries
@@ -544,8 +554,14 @@ func _on_sublist_confirmed(id: String) -> void:
 	)
 	var cost: int = int(definition.get("ap_cost", 0))
 	var unit := _active_unit()
-	if unit == null or not unit.can_pay(cost):
-		# Les losanges éteints de la ligne le disaient déjà ; le son confirme.
+	# Deux refus différents selon la liste : un Eko demande des PA, un objet
+	# demande d'en avoir encore en réserve. Dans les deux cas la ligne le disait
+	# déjà — losanges éteints ou « x0 » — le son ne fait que confirmer.
+	var available := (
+		int(DEFAULT_INVENTORY.get(id, 0)) > 0 if _sublist_kind == "item"
+		else unit != null and unit.can_pay(cost)
+	)
+	if unit == null or not available:
 		_sfx_cancel.play()
 		return
 	_start_action({
