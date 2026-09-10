@@ -28,8 +28,11 @@ const PixelScale = preload("res://Scripts/Battle/UI/PixelScale.gd")
 ## légèrement.
 const PITCH := 9
 
-func _ready() -> void:
-	pass
+## Pas effectif, à poser avant set_points(). La colonne de coût d'une liste
+## d'Ekos serre ses losanges davantage que la ligne de PA du HUD (6 px contre
+## 9, relevés respectivement sur mockup_preparation_select_eko.jpg et
+## mockup_preparation.png) : c'est le même asset, pas le même espacement.
+var pitch: int = PITCH
 
 ## Redessine la rangée : `current` points allumés sur `maximum`.
 func set_points(current: int, maximum: int) -> void:
@@ -45,11 +48,11 @@ func set_points(current: int, maximum: int) -> void:
 		# Centrage dans la case : arrondi à l'entier, sinon le Stage ×4
 		# rendrait la texture sur un demi-pixel.
 		dot.position = Vector2(
-			i * PITCH + int((PITCH - size.x) / 2.0),
+			i * pitch + int((pitch - size.x) / 2.0),
 			int((on_size.y - size.y) / 2.0),
 		)
 		add_child(dot)
 
 ## Largeur totale occupée par `count` points — utile pour aligner ce qui suit.
-static func width_for(count: int) -> int:
-	return count * PITCH
+static func width_for(count: int, dot_pitch: int = PITCH) -> int:
+	return count * dot_pitch

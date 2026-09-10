@@ -1,0 +1,139 @@
+{
+  "_comment": "Catalogue des Ekos (compétences), lu au runtime par Scripts/Battle/BattleData.gd. Aucun libellé ici : les noms et descriptions passent par Localization (ids 'eko.<id>.name' et 'eko.<id>.desc'), comme pour les unités. CONTENU PROVISOIRE — l'auteur n'a pas encore défini ses compétences ; ces six-là existent pour exercer chaque mode de ciblage et faire défiler la liste. Elles sont destinées à être remplacées (ou éditées depuis MapEditor, cf. Lot 10) sans toucher au code. Les entrées 'test_N' ne sont là QUE pour éprouver le défilement et le fondu d'une liste de 15 rangées : les supprimer ne casse rien.",
+  "_champs": {
+    "ap_cost": "points d'action consommés (0 = gratuit)",
+    "target": "enemy | enemies | ally | allies | self — voir Scripts/Battle/UI/TargetSelector.gd",
+    "power": "puissance offensive brute, exploitée au Lot 6",
+    "heal": "PV rendus, exploités au Lot 6",
+    "sequence": "touches de la barre de rythme, exploitées au Lot 7",
+    "type": "1 ou 2 — choisit la couleur de l'icône de type (éclair bleu ou orange)"
+  },
+  "ekos": {
+    "fulgura": {
+      "ap_cost": 1,
+      "target": "enemy",
+      "power": 14,
+      "sequence": [
+        "cross",
+        "circle"
+      ],
+      "type": 1
+    },
+    "tempeste": {
+      "ap_cost": 2,
+      "target": "enemies",
+      "power": 9,
+      "sequence": [
+        "square",
+        "cross",
+        "circle"
+      ],
+      "type": 2
+    },
+    "brise": {
+      "ap_cost": 1,
+      "target": "enemy",
+      "power": 11,
+      "sequence": [
+        "triangle",
+        "cross"
+      ],
+      "type": 1
+    },
+    "rosee": {
+      "ap_cost": 1,
+      "target": "ally",
+      "heal": 18,
+      "sequence": [
+        "triangle",
+        "triangle"
+      ],
+      "type": 2
+    },
+    "aubaine": {
+      "ap_cost": 2,
+      "target": "allies",
+      "heal": 10,
+      "sequence": [
+        "circle",
+        "square",
+        "triangle"
+      ],
+      "type": 2
+    },
+    "elan": {
+      "ap_cost": 3,
+      "target": "self",
+      "sequence": [
+        "cross",
+        "cross",
+        "circle",
+        "circle"
+      ],
+      "type": 1
+    },
+    "test_1": {
+      "ap_cost": 2,
+      "target": "enemies",
+      "power": 6,
+      "type": 2,
+      "_test": true
+    },
+    "test_2": {
+      "ap_cost": 3,
+      "target": "ally",
+      "power": 7,
+      "type": 1,
+      "_test": true
+    },
+    "test_3": {
+      "ap_cost": 1,
+      "target": "enemy",
+      "power": 8,
+      "type": 2,
+      "_test": true
+    },
+    "test_4": {
+      "ap_cost": 2,
+      "target": "enemies",
+      "power": 9,
+      "type": 1,
+      "_test": true
+    },
+    "test_5": {
+      "ap_cost": 3,
+      "target": "ally",
+      "power": 10,
+      "type": 2,
+      "_test": true
+    },
+    "test_6": {
+      "ap_cost": 1,
+      "target": "enemy",
+      "power": 11,
+      "type": 1,
+      "_test": true
+    },
+    "test_7": {
+      "ap_cost": 2,
+      "target": "enemies",
+      "power": 12,
+      "type": 2,
+      "_test": true
+    },
+    "test_8": {
+      "ap_cost": 3,
+      "target": "ally",
+      "power": 13,
+      "type": 1,
+      "_test": true
+    },
+    "test_9": {
+      "ap_cost": 1,
+      "target": "enemy",
+      "power": 14,
+      "type": 2,
+      "_test": true
+    }
+  }
+}

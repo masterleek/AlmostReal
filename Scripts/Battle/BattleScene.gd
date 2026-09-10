@@ -1,9 +1,11 @@
 extends CanvasLayer
 
 ## Écran de combat — phase de préparation. Le rendu est complet (Lot 1), le
-## menu racine est navigable (Lot 2) et « Attack » ouvre le choix d'une cible
-## (Lot 3) ; valider une cible ne met encore aucune action en file, c'est la
-## boucle de préparation (Lot 5) qui la consommera.
+## menu racine est navigable (Lot 2), « Attack » ouvre le choix d'une cible
+## (Lot 3) et « Eko » / « Items » ouvrent leur sous-liste avec coût en PA,
+## description et ciblage simple ou de groupe (Lot 4) ; valider une cible ne
+## met encore aucune action en file, c'est la boucle de préparation (Lot 5)
+## qui la consommera.
 ##
 ## RÉSOLUTION. Les assets de combat sont dessinés pour un écran de 480×270,
 ## soit exactement 1920/4 (démontré par dark_lines.png qui fait 480 de large,
@@ -24,6 +26,7 @@ const UnitStatusPanel = preload("res://Scripts/Battle/UI/UnitStatusPanel.gd")
 const SynergyGauge = preload("res://Scripts/Battle/UI/SynergyGauge.gd")
 const CommandMenu = preload("res://Scripts/Battle/UI/CommandMenu.gd")
 const TargetSelector = preload("res://Scripts/Battle/UI/TargetSelector.gd")
+const DescriptionPanel = preload("res://Scripts/Battle/UI/DescriptionPanel.gd")
 const BattleUnit = preload("res://Scripts/Battle/BattleUnit.gd")
 const BattleData = preload("res://Scripts/Battle/BattleData.gd")
 const BattleText = preload("res://Scripts/Battle/UI/BattleText.gd")
@@ -108,17 +111,45 @@ const LEGEND_CONFIRM_ICON := Vector2(401, 232)
 const LEGEND_TEXT_OFFSET := Vector2(19, -1)
 const LEGEND_TEXT_SIZE := 15
 
-## Seul « Attack » est nommé : c'est la seule entrée dont le code doit
-## reconnaître l'id (elle ouvre le ciblage). Les trois autres n'ont pas encore
-## d'action, les nommer d'avance ne servirait à rien.
+## Les trois entrées qui ouvrent quelque chose sont nommées, parce que le code
+## doit reconnaître leur id. « Guard » ne l'est pas : elle n'a pas encore
+## d'action (Lot 5), la nommer d'avance ne servirait à rien.
 const MENU_ATTACK := "battle.menu.attack"
+const MENU_EKO := "battle.menu.eko"
+const MENU_ITEMS := "battle.menu.items"
 const MENU_ENTRIES: PackedStringArray = [
-	MENU_ATTACK, "battle.menu.eko", "battle.menu.items", "battle.menu.guard",
+	MENU_ATTACK, MENU_EKO, MENU_ITEMS, "battle.menu.guard",
 ]
 
-## Libellé de la touche « cercle » de la légende pendant le ciblage. Au menu
-## racine l'invite est absente des maquettes (cf. _close_targeting).
+## Objets portés par l'équipe. PROVISOIRE : le jeu n'a pas encore d'inventaire
+## de partie, et aucune maquette ne montre comment s'afficherait une quantité —
+## d'où une simple liste d'ids, sans nombre.
+const DEFAULT_ITEMS: PackedStringArray = ["potion", "grand_baume", "bombe", "eclat"]
+
+## Coin haut-gauche du cadre « INFO », relevé sur
+## mockup_preparation_select_eko.jpg.
+const DESCRIPTION_POS := Vector2(213, 159)
+
+## Opacité des combattants qu'on ne regarde pas. L'allié dont c'est le tour y
+## échappe toujours ; pour les autres, cela dépend de l'écran :
+##   - dans une liste d'actions, TOUT LE MONDE s'efface — elle descend jusqu'à
+##     sept rangées et passe alors devant le terrain ;
+##   - pendant le ciblage, seul le camp VISÉ garde son opacité, l'autre
+##     s'efface : en visant un ennemi, les alliés passent à 30 %.
+const INACTIVE_UNIT_ALPHA := 0.3
+
+## Modes de ciblage qui retiennent tout un camp d'un bloc, sans choix
+## individuel (cf. TargetSelector). « self » en fait partie : il n'y a rien à
+## choisir, mais la cible s'allume quand même pour dire sur qui ça porte.
+const GROUP_TARGETS: PackedStringArray = ["enemies", "allies", "self"]
+
+## Modes de ciblage qui désignent le camp allié.
+const ALLY_TARGETS: PackedStringArray = ["ally", "allies", "self"]
+
+## Libellés de la touche « cercle » de la légende : « Back » tant qu'on peut
+## revenir en arrière dans le choix d'une action, « Cancel » au menu racine.
 const PROMPT_BACK := "battle.prompt.back"
+const PROMPT_CANCEL := "battle.prompt.cancel"
 
 ## Position de la pastille de l'action retenue pendant le ciblage, en décalage
 ## depuis le point « pieds » de la cible. Réglée par recalage du rendu sur la
@@ -138,11 +169,11 @@ const DEFAULT_ALLIES: PackedStringArray = ["noah", "iris"]
 @onready var background_dim: ColorRect = $BackgroundDim
 @onready var stage: Node2D = $Stage
 
-## Qui a la main sur les entrées. Le menu racine reste monté pendant le
-## ciblage (il faut y revenir sur « Back », et sa pastille reste affichée à
-## côté de la cible) : c'est le drapeau `active` de chaque composant, arbitré
-## ici, qui décide lequel des deux écoute.
-enum State { MENU, TARGETING }
+## Qui a la main sur les entrées. Les listes restent montées derrière l'état
+## courant — il faut pouvoir y revenir sur « Back », et la pastille de l'action
+## retenue reste affichée à côté de la cible : c'est le drapeau `active` de
+## chaque composant, arbitré ici, qui décide lequel écoute.
+enum State { MENU, SUBLIST, TARGETING }
 
 var _enemies: PackedStringArray = DEFAULT_ENEMIES
 var _allies: PackedStringArray = DEFAULT_ALLIES
@@ -154,7 +185,25 @@ var _state: State = State.MENU
 ## vivent en parallèle, dans le même ordre.
 var _enemy_sprites: Array[AnimatedSprite2D] = []
 var _enemy_units: Array[BattleUnit] = []
+var _ally_sprites: Array[AnimatedSprite2D] = []
+var _ally_units: Array[BattleUnit] = []
+## Allié dont c'est le tour. Figé sur le premier tant que la boucle de tour
+## (Lot 5) n'existe pas.
+var _active_ally: int = 0
 var _target_selector: TargetSelector
+## Liste des Ekos ou des objets, montée à la demande par-dessus le menu racine.
+var _sublist: CommandMenu
+## "eko" ou "item" : dit dans quel catalogue chercher l'entrée choisie, et
+## quel préfixe d'id Localization donne sa description.
+var _sublist_kind: String = ""
+var _description: DescriptionPanel
+## Action en cours de composition : {source, id, target, cost}. `source` vaut
+## "attack", "eko" ou "item" — c'est lui qui dit vers quel écran « Back »
+## ramène.
+var _pending: Dictionary = {}
+## Liste qui porte la pastille de l'action pendant le ciblage : le menu racine
+## pour une attaque, la sous-liste pour un Eko ou un objet.
+var _focus_list: CommandMenu
 var _legend_cancel_icon: Sprite2D
 var _legend_cancel_label: RichTextLabel
 var _pending_background: Texture2D
@@ -252,7 +301,11 @@ func _build_units() -> void:
 		_enemy_sprites.append(sprite)
 		_enemy_units.append(BattleUnit.new(_enemies[i]))
 	for i in mini(_allies.size(), ALLY_SLOTS.size()):
-		_spawn_unit(units, _allies[i], ALLY_SLOTS[i], false)
+		var ally := _spawn_unit(units, _allies[i], ALLY_SLOTS[i], false)
+		if ally == null:
+			continue
+		_ally_sprites.append(ally)
+		_ally_units.append(BattleUnit.new(_allies[i]))
 
 func _spawn_unit(
 	parent: Node2D, unit_id: String, feet: Vector2i, mirrored: bool
@@ -307,13 +360,13 @@ func _build_hud() -> void:
 		panel.setup(_allies[i])
 		# Lot 1 : le premier allié est arbitrairement l'allié actif, comme sur
 		# le mockup. C'est la boucle de préparation (Lot 5) qui pilotera ça.
-		panel.set_active(i == 0)
-		# Idem : les PA courants reproduisent l'état du mockup (un point
-		# dépensé chacun) pour pouvoir comparer les deux images. Ce sont des
-		# valeurs de présentation, pas une règle de jeu.
-		var ap_max: int = int(BattleData.get_unit(_allies[i]).get("stats", {}).get("ap_max", 0))
-		panel.set_ap(maxi(0, ap_max - 1), ap_max)
+		panel.set_active(i == _active_ally)
+		# Les PA affichés sont désormais les PA RÉELS de l'unité (Lot 4), plus
+		# la valeur de présentation calquée sur le mockup. L'écart est voulu :
+		# la maquette montre un tour déjà entamé, alors qu'un combat commence
+		# avec les jauges pleines.
 		_status_panels.append(panel)
+	_refresh_ap()
 
 	var synergy: Node2D = SynergyGauge.new()
 	synergy.position = SYNERGY_POS
@@ -329,15 +382,50 @@ func _build_hud() -> void:
 
 	_menu = CommandMenu.new()
 	_tilted_group(MENU_PIVOT, MENU_TILT_DEG).add_child(_menu)
+	_menu.tilt_pivot = MENU_PIVOT
+	_menu.tilt_degrees = MENU_TILT_DEG
 	# Sélection par défaut sur la PREMIÈRE entrée (Attack). Le mockup fige
 	# « Eko » parce qu'il illustre un état de navigation, pas l'état d'entrée.
-	_menu.setup(MENU_ENTRIES, 0)
+	_menu.setup(_root_entries(), 0)
 	_menu.active = true
 	_menu.selection_changed.connect(_on_menu_moved)
 	_menu.confirmed.connect(_on_menu_confirmed)
 	_menu.cancelled.connect(_on_menu_cancelled)
 
+	# La sous-liste occupe la MÊME bande que le menu racine, qu'elle remplace :
+	# même groupe incliné, mêmes positions de pastilles. Montée après le menu
+	# pour que `_unhandled_input`, distribué à l'envers de l'arbre, la
+	# consulte en premier — la validation qui la ferme n'est ainsi jamais
+	# reconsommée par le menu qui réapparaît derrière.
+	# Posée à même le Stage, sans groupe incliné : la liste incline chaque
+	# rangée sur elle-même (cf. CommandMenu). Ses coordonnées sont donc déjà
+	# celles de l'écran, et `to_flat()` s'y réduit à l'identité.
+	_sublist = CommandMenu.new()
+	stage.add_child(_sublist)
+	_sublist.set_layout(CommandMenu.Layout.LIST)
+	_sublist.visible = false
+	_sublist.selection_changed.connect(_on_sublist_moved)
+	_sublist.confirmed.connect(_on_sublist_confirmed)
+	_sublist.cancelled.connect(_on_sublist_cancelled)
+
+	_description = DescriptionPanel.new()
+	_description.position = DESCRIPTION_POS
+	_description.visible = false
+	stage.add_child(_description)
+
 	_build_legend()
+
+## Le menu racine n'a ni coût ni description : ses entrées se réduisent à leur
+## id, qui sert aussi de libellé.
+func _root_entries() -> Array[Dictionary]:
+	var entries: Array[Dictionary] = []
+	for id in MENU_ENTRIES:
+		entries.append({"id": id, "text_id": id})
+	return entries
+
+func _refresh_ap() -> void:
+	for i in mini(_status_panels.size(), _ally_units.size()):
+		_status_panels[i].set_ap(_ally_units[i].ap, _ally_units[i].ap_max)
 
 ## Sons repris tels quels du worldmap plutôt que dupliqués : c'est le même
 ## vocabulaire sonore d'un écran à l'autre (déplacement, validation, action
@@ -356,17 +444,19 @@ func _add_sfx(stream: AudioStream) -> AudioStreamPlayer:
 func _on_menu_moved(_index: int) -> void:
 	_sfx_move.play()
 
-## « Attack » ouvre le choix de la cible (Lot 3). Les listes d'Ekos et
-## d'objets (Lot 4) et la garde (Lot 5) viendront se brancher ici de la même
-## façon ; d'ici là elles se contentent du son de validation.
+## « Attack » vise directement un ennemi ; « Eko » et « Items » passent d'abord
+## par leur sous-liste. « Guard » n'a pas encore d'action (Lot 5), elle se
+## contente du son de validation.
 func _on_menu_confirmed(id: String) -> void:
-	if id == MENU_ATTACK:
-		if not _open_targeting():
-			# Plus rien à viser : le son d'erreur vaut mieux qu'un écran de
-			# ciblage vide.
-			_sfx_cancel.play()
-		return
-	_sfx_confirm.play()
+	match id:
+		MENU_ATTACK:
+			_start_action({"source": "attack", "target": "enemy"}, _menu)
+		MENU_EKO:
+			_open_sublist("eko", _eko_entries())
+		MENU_ITEMS:
+			_open_sublist("item", _item_entries())
+		_:
+			_sfx_confirm.play()
 
 ## Au menu racine il n'y a rien à annuler. Le Lot 5 y branchera le retour au
 ## tour de l'allié précédent ; d'ici là le son d'erreur signale simplement que
@@ -374,64 +464,220 @@ func _on_menu_confirmed(id: String) -> void:
 func _on_menu_cancelled() -> void:
 	_sfx_cancel.play()
 
-## Renvoie false si aucun ennemi n'est ciblable, auquel cas rien n'a changé.
-func _open_targeting() -> bool:
-	var targets: Array[Dictionary] = []
-	for i in _enemy_units.size():
-		if _enemy_units[i].is_alive():
-			targets.append({"unit": _enemy_units[i], "sprite": _enemy_sprites[i]})
+## ──────────────────────────────────────────────────────────────────────────
+##  SOUS-LISTES (Ekos, objets)
+## ──────────────────────────────────────────────────────────────────────────
+
+## Entrées d'Ekos de l'allié actif. Le coût est affiché en losanges, et passe
+## en losanges ÉTEINTS quand l'allié n'a plus assez de PA — c'est déjà le sens
+## que cet asset porte sur la ligne de PA du HUD.
+func _eko_entries() -> Array[Dictionary]:
+	var unit := _active_unit()
+	var entries: Array[Dictionary] = []
+	if unit == null:
+		return entries
+	for id in BattleData.get_unit_ekos(unit.id):
+		var eko: Dictionary = BattleData.get_eko(id)
+		var cost: int = int(eko.get("ap_cost", 0))
+		entries.append({
+			"id": id,
+			"text_id": "eko.%s.name" % id,
+			"cost": cost,
+			"affordable": unit.can_pay(cost),
+			"type": int(eko.get("type", 1)),
+		})
+	return entries
+
+## Les objets ne coûtent pas de PA : pas de losanges sur ces lignes.
+func _item_entries() -> Array[Dictionary]:
+	var entries: Array[Dictionary] = []
+	for id in DEFAULT_ITEMS:
+		entries.append({
+			"id": id,
+			"text_id": "item.%s.name" % id,
+			"type": int(BattleData.get_item(id).get("type", 1)),
+		})
+	return entries
+
+func _open_sublist(kind: String, entries: Array[Dictionary]) -> void:
+	if entries.is_empty():
+		# Aucun Eko connu, ou sac vide : mieux vaut le son d'erreur qu'une
+		# liste vide où la touche « Back » serait la seule issue.
+		_sfx_cancel.play()
+		return
+	_sfx_confirm.play()
+	_sublist_kind = kind
+	_state = State.SUBLIST
+	_menu.active = false
+	_menu.visible = false
+	_sublist.setup(entries, 0)
+	_sublist.visible = true
+	_sublist.active = true
+	_set_units_dimmed(true, true)
+	_show_description(_sublist.get_selected_id())
+	_set_legend_cancel(PROMPT_BACK)
+
+func _close_sublist() -> void:
+	_set_units_dimmed(false, false)
+	_sublist.active = false
+	_sublist.visible = false
+	_sublist.restore()
+	_description.visible = false
+	_menu.visible = true
+	_menu.active = true
+	_state = State.MENU
+	_set_legend_cancel(PROMPT_CANCEL)
+
+func _show_description(id: String) -> void:
+	if id == "":
+		_description.visible = false
+		return
+	_description.show_text("%s.%s.desc" % [_sublist_kind, id])
+
+func _on_sublist_moved(_index: int) -> void:
+	_sfx_move.play()
+	_show_description(_sublist.get_selected_id())
+
+func _on_sublist_confirmed(id: String) -> void:
+	var definition: Dictionary = (
+		BattleData.get_eko(id) if _sublist_kind == "eko" else BattleData.get_item(id)
+	)
+	var cost: int = int(definition.get("ap_cost", 0))
+	var unit := _active_unit()
+	if unit == null or not unit.can_pay(cost):
+		# Les losanges éteints de la ligne le disaient déjà ; le son confirme.
+		_sfx_cancel.play()
+		return
+	_start_action({
+		"source": _sublist_kind,
+		"id": id,
+		"target": String(definition.get("target", "enemy")),
+		"cost": cost,
+	}, _sublist)
+
+func _on_sublist_cancelled() -> void:
+	_sfx_cancel.play()
+	_close_sublist()
+
+## ──────────────────────────────────────────────────────────────────────────
+##  CIBLAGE
+## ──────────────────────────────────────────────────────────────────────────
+
+func _start_action(pending: Dictionary, list: CommandMenu) -> void:
+	if not _open_targeting(pending, list):
+		# Plus rien à viser : le son d'erreur vaut mieux qu'un écran de ciblage
+		# vide.
+		_sfx_cancel.play()
+
+## `list` est la liste qui porte l'action retenue : c'est elle qui se réduit à
+## sa seule entrée pour aller se poser à côté de la cible.
+## Renvoie false si le mode de ciblage ne désigne personne, auquel cas rien n'a
+## changé.
+func _open_targeting(pending: Dictionary, list: CommandMenu) -> bool:
+	var kind := String(pending.get("target", "enemy"))
+	var targets := _targets_for(kind)
 	if targets.is_empty():
 		return false
 	_sfx_confirm.play()
+	_pending = pending
+	_focus_list = list
 	_state = State.TARGETING
 	_menu.active = false
-	# Première cible vivante par défaut, comme le menu s'ouvre sur sa première
-	# entrée : une sélection par défaut stable vaut mieux qu'une sélection
-	# « intelligente » qui changerait d'un tour à l'autre.
-	_target_selector.open(targets)
+	_sublist.active = false
+	# La description a fait son office : l'action est choisie, le cadre n'a
+	# plus rien à apporter et il encombrerait le terrain qu'on vise.
+	_description.visible = false
+	# Le camp visé garde son opacité, l'autre s'efface.
+	var aims_at_allies := kind in ALLY_TARGETS
+	_set_units_dimmed(aims_at_allies, not aims_at_allies)
+	# Première cible vivante par défaut, comme les listes s'ouvrent sur leur
+	# première entrée : une sélection par défaut stable vaut mieux qu'une
+	# sélection « intelligente » qui changerait d'un tour à l'autre.
+	_target_selector.open(targets, kind in GROUP_TARGETS)
 	_follow_target()
 	_set_legend_cancel(PROMPT_BACK)
 	return true
 
-func _close_targeting() -> void:
-	_target_selector.close()
-	_menu.restore()
-	_state = State.MENU
-	_menu.active = true
-	# Rien à annuler au menu racine tant qu'un seul allié y passe : la maquette
-	# n'y affiche aucune invite « cercle ». Le Lot 5 la fera réapparaître avec
-	# le libellé `battle.prompt.cancel`, pour revenir au tour de l'allié
-	# précédent.
-	_set_legend_cancel("")
+## Cibles possibles d'un mode de ciblage. Les morts sont écartés ici plutôt que
+## dans le sélecteur : c'est une règle de jeu, pas une affaire d'affichage.
+func _targets_for(kind: String) -> Array[Dictionary]:
+	match kind:
+		"enemy", "enemies":
+			return _living(_enemy_units, _enemy_sprites)
+		"ally", "allies":
+			return _living(_ally_units, _ally_sprites)
+		"self":
+			var alone: Array[Dictionary] = []
+			if _active_ally < mini(_ally_units.size(), _ally_sprites.size()):
+				alone.append({
+					"unit": _ally_units[_active_ally],
+					"sprite": _ally_sprites[_active_ally],
+				})
+			return alone
+	push_warning("BattleScene: mode de ciblage inconnu '%s'" % kind)
+	return []
 
-## Réduit le menu à l'action retenue et la pose près de la cible courante.
+func _living(
+	units: Array[BattleUnit], sprites: Array[AnimatedSprite2D]
+) -> Array[Dictionary]:
+	var targets: Array[Dictionary] = []
+	for i in mini(units.size(), sprites.size()):
+		if units[i].is_alive():
+			targets.append({"unit": units[i], "sprite": sprites[i]})
+	return targets
+
+## Réduit la liste active à l'action retenue et la pose près de la cible. La
+## conversion vers le repère interne est demandée à la liste elle-même : les
+## deux ne pivotent pas autour du même point.
 func _follow_target() -> void:
-	_menu.focus_selection(
-		_menu_local(_target_selector.get_selected_feet() + FOCUS_PILL_OFFSET)
+	_focus_list.focus_selection(
+		_focus_list.to_flat(_target_selector.get_selected_feet() + FOCUS_PILL_OFFSET)
 	)
-
-## Convertit un point de l'écran vers le repère interne du menu, qui est
-## incliné. Les positions de pastilles y sont exprimées « à plat » (cf. la note
-## sur l'inclinaison plus haut) : sans cette conversion, une position lue sur
-## le terrain subirait l'inclinaison une seconde fois.
-func _menu_local(point: Vector2) -> Vector2:
-	return (point - MENU_PIVOT).rotated(-deg_to_rad(MENU_TILT_DEG)) + MENU_PIVOT
 
 func _on_target_moved(_index: int) -> void:
 	_sfx_move.play()
 	_follow_target()
 
-## Lot 3 : valider une cible ne fait que confirmer le choix — il n'y a pas
-## encore de file d'actions où le déposer, c'est le Lot 5 qui l'introduira. On
-## revient donc au menu, ce qui laisse quand même vérifier tout le trajet
-## aller-retour.
+## Lot 4 : valider une cible ne fait toujours que confirmer le choix — il n'y a
+## pas encore de file d'actions où le déposer, c'est le Lot 5 qui l'introduira.
+## On remonte donc jusqu'au menu racine, ce qui laisse vérifier tout le trajet.
 func _on_target_confirmed(_index: int) -> void:
 	_sfx_confirm.play()
-	_close_targeting()
+	_target_selector.close()
+	_focus_list.restore()
+	_pending = {}
+	_close_sublist()
 
+## « Back » ramène d'où l'on vient : au menu racine pour une attaque, à la
+## sous-liste pour un Eko ou un objet.
 func _on_target_cancelled() -> void:
 	_sfx_cancel.play()
-	_close_targeting()
+	_target_selector.close()
+	_focus_list.restore()
+	var from_sublist := String(_pending.get("source", "attack")) != "attack"
+	_pending = {}
+	if not from_sublist:
+		_close_sublist()
+		return
+	_state = State.SUBLIST
+	_sublist.active = true
+	_description.visible = true
+	_set_units_dimmed(true, true)
+	_set_legend_cancel(PROMPT_BACK)
+
+## Estompe chaque camp indépendamment. L'allié dont c'est le tour n'est jamais
+## estompé : c'est lui qui agit, il doit rester lisible.
+func _set_units_dimmed(dim_enemies: bool, dim_allies: bool) -> void:
+	for sprite in _enemy_sprites:
+		sprite.modulate.a = INACTIVE_UNIT_ALPHA if dim_enemies else 1.0
+	for i in _ally_sprites.size():
+		var faded := dim_allies and i != _active_ally
+		_ally_sprites[i].modulate.a = INACTIVE_UNIT_ALPHA if faded else 1.0
+
+func _active_unit() -> BattleUnit:
+	if _active_ally >= _ally_units.size():
+		return null
+	return _ally_units[_active_ally]
 
 ## `text_id` vide masque l'invite entière (icône comprise). Sinon le groupe est
 ## reconstruit aligné à droite sur LEGEND_CANCEL_RIGHT.
@@ -457,7 +703,7 @@ func _build_legend() -> void:
 	legend.add_child(_legend_cancel_icon)
 	_legend_cancel_label = BattleText.make("", LEGEND_TEXT_SIZE, Color(1, 1, 1))
 	legend.add_child(_legend_cancel_label)
-	_set_legend_cancel("")
+	_set_legend_cancel(PROMPT_CANCEL)
 
 	var confirm_icon: Sprite2D = PixelScale.sprite_native(MINI_CROSS)
 	confirm_icon.position = LEGEND_CONFIRM_ICON

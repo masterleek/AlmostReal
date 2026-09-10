@@ -394,7 +394,7 @@ passer devant.
 | **1** | Écran de préparation, rendu statique au pixel près (assets préparés, `Stage` ×4, fond capturé, plateforme, unités animées, HUD, menu au repos) | **fait** |
 | 2 | Navigation du menu racine (haut/bas, confirm/cancel), sons | **fait** |
 | 3 | Ciblage : Attack → 1 ennemi ; surbrillance, nom + jauge de vie de la cible | **fait** |
-| 4 | Ekos / Items : listes défilantes, coût AP, panneau de description, ciblage multiple | |
+| 4 | Ekos / Items : listes défilantes, coût AP, panneau de description, ciblage multiple | **fait** |
 | 5 | Garde, fin de tour, enchaînement des alliés, boucle préparation complète | |
 | 6 | Phase d'assaut : ordre par agilité, exécution des actions, dégâts, morts | |
 | 7 | Barre de rythme : défilement des notes, fenêtres Perfect/Great/Good/Miss, bonus de dégâts | |
@@ -524,6 +524,142 @@ Ces éléments appartiennent à la boucle de tour, pas au ciblage :
 
 ---
 
+## 5 quater. Résultat du Lot 4
+
+« Eko » et « Items » ouvrent une sous-liste, qui mène au ciblage déjà écrit au
+Lot 3. Rien de neuf n'a été créé là où un composant existait :
+
+- **`CommandMenu` sert les trois listes.** Ses entrées sont passées en
+  dictionnaires (`id`, `text_id`, `cost`, `affordable`), et sa géométrie est
+  choisie par `set_layout()` — voir plus bas, les deux dispositions n'ont
+  presque rien en commun.
+- **Le coût est rendu avec `ApDots`**, l'asset du HUD. Un coût que l'allié ne
+  peut pas payer s'affiche en losanges ÉTEINTS : c'est déjà le sens que ces
+  deux icônes portent sur la ligne de PA, il n'y avait pas à inventer un état
+  « désactivé ».
+- **`TargetSelector` gagne un mode GROUPE.** Les Ekos et objets qui visent un
+  camp entier allument toutes leurs cibles d'un coup ; la plaque nom + jauge
+  est alors masquée (elle ne pourrait en nommer qu'une), et la pastille de
+  l'action se pose au barycentre des cibles.
+- **`BattleData` sert les trois catalogues** (unités, Ekos, objets) par un seul
+  chargeur paramétré, les trois fichiers ayant la même forme.
+
+### Ce que montre `mockup_preparation_select_eko.jpg`
+
+Quatre vignettes de 480×270 natif : menu du premier allié, liste d'Ekos,
+ciblage, menu du second allié. Une première intégration avait supposé que la
+sous-liste remplaçait le menu racine dans sa bande ; la maquette dit tout
+autre chose.
+
+- **La liste est en haut à GAUCHE, en escalier.** Ses pastilles font 123 px de
+  large (contre 78 au menu racine), chaque rangée descend de 15 px en se
+  décalant de 10 px vers la droite, et l'entrée sélectionnée n'est PAS avancée
+  horizontalement — elle se distingue par sa seule couleur. Les libellés des
+  trois entrées commencent à 121, 131 et 141 : la cascade est nette.
+- **Chaque RANGÉE est inclinée sur elle-même**, la liste ne l'est pas. Le bord
+  supérieur d'une pastille descend bien de 3° (relevé : y = 45, 43, 42, 40 pour
+  x = 110, 140, 170, 200), mais l'écart d'une rangée à la suivante vaut
+  exactement (10, 15) — le décalage à plat — là où une rotation d'ensemble
+  donnerait (10,77 ; 14,46). C'est la différence qui faisait dériver les icônes
+  de type : posées dans un groupe incliné en bloc, elles s'écartaient d'un pixel
+  de plus à chaque rangée. La liste est donc posée à même le Stage, et ce sont
+  la pastille, le libellé, le coût et l'icône qui portent chacun l'inclinaison.
+- **Chaque entrée porte une icône de type**, encastrée dans le bord gauche de
+  la pastille (décalage (4, 1)). Deux variantes, `ic_type_action_1.svg` et
+  `_2.svg`, qui ne diffèrent que par la couleur de l'éclair — bleu ou orange ;
+  c'est le champ `type` du catalogue qui choisit. Ce décalage est relevé sur
+  `menu_long_list.png`, PAS sur les maquettes de scène : voir plus bas.
+- **Le libellé est retiré de 18 px**, pas de 6 : la place à gauche revient à
+  l'icône d'élément de l'Eko.
+- **Le coût est aligné à droite**, à 8 px du bord, et ses losanges sont plus
+  serrés que ceux du HUD (pas de 6 contre 9) — même asset, espacement propre à
+  la colonne. Son décalage est appliqué DANS LE REPÈRE DE LA RANGÉE : posé à
+  une centaine de pixels du coin, là où l'inclinaison a remonté la surface de
+  près de 6 px, un décalage à plat le faisait sortir par le bas de la
+  pastille. Le libellé, lui, reste à plat — à 18 px du coin l'écart ne vaut
+  qu'un pixel, et la mesure penche de ce côté.
+- **Le cadre de description est un cadre « INFO »** posé au milieu à droite
+  (213, 159), de 203×71, avec un onglet de titre en haut à gauche et un corps
+  de trois lignes au pas de 12.
+- **L'invite « Cancel » est présente au menu racine**, sur les deux vignettes
+  qui le montrent. Elle avait été masquée au Lot 3 d'après la première
+  vignette de la maquette d'attaque, qui ne l'affichait pas ; cette maquette-ci
+  est plus récente et la montre deux fois, elle fait donc foi.
+
+Recalage du rendu contre la deuxième vignette : pastilles et libellés des trois
+rangées tombent aux abscisses relevées (121 / 131 / 141), le bord droit de
+chaque groupe de losanges aussi (217 pour un coût de 1, 237 pour un coût de 2),
+et le cadre INFO à un demi-pixel près (titre à 230/172, corps à 234/183). Les
+positions calibrées au Lot 3 sont inchangées au centième de pixel.
+
+### La liste longue (`menu_long_list.png`)
+
+Trois vignettes — « First », « Mid », « Last » — sur une liste de vingt
+entrées, à l'échelle de design. Elles fixent deux règles :
+
+- **Sept rangées visibles**, et la sélection est maintenue sur celle du
+  MILIEU, la fenêtre butant aux deux extrémités : `Txt 6` sur la fenêtre 3–9 et
+  `Txt 17` sur 14–20 tombent tous deux en quatrième position, tandis que
+  `Txt 2` reste en deuxième parce que la fenêtre ne peut pas remonter plus
+  haut.
+- **Les rangées de bord s'estompent, mais seulement du côté où la liste
+  continue** : opacité 0,25 pour la rangée extérieure, 0,50 pour la suivante.
+  Mesuré par démélange sur le gris de la planche (0,246 et 0,492 sur deux
+  canaux indépendants). La vignette « First » ne fond donc pas ses deux
+  premières rangées, et « Last » pas ses deux dernières.
+
+Les trois vignettes sont rejouées à l'identique par la liste d'Ekos de Noah,
+portée à quinze entrées pour le test : fenêtres et opacités correspondent
+exactement. Les entrées `test_N` d'`ekos.json` n'existent que pour ça et
+peuvent être supprimées sans rien casser.
+
+Sept rangées font descendre la liste jusque sur le terrain — c'est pourquoi
+**tous les combattants passent à 30 % d'opacité pendant le choix d'une
+action**, sauf l'allié dont c'est le tour.
+
+Pendant le CIBLAGE, l'estompage se fait par camp : celui qui est visé garde son
+opacité, l'autre passe à 30 %. Viser un ennemi efface donc les autres alliés,
+et un Eko de soin fait l'inverse. L'allié qui agit n'est jamais estompé.
+
+### Calibrer sur le PNG, pas sur le JPEG
+
+`menu_long_list.png` est la seule maquette de liste livrée **sans perte** et à
+l'échelle de design. Les maquettes de scène, elles, sont en JPEG : leur
+compression déplace d'un pixel le bord des petits aplats, ce qui suffit à
+fausser le calage d'une icône de 12 px. Deux corrections sont venues de là :
+
+- l'ordonnée de l'icône, mesurée à +1 sur le PNG (coin de pastille en
+  (79 ; 134,1) par ajustement linéaire du bord supérieur sur vingt colonnes,
+  disque en y 136..147) alors que le JPEG donnait +0 ;
+- l'inclinaison par rangée (ci-dessus), que seul l'écart exact de (10, 15)
+  entre deux rangées permettait de trancher.
+
+Vérification finale par corrélation du disque seul, sur une rangée non
+sélectionnée des deux côtés : minimum net à (0, 0), l'écart doublant au
+moindre pixel de décalage. Pour les losanges, comparaison des centroïdes
+(insensibles au seuil) : la maquette donne 105,86 et 112,10 depuis le coin de
+la rangée, le rendu 105,87 et 112,12.
+
+### Le piège de cette maquette
+
+Elle est fournie en **JPEG**, et ses pastilles sont inclinées. Caler la liste
+sur le bord supérieur de la première pastille donnait 6 px d'erreur : ce bord
+n'est jamais horizontal (le bout droit remonte de 6 px sur 123 à −3°) et le
+contour flou l'étale encore. **La bonne référence est le TEXTE** — son encre se
+mesure sans ambiguïté, et l'écart texte/pastille est connu par le menu racine,
+déjà calibré au pixel près sur un PNG.
+
+### Non implémenté, faute de spécification
+
+- La **quantité** d'un objet : le jeu n'a pas d'inventaire de partie, et
+  aucune maquette ne montre comment un nombre s'afficherait sur une pastille.
+- La **dépense** effective des PA : choisir un Eko ne débite rien encore, les
+  PA ne sont consommés qu'au moment où l'action entre en file (Lot 5).
+- L'**icône d'élément**, la teinte des ennemis pendant le choix, et les poses
+  d'alliés — cf. « Reste à spécifier ».
+
+---
+
 ## 6. Vérification (Lot 1)
 
 Conforme au workflow de `CLAUDE.md` :
@@ -621,6 +757,13 @@ le reste est reproductible au pixel près.
 
 ### Reste à spécifier
 
+- **Le contenu réel des Ekos et des objets.** `Battle/ekos.json` et
+  `Battle/items.json` sont livrés avec six compétences et quatre objets
+  PROVISOIRES, choisis pour exercer chaque mode de ciblage et faire défiler la
+  liste. Le schéma est stable ; seul le contenu est à remplacer.
+- **Le type réel de chaque Eko et de chaque objet.** Deux variantes d'icône
+  existent (`ic_type_action_1/2.svg`, éclair bleu ou orange) ; le champ `type`
+  du catalogue choisit laquelle, et les valeurs actuelles sont arbitraires.
 - La compétence spéciale débloquée par la synergie (bloque le Lot 8).
 - Les coefficients de réduction de dégâts Perfect/Great/Good (bloque le Lot 7).
 - L'écran de récompense argent/expérience (bloque la fin du Lot 9).

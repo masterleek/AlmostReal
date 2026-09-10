@@ -2,13 +2,17 @@ extends Node2D
 
 ## Choix d'une cible parmi des unités posées sur le terrain.
 ##
-## Écrit générique dès maintenant parce qu'il servira aussi bien au ciblage
-## d'un ennemi par Attack (Lot 3) qu'à celui d'un allié par un objet ou un Eko
-## de soin (Lot 4) : rien ici ne suppose de quel camp est la cible. L'appelant
-## fournit simplement la liste des unités sélectionnables.
+## Rien ici ne suppose de quel camp est la cible : l'appelant fournit la liste
+## des unités visables, qu'il s'agisse des ennemis pour une attaque ou des
+## alliés pour un soin. Deux modes :
+##
+##   - UNITAIRE : une cible à la fois, changée avec ←/→, nom et jauge affichés ;
+##   - GROUPE : toutes les cibles de la liste sont retenues d'un bloc. Elles
+##     s'allument toutes, la navigation n'a plus de sens et la plaque est
+##     masquée — elle ne pourrait nommer qu'une des cibles.
 ##
 ## Trois choses composent la sélection :
-##   - la SILHOUETTE de la cible passe au blanc, par battement lent ;
+##   - la SILHOUETTE de la ou des cibles passe au blanc, par battement lent ;
 ##   - son NOM s'affiche à ses pieds ;
 ##   - sa JAUGE DE VIE s'affiche sous le nom (même composant que le HUD des
 ##     alliés — c'est la même information, elle doit se lire pareil).
@@ -93,7 +97,11 @@ var _selected: int = 0
 var _name_label: RichTextLabel
 var _bar: HpBar
 var _material: ShaderMaterial
-var _tinted: CanvasItem
+## Sprites actuellement blanchis. Un seul en mode unitaire, toute la liste en
+## mode groupe — le matériau, lui, reste unique et partagé.
+var _tinted: Array[CanvasItem] = []
+## Ciblage de groupe : voir l'en-tête.
+var _group: bool = false
 ## Origine du battement, remise à zéro à chaque changement de cible pour que
 ## la nouvelle cible s'allume franchement à l'instant où on la désigne. Lue
 ## sur l'horloge absolue, le battement partirait d'une phase quelconque.
@@ -116,8 +124,10 @@ func _ready() -> void:
 
 ## Ouvre la sélection sur `targets` (déjà filtrée par l'appelant : le sélecteur
 ## n'a pas à connaître les règles qui rendent une unité ciblable ou non).
-func open(targets: Array[Dictionary], index: int = 0) -> void:
+## `group` retient toute la liste d'un bloc plutôt qu'une entrée à la fois.
+func open(targets: Array[Dictionary], group: bool = false, index: int = 0) -> void:
 	_targets = targets
+	_group = group
 	if _targets.is_empty():
 		return
 	_selected = clampi(index, 0, _targets.size() - 1)
@@ -130,6 +140,7 @@ func close() -> void:
 	active = false
 	visible = false
 	set_process(false)
+	_group = false
 	_clear_tint()
 	# Réassignation plutôt que `clear()` : le tableau appartient à l'appelant,
 	# le sélecteur n'a fait que le garder sous la main.
@@ -141,11 +152,20 @@ func get_selected_index() -> int:
 ## Point « pieds » de la cible courante, dans le repère du terrain. Sert à
 ## l'appelant pour aligner ce qu'il affiche lui-même sur la cible — la pastille
 ## de l'action retenue, notamment.
+##
+## En mode groupe il n'y a pas de cible courante : on renvoie le barycentre des
+## cibles, pour que la pastille se pose au milieu de ce qui est visé plutôt
+## qu'au-dessus d'un membre arbitraire du groupe.
 func get_selected_feet() -> Vector2:
 	if _targets.is_empty():
 		return Vector2.ZERO
-	var sprite: AnimatedSprite2D = _targets[_selected]["sprite"]
-	return sprite.position
+	if not _group:
+		var sprite: AnimatedSprite2D = _targets[_selected]["sprite"]
+		return sprite.position
+	var sum := Vector2.ZERO
+	for entry in _targets:
+		sum += (entry["sprite"] as AnimatedSprite2D).position
+	return (sum / float(_targets.size())).round()
 
 ## Navigation gauche/droite uniquement : les emplacements d'un camp sont rangés
 ## de gauche à droite (cf. BattleScene.ENEMY_SLOTS), l'ordre de la liste est
@@ -155,9 +175,9 @@ func get_selected_feet() -> Vector2:
 func _unhandled_input(event: InputEvent) -> void:
 	if not active or _targets.is_empty():
 		return
-	if event.is_action_pressed("ui_right"):
+	if event.is_action_pressed("ui_right") and not _group:
 		select(_selected + 1)
-	elif event.is_action_pressed("ui_left"):
+	elif event.is_action_pressed("ui_left") and not _group:
 		select(_selected - 1)
 	elif event.is_action_pressed("battle_confirm"):
 		confirmed.emit(_selected)
@@ -179,15 +199,23 @@ func select(index: int) -> void:
 	selection_changed.emit(_selected)
 
 func _refresh() -> void:
+	_pulse_origin_msec = Time.get_ticks_msec()
+	_clear_tint()
+	for i in _targets.size():
+		if _group or i == _selected:
+			var target: CanvasItem = _targets[i]["sprite"]
+			target.material = _material
+			_tinted.append(target)
+
+	# La plaque nomme UNE cible : elle n'a pas de sens sur un groupe.
+	_name_label.visible = not _group
+	_bar.visible = not _group
+	if _group:
+		return
+
 	var entry: Dictionary = _targets[_selected]
 	var unit: BattleUnit = entry["unit"]
 	var sprite: AnimatedSprite2D = entry["sprite"]
-
-	_pulse_origin_msec = Time.get_ticks_msec()
-	_clear_tint()
-	_tinted = sprite
-	_tinted.material = _material
-
 	BattleText.set_centered_text(_name_label, Localization.get_text(unit.name_text_id()))
 	_bar.set_ratio(unit.hp_ratio())
 
@@ -214,6 +242,6 @@ func _process(_delta: float) -> void:
 ## Les sprites d'unité n'ont pas de matériau propre (cf. UnitSprite) : rendre
 ## la main revient donc à remettre `null`, pas à restaurer un état sauvegardé.
 func _clear_tint() -> void:
-	if _tinted != null:
-		_tinted.material = null
-		_tinted = null
+	for sprite in _tinted:
+		sprite.material = null
+	_tinted.clear()

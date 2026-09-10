@@ -1,0 +1,25 @@
+{
+  "_comment": "Catalogue des objets utilisables en combat. Même modèle qu'ekos.json : pas de libellé, des ids Localization ('item.<id>.name' / '.desc'). CONTENU PROVISOIRE, à remplacer par le vrai inventaire du jeu. Un objet ne coûte pas de PA — ce fichier décrit ce QU'EST un objet ; combien l'équipe en porte est un état de partie, pas une définition (cf. BattleScene.DEFAULT_INVENTORY).",
+  "items": {
+    "potion": {
+      "target": "ally",
+      "heal": 30,
+      "type": 1
+    },
+    "grand_baume": {
+      "target": "allies",
+      "heal": 15,
+      "type": 1
+    },
+    "bombe": {
+      "target": "enemies",
+      "power": 12,
+      "type": 2
+    },
+    "eclat": {
+      "target": "enemy",
+      "power": 22,
+      "type": 2
+    }
+  }
+}

@@ -174,6 +174,435 @@
       "style": {
         "font_size": 12
       }
+    },
+    {
+      "id": "eko.fulgura.name",
+      "category": "ui",
+      "translations": {
+        "en": "Fulgura",
+        "fr": "Fulgura"
+      },
+      "style": {
+        "font_size": 15
+      }
+    },
+    {
+      "id": "eko.fulgura.desc",
+      "category": "ui",
+      "translations": {
+        "en": "Bolt of light on one foe.",
+        "fr": "Éclair de lumière sur un ennemi."
+      },
+      "style": {
+        "font_size": 12
+      }
+    },
+    {
+      "id": "eko.tempeste.name",
+      "category": "ui",
+      "translations": {
+        "en": "Gale",
+        "fr": "Rafale"
+      },
+      "style": {
+        "font_size": 15
+      }
+    },
+    {
+      "id": "eko.tempeste.desc",
+      "category": "ui",
+      "translations": {
+        "en": "Gale that strikes every foe.",
+        "fr": "Bourrasque sur tous les ennemis."
+      },
+      "style": {
+        "font_size": 12
+      }
+    },
+    {
+      "id": "eko.brise.name",
+      "category": "ui",
+      "translations": {
+        "en": "Brise",
+        "fr": "Brise"
+      },
+      "style": {
+        "font_size": 15
+      }
+    },
+    {
+      "id": "eko.brise.desc",
+      "category": "ui",
+      "translations": {
+        "en": "Cutting gust on one foe.",
+        "fr": "Rafale tranchante sur un ennemi."
+      },
+      "style": {
+        "font_size": 12
+      }
+    },
+    {
+      "id": "eko.rosee.name",
+      "category": "ui",
+      "translations": {
+        "en": "Rosee",
+        "fr": "Rosée"
+      },
+      "style": {
+        "font_size": 15
+      }
+    },
+    {
+      "id": "eko.rosee.desc",
+      "category": "ui",
+      "translations": {
+        "en": "Restores an ally's health.",
+        "fr": "Rend des PV à un allié."
+      },
+      "style": {
+        "font_size": 12
+      }
+    },
+    {
+      "id": "eko.aubaine.name",
+      "category": "ui",
+      "translations": {
+        "en": "Aubaine",
+        "fr": "Aubaine"
+      },
+      "style": {
+        "font_size": 15
+      }
+    },
+    {
+      "id": "eko.aubaine.desc",
+      "category": "ui",
+      "translations": {
+        "en": "Restores the whole party.",
+        "fr": "Rend des PV à toute l'équipe."
+      },
+      "style": {
+        "font_size": 12
+      }
+    },
+    {
+      "id": "eko.elan.name",
+      "category": "ui",
+      "translations": {
+        "en": "Elan",
+        "fr": "Élan"
+      },
+      "style": {
+        "font_size": 15
+      }
+    },
+    {
+      "id": "eko.elan.desc",
+      "category": "ui",
+      "translations": {
+        "en": "Sharpens your own next blow.",
+        "fr": "Aiguise votre prochain coup."
+      },
+      "style": {
+        "font_size": 12
+      }
+    },
+    {
+      "id": "item.potion.name",
+      "category": "ui",
+      "translations": {
+        "en": "Potion",
+        "fr": "Potion"
+      },
+      "style": {
+        "font_size": 15
+      }
+    },
+    {
+      "id": "item.potion.desc",
+      "category": "ui",
+      "translations": {
+        "en": "Restores an ally's health.",
+        "fr": "Rend des PV à un allié."
+      },
+      "style": {
+        "font_size": 12
+      }
+    },
+    {
+      "id": "item.grand_baume.name",
+      "category": "ui",
+      "translations": {
+        "en": "Balm",
+        "fr": "Baume"
+      },
+      "style": {
+        "font_size": 15
+      }
+    },
+    {
+      "id": "item.grand_baume.desc",
+      "category": "ui",
+      "translations": {
+        "en": "Restores the whole party.",
+        "fr": "Rend des PV à toute l'équipe."
+      },
+      "style": {
+        "font_size": 12
+      }
+    },
+    {
+      "id": "item.bombe.name",
+      "category": "ui",
+      "translations": {
+        "en": "Bomb",
+        "fr": "Bombe"
+      },
+      "style": {
+        "font_size": 15
+      }
+    },
+    {
+      "id": "item.bombe.desc",
+      "category": "ui",
+      "translations": {
+        "en": "Blast that hits every foe.",
+        "fr": "Explosion sur tous les ennemis."
+      },
+      "style": {
+        "font_size": 12
+      }
+    },
+    {
+      "id": "item.eclat.name",
+      "category": "ui",
+      "translations": {
+        "en": "Shard",
+        "fr": "Éclat"
+      },
+      "style": {
+        "font_size": 15
+      }
+    },
+    {
+      "id": "item.eclat.desc",
+      "category": "ui",
+      "translations": {
+        "en": "Sharp splinter thrown at a foe.",
+        "fr": "Éclat tranchant lancé sur un ennemi."
+      },
+      "style": {
+        "font_size": 12
+      }
+    },
+    {
+      "id": "battle.info.title",
+      "category": "ui",
+      "translations": {
+        "en": "INFO",
+        "fr": "INFO"
+      },
+      "style": {
+        "font_size": 10
+      }
+    },
+    {
+      "id": "eko.test_1.name",
+      "category": "ui",
+      "translations": {
+        "en": "Test 1",
+        "fr": "Test 1"
+      },
+      "style": {
+        "font_size": 15
+      }
+    },
+    {
+      "id": "eko.test_1.desc",
+      "category": "ui",
+      "translations": {
+        "en": "Placeholder entry used to test list scrolling.",
+        "fr": "Entrée de test pour éprouver le défilement."
+      },
+      "style": {
+        "font_size": 12
+      }
+    },
+    {
+      "id": "eko.test_2.name",
+      "category": "ui",
+      "translations": {
+        "en": "Test 2",
+        "fr": "Test 2"
+      },
+      "style": {
+        "font_size": 15
+      }
+    },
+    {
+      "id": "eko.test_2.desc",
+      "category": "ui",
+      "translations": {
+        "en": "Placeholder entry used to test list scrolling.",
+        "fr": "Entrée de test pour éprouver le défilement."
+      },
+      "style": {
+        "font_size": 12
+      }
+    },
+    {
+      "id": "eko.test_3.name",
+      "category": "ui",
+      "translations": {
+        "en": "Test 3",
+        "fr": "Test 3"
+      },
+      "style": {
+        "font_size": 15
+      }
+    },
+    {
+      "id": "eko.test_3.desc",
+      "category": "ui",
+      "translations": {
+        "en": "Placeholder entry used to test list scrolling.",
+        "fr": "Entrée de test pour éprouver le défilement."
+      },
+      "style": {
+        "font_size": 12
+      }
+    },
+    {
+      "id": "eko.test_4.name",
+      "category": "ui",
+      "translations": {
+        "en": "Test 4",
+        "fr": "Test 4"
+      },
+      "style": {
+        "font_size": 15
+      }
+    },
+    {
+      "id": "eko.test_4.desc",
+      "category": "ui",
+      "translations": {
+        "en": "Placeholder entry used to test list scrolling.",
+        "fr": "Entrée de test pour éprouver le défilement."
+      },
+      "style": {
+        "font_size": 12
+      }
+    },
+    {
+      "id": "eko.test_5.name",
+      "category": "ui",
+      "translations": {
+        "en": "Test 5",
+        "fr": "Test 5"
+      },
+      "style": {
+        "font_size": 15
+      }
+    },
+    {
+      "id": "eko.test_5.desc",
+      "category": "ui",
+      "translations": {
+        "en": "Placeholder entry used to test list scrolling.",
+        "fr": "Entrée de test pour éprouver le défilement."
+      },
+      "style": {
+        "font_size": 12
+      }
+    },
+    {
+      "id": "eko.test_6.name",
+      "category": "ui",
+      "translations": {
+        "en": "Test 6",
+        "fr": "Test 6"
+      },
+      "style": {
+        "font_size": 15
+      }
+    },
+    {
+      "id": "eko.test_6.desc",
+      "category": "ui",
+      "translations": {
+        "en": "Placeholder entry used to test list scrolling.",
+        "fr": "Entrée de test pour éprouver le défilement."
+      },
+      "style": {
+        "font_size": 12
+      }
+    },
+    {
+      "id": "eko.test_7.name",
+      "category": "ui",
+      "translations": {
+        "en": "Test 7",
+        "fr": "Test 7"
+      },
+      "style": {
+        "font_size": 15
+      }
+    },
+    {
+      "id": "eko.test_7.desc",
+      "category": "ui",
+      "translations": {
+        "en": "Placeholder entry used to test list scrolling.",
+        "fr": "Entrée de test pour éprouver le défilement."
+      },
+      "style": {
+        "font_size": 12
+      }
+    },
+    {
+      "id": "eko.test_8.name",
+      "category": "ui",
+      "translations": {
+        "en": "Test 8",
+        "fr": "Test 8"
+      },
+      "style": {
+        "font_size": 15
+      }
+    },
+    {
+      "id": "eko.test_8.desc",
+      "category": "ui",
+      "translations": {
+        "en": "Placeholder entry used to test list scrolling.",
+        "fr": "Entrée de test pour éprouver le défilement."
+      },
+      "style": {
+        "font_size": 12
+      }
+    },
+    {
+      "id": "eko.test_9.name",
+      "category": "ui",
+      "translations": {
+        "en": "Test 9",
+        "fr": "Test 9"
+      },
+      "style": {
+        "font_size": 15
+      }
+    },
+    {
+      "id": "eko.test_9.desc",
+      "category": "ui",
+      "translations": {
+        "en": "Placeholder entry used to test list scrolling.",
+        "fr": "Entrée de test pour éprouver le défilement."
+      },
+      "style": {
+        "font_size": 12
+      }
     }
   ]
 }

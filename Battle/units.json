@@ -1,5 +1,5 @@
 {
-  "_comment": "Catalogue des unités de combat. Lu au runtime par Scripts/Battle/BattleData.gd, sur le modèle de Sprites/tile_meta.json : la donnée vit en JSON pour être éditable depuis MapEditor plus tard, sans recompiler ni toucher aux scènes. Aucun libellé ici — les noms passent par Localization (id 'unit.<id>.name').",
+  "_comment": "Catalogue des unités de combat. Lu au runtime par Scripts/Battle/BattleData.gd, sur le modèle de Sprites/tile_meta.json : la donnée vit en JSON pour être éditable depuis MapEditor plus tard, sans recompiler ni toucher aux scènes. Aucun libellé ici — les noms passent par Localization (id 'unit.<id>.name'). Le tableau 'ekos' liste les compétences connues, définies dans ekos.json.",
   "units": {
     "noah": {
       "portrait": "res://UI/Battle/battle_face_noah.png",
@@ -19,7 +19,24 @@
           "frames": 4,
           "fps": 6
         }
-      }
+      },
+      "ekos": [
+        "fulgura",
+        "brise",
+        "tempeste",
+        "elan",
+        "rosee",
+        "aubaine",
+        "test_1",
+        "test_2",
+        "test_3",
+        "test_4",
+        "test_5",
+        "test_6",
+        "test_7",
+        "test_8",
+        "test_9"
+      ]
     },
     "iris": {
       "portrait": "res://UI/Battle/battle_face_iris.png",
@@ -39,7 +56,12 @@
           "frames": 4,
           "fps": 6
         }
-      }
+      },
+      "ekos": [
+        "rosee",
+        "aubaine",
+        "fulgura"
+      ]
     },
     "cactoon": {
       "portrait": "",
@@ -60,7 +82,8 @@
           "fps": 6,
           "_comment": "frames: 1 — les 5 frames de la planche sont une course (avec un flash blanc au milieu), pas un repos. On fige donc l'ennemi sur la premiere."
         }
-      }
+      },
+      "ekos": []
     }
   }
 }

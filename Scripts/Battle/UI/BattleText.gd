@@ -154,6 +154,18 @@ static func make_centered(
 static func set_centered_text(label: RichTextLabel, bbcode: String) -> void:
 	label.text = "[center]%s[/center]" % bbcode
 
+## Libellé qui REVIENT À LA LIGNE dans une boîte de `design_width` pixels de
+## design. C'est l'exception au réglage par défaut de `make()` : le panneau de
+## description affiche une phrase, pas une étiquette, et sa largeur est fixée
+## par le cadre qui l'entoure.
+static func make_wrapped(
+	bbcode: String, design_width: float, font_size: int, color: Color
+) -> RichTextLabel:
+	var label := make(bbcode, font_size, color)
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	label.size.x = design_width * SUPERSAMPLE
+	return label
+
 ## Largeur qu'occupera `text` en pixels de design, connue AVANT tout rendu.
 ##
 ## Sert aux mises en page alignées à droite — la légende de combat cale le bord

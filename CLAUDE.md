@@ -345,6 +345,51 @@ pas partir en guerre contre des choix déjà faits et documentés dans ce repo :
   garder le décalage de moindre écart donne la position au pixel près, même
   quand les deux fonds diffèrent. Pour le CORPS d'un texte, ce sont les
   positions de départ des glyphes qui tranchent, pas la largeur d'encre.
+- **La pastille de menu a une largeur fixe (78 px)** : le libellé et la
+  colonne de coût en PA doivent y tenir ensemble. `CommandMenu` avertit au
+  montage quand un texte déborde, en donnant l'écart en pixels — c'est un
+  problème de DONNÉE (le catalogue de textes), pas de mise en page, et la
+  traduction la plus longue est celle qui compte.
+- **Une maquette JPEG se recale sur le TEXTE, jamais sur un bord de cadre.**
+  Les pastilles de l'écran de combat sont inclinées : leur bord supérieur
+  remonte de 6 px sur 123 à −3°, et la compression étale encore le contour.
+  L'encre d'un libellé, elle, se mesure sans ambiguïté, et l'écart
+  texte/pastille est connu par un élément déjà calibré sur un PNG.
+- **Ne pas supposer qu'un sous-menu réutilise la disposition de son parent.**
+  La liste d'Ekos partage l'asset et l'inclinaison du menu racine, et rien
+  d'autre : elle est à l'autre coin de l'écran, ses pastilles font 123 px au
+  lieu de 78, et ses rangées descendent EN CASCADE (+10 px vers la droite à
+  chaque rangée). Demander la maquette avant d'écrire la mise en page coûte
+  moins cher que la refaire.
+- **Un SVG exporté de Figma peut embarquer le fond de son cadre** — un `<rect>`
+  plein couvrant tout le viewBox, sous le dessin (une première version des
+  icônes de type en avait un rouge vif). Le repérer avant d'importer : sur une
+  icône ronde, le disque couvre le centre et seuls les coins trahissent le
+  problème.
+- **Un décalage depuis le coin d'un élément incliné doit être appliqué DANS SON
+  REPÈRE**, sinon l'erreur croît avec la distance : sur une pastille de combat
+  penchée de 3°, un décalage à plat de 100 px tombe 6 px sous la surface réelle
+  et l'élément sort du cadre. Invisible près du coin (l'icône de type, à 4 px,
+  ne bougeait pas), flagrant à l'autre bout (la colonne de coût).
+- **Calibrer sur la maquette SANS PERTE quand il y en a une.** Les planches
+  d'UI livrées en PNG sont à l'échelle de design ; les maquettes de scène sont
+  en JPEG, et leur compression déplace d'un pixel le bord des petits aplats —
+  assez pour fausser le calage d'une icône de 12 px, et pour faire croire à un
+  accord quand il n'y en a pas.
+- **Distinguer une liste inclinée EN BLOC d'une liste dont chaque rangée est
+  inclinée** : mesurer l'écart d'une rangée à la suivante. S'il vaut le
+  décalage à plat, chaque rangée tourne sur elle-même ; s'il est tourné lui
+  aussi, c'est le groupe entier. Les deux donnent des pastilles également
+  penchées — seule cette mesure les sépare, et se tromper fait dériver d'un
+  pixel par rangée tout ce qui est posé à côté du texte.
+- **Un groupe d'interface pivote autour de SON coin, pas autour du pivot d'un
+  autre groupe.** Réutiliser un pivot situé à l'autre bout de l'écran
+  transforme une inclinaison de 3° en translation de plusieurs pixels.
+- **Reconstruire une liste de nœuds : `remove_child()` AVANT `queue_free()`.**
+  La libération est différée à la fin de la frame, donc les anciens nœuds
+  restent enfants — et donc affichés par-dessus les nouveaux — le temps d'une
+  image. Visible seulement en rouvrant une liste, ce qui en fait un bug facile
+  à ne pas voir en test manuel.
 
 ## Workflow de vérification (avant de considérer une tâche terminée)
 
