@@ -395,7 +395,7 @@ passer devant.
 | 2 | Navigation du menu racine (haut/bas, confirm/cancel), sons | **fait** |
 | 3 | Ciblage : Attack → 1 ennemi ; surbrillance, nom + jauge de vie de la cible | **fait** |
 | 4 | Ekos / Items : listes défilantes, coût AP, panneau de description, ciblage multiple | **fait** |
-| 5 | Garde, fin de tour, enchaînement des alliés, boucle préparation complète | |
+| 5 | Garde, fin de tour, enchaînement des alliés, boucle préparation complète | **fait** |
 | 6 | Phase d'assaut : ordre par agilité, exécution des actions, dégâts, morts | |
 | 7 | Barre de rythme : défilement des notes, fenêtres Perfect/Great/Good/Miss, bonus de dégâts | |
 | 8 | Jauge de synergie (remplissage, 4 niveaux) | |
@@ -675,6 +675,164 @@ en attendant un véritable inventaire de partie.
 
 ---
 
+## 5 quinquies. Résultat du Lot 5
+
+La boucle de préparation est fermée : chaque allié vivant choisit à son tour,
+et la phase se termine quand ils ont tous choisi.
+
+- **L'action est retenue sur l'unité** (`BattleUnit.action`) et son coût est
+  débité À CE MOMENT-LÀ, pas à l'exécution : PA pour un Eko, un exemplaire pour
+  un objet. C'est ce qui rend le retour en arrière exact — ce qui est rendu est
+  exactement ce qui avait été pris.
+- **« Guard » ne vise personne** : elle est retenue sans passer par le ciblage,
+  et ne coûte rien. Ce qu'elle FERA relève du Lot 6.
+- **« Cancel » au menu racine revient au tour de l'allié précédent** en défaisant
+  son choix. Au premier allié il n'y a rien à défaire : son d'erreur.
+- **Fin de préparation** : le signal `preparation_finished` porte les actions
+  dans l'ordre des alliés. L'écran reste alors en place, « Cancel » permettant
+  encore de revenir sur le dernier choix ; c'est là que le Lot 6 branchera
+  l'assaut.
+
+### Présentation d'un allié qui a choisi
+
+Relevée sur la quatrième vignette de `mockup_preparation_select_items.png`,
+en PNG donc sans perte :
+
+- **son sprite et son portrait s'assombrissent** (valeurs ajustées par moindres
+  carrés sur la maquette ; corrigées depuis, cf. § 5 sexies — le sprite est
+  assombri SANS alpha et change de planche) ;
+- **une coche verte se pose sur son portrait**, dont l'origine tombe à (327, 32)
+  à l'écran dans le rendu comme dans la maquette ;
+- le cadre jaune, lui, suit l'allié ACTIF et n'a rien à voir avec le choix.
+
+Trois écritures concurrentes visaient la modulation des sprites (estompage par
+camp, teinte « action retenue »). Elles sont désormais centralisées dans
+`_refresh_unit_visuals`, seul endroit qui décide : action retenue > camp non
+regardé > pleine opacité.
+
+### Une lecture du Lot 1 corrigée au passage
+
+Le compteur de PV bleu avait été rattaché à l'allié ACTIF, d'après une maquette
+où les deux coïncidaient. Les maquettes de la boucle de tour les séparent :
+Noah garde son compteur bleu après avoir joué, alors que le cadre jaune est
+passé à Iris. C'est donc la BLESSURE que la couleur signale, pas le tour —
+la même que le segment bleu de la jauge de PV. `set_active()` ne touche plus à
+la couleur ; c'est `set_hp()` qui la pilote depuis la blessure en attente
+(cf. § 5 sexies). Conséquence visible : les deux compteurs sont blancs au
+repos, là où la maquette montre un Noah déjà blessé.
+
+### Ce que la maquette montre
+
+L'allié ACTIF y est dessiné avec sa planche `idle`, frame 0 — vérifié par
+recalage, erreur nulle. Pour l'allié qui a DÉJÀ CHOISI, la première lecture
+(« `idle` assombri ») s'est révélée fausse : c'est sa planche `standby`, cf.
+§ 5 sexies.
+
+---
+
+## 5 sexies. Blessures, poses et emplacement du menu
+
+Quatre demandes de l'auteur, traitées ensemble parce qu'elles se recoupent —
+deux d'entre elles se relèvent sur la même maquette.
+
+### 1. Deux sortes de dégâts
+
+Une attaque « directe » retire les PV tout de suite. Une attaque « de
+blessure » ne les retire pas : elle les met EN ATTENTE, affichés en bleu au
+bout de la jauge. Ce qui décide de leur sort est ce qui arrive ensuite :
+
+| événement | effet |
+|---|---|
+| un tour sans le moindre dégât | la blessure s'efface — l'unité guérit de ce qu'elle aurait dû subir |
+| une nouvelle blessure | elle s'ajoute à celle en attente |
+| un dégât direct | tout part des PV d'un coup : direct + blessure + **bonus de conversion** |
+
+Le modèle vit dans `BattleUnit` (`injury`, `take_direct_damage`,
+`take_injury_damage`, `end_turn`) ; personne ne l'appelle encore, c'est la
+phase d'assaut (Lot 6) qui infligera les dégâts et refermera les tours.
+
+**Deux points restent à l'auteur.** Le **bonus de conversion** est bien une
+simple addition au total (confirmé), mais son NOMBRE n'est pas fixé :
+`INJURY_CONVERSION_BONUS` vaut 0 en attendant. Et « pendant le même tour ou au
+tour suivant » a été lu ainsi : la blessure s'efface à la fin du premier tour
+qui se passe sans aucun dégât — donc jamais celui où elle vient d'être
+infligée.
+
+**Le rendu** (`HpBar`) : le segment occupe l'espace entre les PV acquis et les
+PV courants, en fond `#153FE4` rayé de `#007BFF` à 45°, les rayures défilant en
+boucle. Le motif est fabriqué à la résolution de l'ÉCRAN et non de design —
+la zone ne fait que 3 px de design de haut, une diagonale n'y tiendrait pas,
+alors qu'à l'écran elle en fait 12. Il tient en UNE tuile de 8 px de large :
+`texture_repeat` la fait boucler, et le défilement n'est qu'un déplacement de
+`region_rect`, sans shader ni texture redessinée par image. Le compteur de PV
+du HUD passe au bleu tant qu'une blessure est en attente — c'est la lecture
+corrigée au Lot 5 qui trouve enfin son déclencheur.
+
+### 2. Les alliés changent de planche
+
+- **il a VALIDÉ une attaque ou « Eko »** → pose de visée FIGÉE. Pour Noah,
+  `313000404_atkeff.png`, frame 6 comptée à partir de 1 (index 5), posée en
+  `frames: 1` — une image tenue, pas une boucle, même mécanique que le cactoon.
+  Iris n'a pas encore de planche d'attaque : elle reste au repos, ce qui est
+  exactement ce qu'on veut d'un asset manquant — rien, pas un état inventé.
+- **il a validé son action** → pose d'attente (`313000404_standby.png`,
+  `100022805_standby.png`), animée, avec un assombrissement **opaque**,
+  `Color(0.565, 0.337, 0.308)`. Sans alpha : le personnage ne devient pas
+  translucide, il passe à l'ombre.
+
+Le déclencheur est la VALIDATION, jamais le survol : au menu racine l'allié n'a
+encore rien décidé, et sa silhouette changerait à chaque mouvement du curseur.
+Les deux commandes ne dégainent donc pas au même écran, parce qu'elles ne sont
+pas validées au même moment — « Attack » ouvre directement le ciblage, « Eko »
+ouvre d'abord sa liste, et c'est déjà là que Noah dégaine. « Items » et
+« Guard » ne font dégainer nulle part, ciblage compris.
+
+**L'ancrage des planches ne va pas de soi.** Elles ne cadrent pas leur cellule
+pareil : entre `idle` et `standby`, l'ombre au sol de Noah se déplace de
+11,5 px dans sa cellule. Laissées au centre-bas, les deux planches feraient
+sauter le personnage sur place. D'où un champ `anchor` par animation dans
+`units.json`, relevé sur l'ELLIPSE D'OMBRE — le seul repère commun à toutes les
+planches, et la seule chose qui touche vraiment le sol.
+
+Celui de la planche `standby` de Noah est en plus recalé sur la maquette
+(minimum net à résidu 8,7 contre 21 au voisin), qui le place 1 px plus haut que
+l'alignement des ombres seul. **Et c'est ce recalage qui a montré que la
+maquette utilise DÉJÀ la planche `standby`** pour l'allié qui a joué : résidu
+8,7 avec `standby` contre 45 avec `idle`. La demande de l'auteur ne faisait
+donc que corriger une lecture fautive du Lot 5. Aucune maquette ne montre Iris
+en `standby` : son ancre est déduite de l'ombre seule, à un pixel près.
+
+### 3. Le menu suit l'allié dont c'est le tour
+
+Les positions du menu sont celles du PREMIER emplacement allié ; pour les
+suivants, c'est le groupe incliné entier qui est translaté, inclinaison et
+géométrie inchangées. Le décalage du second est relevé sur la quatrième
+vignette de `mockup_preparation_select_items.png` par recalage de la pastille
+« Guard », identique dans les deux maquettes : minimum net à **(51 ; −11)**,
+résidu 6,0 contre 12,9 aux voisins immédiats.
+
+Ce n'est PAS la translation des emplacements de combat, qui vaut (58 ; −11) :
+l'auteur a rapproché le menu de 7 px. D'où une table relevée
+(`MENU_SLOT_OFFSET`) plutôt qu'un calcul à partir d'`ALLY_SLOTS`.
+
+Conséquence sur `CommandMenu.to_flat()`, qui ramène un point du terrain dans le
+repère d'une liste : il ne peut plus être reconstruit à partir d'un pivot et
+d'un angle posés à la main, puisque le groupe porteur se déplace. Il est
+désormais déduit des transformations réelles de l'arbre, ce qui couvre du même
+coup la sous-liste, posée à même le terrain. Vérifié sans régression : les
+positions du Lot 3 sortent identiques au dix-millième
+(`pastille=(224.0923 ; 77.34132)`, `nom=(161 ; 164)`, `jauge=(177 ; 179)`,
+`légende=(346 ; 232)`).
+
+### 4. « Cancel » masqué au premier allié
+
+Le premier à jouer n'a rien à défaire : l'invite est masquée plutôt
+qu'affichée sans effet. C'est ce que montrait déjà `mockup_preparation.png`,
+dont la légende ne porte que « Confirm » — l'écart n'avait pas été relevé au
+Lot 1. La touche continue de répondre par le son d'erreur.
+
+---
+
 ## 6. Vérification (Lot 1)
 
 Conforme au workflow de `CLAUDE.md` :
@@ -779,6 +937,11 @@ le reste est reproductible au pixel près.
 - **Le type réel de chaque Eko et de chaque objet.** Deux variantes d'icône
   existent (`ic_type_action_1/2.svg`, éclair bleu ou orange) ; le champ `type`
   du catalogue choisit laquelle, et les valeurs actuelles sont arbitraires.
+- **Le bonus de dégâts de la conversion blessure → direct** (`BattleUnit.
+  INJURY_CONVERSION_BONUS`, aujourd'hui 0 : simple addition).
+- **Une planche d'apprêt pour Iris** : elle n'a pas d'équivalent de
+  `313000404_atkeff.png`, et reste donc au repos pendant qu'elle prépare une
+  attaque ou un Eko.
 - La compétence spéciale débloquée par la synergie (bloque le Lot 8).
 - Les coefficients de réduction de dégâts Perfect/Great/Good (bloque le Lot 7).
 - L'écran de récompense argent/expérience (bloque la fin du Lot 9).

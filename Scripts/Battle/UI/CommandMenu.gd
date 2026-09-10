@@ -196,18 +196,25 @@ var _max_visible: int = MAX_VISIBLE
 var _typed: bool = false
 var _row_tilt_deg: float = 0.0
 
-## Inclinaison du groupe qui porte cette liste, renseignée par l'appelant.
-## Sert à convertir un point de l'ÉCRAN vers le repère interne (cf. to_flat) —
-## les deux listes ne pivotent pas autour du même point, la conversion ne peut
-## donc pas être une constante de la scène.
-var tilt_pivot := Vector2.ZERO
-var tilt_degrees := 0.0
+## Repère dans lequel s'expriment les points passés à to_flat() : le terrain
+## (le `Stage` de l'écran de combat). Renseigné par l'appelant.
+var reference_frame: Node2D
 
-## Position, dans le repère interne, qui rend le point `point` de l'écran. Sans
-## cette conversion, une position lue sur le terrain subirait l'inclinaison une
-## seconde fois.
+## Position, dans le repère INTERNE de la liste, qui rend le point `point` du
+## terrain. Sans cette conversion, une position lue sur le terrain subirait une
+## seconde fois tout ce que le groupe porteur applique déjà.
+##
+## Elle est déduite des transformations réelles de l'arbre plutôt que
+## reconstruite à partir d'un pivot et d'un angle : les deux listes ne sont pas
+## portées pareil (la sous-liste est posée à même le terrain, le menu racine vit
+## dans un groupe incliné QUI SE DÉPLACE d'un allié à l'autre, cf.
+## BattleScene.MENU_SLOT_OFFSET), et une formule paramétrée à la main aurait à
+## suivre chacune de ces différences.
 func to_flat(point: Vector2) -> Vector2:
-	return (point - tilt_pivot).rotated(-deg_to_rad(tilt_degrees)) + tilt_pivot
+	if reference_frame == null:
+		return point
+	var to_frame := reference_frame.global_transform.affine_inverse() * global_transform
+	return to_frame.affine_inverse() * point
 
 ## À appeler AVANT setup() : la disposition détermine la taille des pastilles,
 ## donc leur construction.

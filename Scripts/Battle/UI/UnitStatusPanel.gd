@@ -19,6 +19,8 @@ const BattleData = preload("res://Scripts/Battle/BattleData.gd")
 const PixelScale = preload("res://Scripts/Battle/UI/PixelScale.gd")
 
 const HIGHLIGHT := preload("res://UI/Battle/battle_face_highlight.svg")
+## Coche verte de l'allié dont l'action est déjà retenue.
+const CHECK := preload("res://UI/Battle/ic_checkmark.svg")
 
 ## Tailles relevées sur le mockup : les libellés « HP »/« AP » ont une hauteur
 ## de capitale de 6 px et le compteur de PV de 9 px. Avec BoldPixels, dont la
@@ -36,19 +38,41 @@ const HP_BAR_POS := Vector2(2, 8)
 const PORTRAIT_POS := Vector2(1, 14)
 const AP_LABEL_POS := Vector2(4, 34)
 const AP_DOTS_POS := Vector2(16, 34)
+## Coche posée dans le haut de la vignette, relevée par corrélation de l'asset
+## sur la quatrième vignette de mockup_preparation_select_items.png : origine
+## écran (327, 32), soit (22, 13) une fois ramenée dans le repère du bloc, que
+## l'inclinaison de −4,2° fait tourner autour de son coin.
+const CHECK_POS := Vector2(22, 13)
+
+## Teinte du PORTRAIT de l'allié dont l'action est retenue : il s'efface
+## derrière ceux qui choisissent encore. Ajustée sur la maquette (moindres
+## carrés sur 749 pixels de portrait).
+##
+## Elle garde son alpha : le portrait est posé sur le fond de la vignette, et
+## c'est bien un voile que la maquette montre. Le SPRITE sur le terrain, lui,
+## est traité autrement — un assombrissement OPAQUE, cf.
+## BattleScene.CONFIRMED_SPRITE_MODULATE.
+const CONFIRMED_PORTRAIT_MODULATE := Color(0.45, 0.15, 0.22, 0.45)
 
 const HP_LABEL_COLOR := Color8(0x4A, 0xFF, 0x01)
 const AP_LABEL_COLOR := Color8(0xEE, 0xFF, 0x00)
 ## Zéros non significatifs du compteur de PV : atténués, pour que l'œil lise
 ## la valeur réelle et pas le gabarit à 3 chiffres.
 const HP_PADDING_COLOR := Color8(0x95, 0x73, 0x60)
-## Le nombre de l'allié dont c'est le tour est bleu, celui des autres blanc
-## (relevé sur le mockup ; l'allié actif y est aussi le seul à porter le cadre
-## jaune autour de son portrait).
+## Le compteur de PV passe au bleu tant que l'unité porte des dégâts de
+## BLESSURE — des PV encore acquis mais mis en jeu (cf. BattleUnit) — de la
+## même famille de bleus que le segment rayé de sa jauge.
+##
+## Le Lot 1 l'avait rattaché à l'allié ACTIF, d'après une maquette où les deux
+## coïncidaient. Les maquettes de la boucle de tour les séparent : Noah garde
+## son compteur bleu après avoir joué, alors que le cadre jaune est passé à
+## Iris — c'est bien la blessure, pas le tour, que la couleur signale.
 const HP_NUMBER_COLOR := Color(1, 1, 1, 1)
-const HP_NUMBER_ACTIVE_COLOR := Color8(0x42, 0x9E, 0xFF)
+const HP_NUMBER_INJURED_COLOR := Color8(0x42, 0x9E, 0xFF)
 
 var _highlight: Sprite2D
+var _check: Sprite2D
+var _portrait: Sprite2D
 var _hp_number: RichTextLabel
 var _hp_bar: Node2D
 var _ap_dots: Node2D
@@ -75,9 +99,17 @@ func setup(unit_id: String) -> void:
 		# défaut préexistant : ce portrait est une illustration anticrénelée,
 		# pas du pixel-art, et n'avait jamais explicitement demandé le
 		# bilinéaire (défaut = plus proche voisin, cf. PixelScale.sprite()).
-		var portrait := PixelScale.sprite(load(portrait_path), Vector2.ZERO, true)
-		portrait.position = PORTRAIT_POS
-		add_child(portrait)
+		_portrait = PixelScale.sprite(load(portrait_path), Vector2.ZERO, true)
+		_portrait.position = PORTRAIT_POS
+		add_child(_portrait)
+
+	# Par-dessus le portrait, qu'elle remplace visuellement une fois l'action
+	# retenue — le portrait n'est pas masqué mais assombri, on l'aperçoit
+	# derrière (cf. la maquette).
+	_check = PixelScale.sprite_native(CHECK)
+	_check.position = CHECK_POS
+	_check.visible = false
+	add_child(_check)
 
 	var hp_label: RichTextLabel = BattleText.make("HP", LABEL_SIZE, HP_LABEL_COLOR)
 	hp_label.position = HP_LABEL_POS
@@ -103,18 +135,34 @@ func setup(unit_id: String) -> void:
 	set_hp(int(stats.get("hp_max", 1)), int(stats.get("hp_max", 1)))
 	set_ap(int(stats.get("ap_max", 0)), int(stats.get("ap_max", 0)))
 
-func set_hp(current: int, maximum: int) -> void:
+## `injury` = dégâts de blessure en attente. Le compteur affiche les PV RÉELS
+## (la blessure n'a encore rien retiré) ; c'est sa couleur, et le segment rayé
+## au bout de la jauge, qui disent qu'une part est en jeu.
+func set_hp(current: int, maximum: int, injury: int = 0) -> void:
 	_hp_number.text = _format_hp(current)
-	_hp_bar.set_ratio(float(current) / maxf(1.0, float(maximum)))
+	var full := maxf(1.0, float(maximum))
+	_hp_bar.set_ratio(float(current - injury) / full, float(current) / full)
+	set_injured(injury > 0)
 
 func set_ap(current: int, maximum: int) -> void:
 	_ap_dots.set_points(current, maximum)
 
-## Marque l'allié dont c'est le tour : cadre jaune + compteur de PV en bleu.
+## Marque l'allié dont c'est le tour : cadre jaune autour de son portrait.
 func set_active(active: bool) -> void:
 	_highlight.visible = active
+
+## Marque l'allié dont l'action est déjà retenue : portrait assombri et coche
+## verte par-dessus.
+func set_confirmed(confirmed: bool) -> void:
+	_check.visible = confirmed
+	if _portrait != null:
+		_portrait.modulate = CONFIRMED_PORTRAIT_MODULATE if confirmed else Color.WHITE
+
+## Piloté par set_hp() : la couleur suit la blessure, elle ne se règle pas à
+## part.
+func set_injured(injured: bool) -> void:
 	_hp_number.add_theme_color_override(
-		"default_color", HP_NUMBER_ACTIVE_COLOR if active else HP_NUMBER_COLOR
+		"default_color", HP_NUMBER_INJURED_COLOR if injured else HP_NUMBER_COLOR
 	)
 
 ## Gabarit à 3 chiffres, zéros de tête atténués via BBCode — c'est justement le

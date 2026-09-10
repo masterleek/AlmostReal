@@ -217,7 +217,9 @@ func _refresh() -> void:
 	var unit: BattleUnit = entry["unit"]
 	var sprite: AnimatedSprite2D = entry["sprite"]
 	BattleText.set_centered_text(_name_label, Localization.get_text(unit.name_text_id()))
-	_bar.set_ratio(unit.hp_ratio())
+	# Même lecture que le HUD : le vert s'arrête aux PV acquis, le segment rayé
+	# occupe la part mise en jeu par une blessure (cf. BattleUnit, HpBar).
+	_bar.set_ratio(unit.solid_ratio(), unit.hp_ratio())
 
 	# Ancrage sur le point « pieds » de la cible (cf. UnitSprite) : c'est le
 	# seul repère indépendant de la taille de cellule du personnage. Les

@@ -1,5 +1,5 @@
 {
-  "_comment": "Catalogue des unités de combat. Lu au runtime par Scripts/Battle/BattleData.gd, sur le modèle de Sprites/tile_meta.json : la donnée vit en JSON pour être éditable depuis MapEditor plus tard, sans recompiler ni toucher aux scènes. Aucun libellé ici — les noms passent par Localization (id 'unit.<id>.name'). Le tableau 'ekos' liste les compétences connues, définies dans ekos.json.",
+  "_comment": "Catalogue des unités de combat. Lu au runtime par Scripts/Battle/BattleData.gd, sur le modèle de Sprites/tile_meta.json : la donnée vit en JSON pour être éditable depuis MapEditor plus tard, sans recompiler ni toucher aux scènes. Aucun libellé ici — les noms passent par Localization (id 'unit.<id>.name'). Le tableau 'ekos' liste les compétences connues, définies dans ekos.json. Chaque animation peut restreindre la planche à un extrait ('first_frame') et déclarer son 'anchor' — le point de la cellule qui se pose sur l'emplacement au sol, relevé sur l'ellipse d'ombre pour que le personnage ne saute pas en changeant de planche (cf. Scripts/Battle/Stage/UnitSprite.gd).",
   "units": {
     "noah": {
       "portrait": "res://UI/Battle/battle_face_noah.png",
@@ -18,6 +18,31 @@
           "rows": 2,
           "frames": 4,
           "fps": 6
+        },
+        "atkeff": {
+          "sheet": "res://Sprites/Battle/noah_atkeff.png",
+          "columns": 3,
+          "rows": 7,
+          "first_frame": 5,
+          "frames": 1,
+          "fps": 6,
+          "anchor": [
+            41,
+            94
+          ],
+          "_comment": "Planche du geste d'attaque entier (20 frames). L'ecran de preparation n'en garde qu'une pose FIXE, tenue pendant que Noah choisit sa cible : la frame 6 comptee a partir de 1, donc l'index 5. frames: 1 = image figee, sans animation - meme mecanique que le cactoon. anchor releve sur l'ellipse d'ombre, qui coincide avec celle de idle a 0,06 px pres."
+        },
+        "standby": {
+          "sheet": "res://Sprites/Battle/noah_standby.png",
+          "columns": 3,
+          "rows": 2,
+          "frames": 4,
+          "fps": 6,
+          "anchor": [
+            18,
+            73
+          ],
+          "_comment": "anchor recale sur la 4e vignette de mockup_preparation_select_items.png (Noah a deja valide son action) : minimum net a residu 8,7 contre 21 au voisin, soit 1 px plus haut que l'alignement des ombres seul."
         }
       },
       "ekos": [
@@ -55,6 +80,18 @@
           "rows": 2,
           "frames": 4,
           "fps": 6
+        },
+        "standby": {
+          "sheet": "res://Sprites/Battle/iris_standby.png",
+          "columns": 3,
+          "rows": 2,
+          "frames": 4,
+          "fps": 6,
+          "anchor": [
+            30,
+            93
+          ],
+          "_comment": "anchor deduit de l'ellipse d'ombre - aucune maquette ne montre Iris en standby. A verifier si un ecart d'un pixel se voit, comme pour Noah."
         }
       },
       "ekos": [

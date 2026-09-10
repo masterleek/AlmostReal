@@ -385,6 +385,44 @@ pas partir en guerre contre des choix déjà faits et documentés dans ce repo :
 - **Un groupe d'interface pivote autour de SON coin, pas autour du pivot d'un
   autre groupe.** Réutiliser un pivot situé à l'autre bout de l'écran
   transforme une inclinaison de 3° en translation de plusieurs pixels.
+- **Une maquette de combat peut contenir une vignette qui répond à une question
+  posée bien plus tard.** `mockup_preparation_select_items.png` en aligne
+  quatre de 480×270 ; la quatrième montre le tour du SECOND allié — donc à la
+  fois l'emplacement du menu pour cet allié, la planche de l'allié qui a déjà
+  joué, et la présence de « Cancel ». Avant de mesurer sur une capture d'écran
+  ou de déduire une position d'un calcul, chercher la vignette qui montre déjà
+  l'état voulu : elle est sans perte et se recale au pixel.
+- **Recaler un sprite de personnage sur une maquette dit AUSSI de quelle
+  planche il vient.** Ajuster une teinte multiplicative par moindres carrés sur
+  les pixels opaques donne un résidu qui sépare nettement les candidats (8,7
+  sur 255 avec la bonne planche contre 45 avec la voisine). C'est ce test qui a
+  corrigé une lecture fautive — l'allié qui a joué était sur `standby`, pas sur
+  un `idle` assombri.
+- **Les planches d'un même personnage ne cadrent pas leur cellule pareil** :
+  entre `idle` et `standby`, l'ombre au sol de Noah se déplace de 11,5 px dans
+  sa cellule. Ancrer une planche au centre-bas de sa cellule fait donc sauter
+  le personnage en changeant d'état. Ancrer sur l'ELLIPSE D'OMBRE (champ
+  `anchor` de `units.json`) : c'est le seul repère commun à toutes les
+  planches, et la seule chose qui touche vraiment le sol.
+- **Redéfinir une méthode d'un nœud Godot avec une autre signature est refusé
+  au chargement.** `AnimatedSprite2D` a déjà un `set_animation(StringName)`
+  (l'accesseur de sa propriété `animation`) : un `set_animation(Dictionary)`
+  dans un script qui l'étend ne charge pas. Vérifier qu'un nom de méthode
+  « naturel » n'est pas déjà une propriété du nœud parent.
+- **Un motif animé sur une petite surface se dessine à la résolution de
+  l'ÉCRAN, pas de design** (même raisonnement que le suréchantillonnage du
+  texte) : la zone de blessure de la jauge de PV ne fait que 3 px de design de
+  haut, où une diagonale n'a pas la place d'exister — elle en fait 12 à
+  l'écran. Et un motif qui défile n'a pas besoin d'un shader : une tuile d'UNE
+  période, `texture_repeat = TEXTURE_REPEAT_ENABLED`, et le défilement se
+  réduit à déplacer `region_rect` (qui sort alors de la texture et boucle).
+- **Ramener un point de l'écran dans le repère d'un groupe incliné : lire les
+  transformations de l'arbre, pas reconstruire la formule.** Tant que le groupe
+  ne bouge pas, un pivot + un angle passés à la main suffisent ; dès qu'il se
+  déplace (le menu de combat suit l'allié actif), la formule doit suivre chacun
+  de ces déplacements. `(frame.global_transform.affine_inverse() *
+  global_transform).affine_inverse() * point` couvre tous les cas, y compris
+  celui d'une liste posée à même le terrain (où il se réduit à l'identité).
 - **Reconstruire une liste de nœuds : `remove_child()` AVANT `queue_free()`.**
   La libération est différée à la fin de la frame, donc les anciens nœuds
   restent enfants — et donc affichés par-dessus les nouveaux — le temps d'une
