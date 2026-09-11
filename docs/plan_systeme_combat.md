@@ -979,6 +979,22 @@ Le rouge de l'aperçu n'est pas choisi : c'est **#FF3700**, celui de l'éclair d
 Les deux disent la même chose, ils doivent être de la même couleur. Le blanc
 vient de la référence d'animation, où il est franc.
 
+### L'action retenue annonce sa nature pendant le ciblage
+
+Quand « Attack » se réduit à sa pastille et va se poser près de la cible, elle
+porte désormais **l'icône de nature des dégâts** de celui qui joue — rouge pour
+Noah, bleue pour Iris. Au même endroit que dans une liste d'Ekos, à cheval sur
+le bord gauche.
+
+C'est un AJOUT de l'auteur, pas un rattrapage :
+`mockup_preparation_select_attack.png` montre cette pastille sans icône. La
+logique se tient — une fois réduite, la pastille ne dit plus « voici une
+commande » mais « voici ce qui va être infligé ».
+
+L'icône reste **cachée tant que le menu est déplié** (`mockup_preparation.png`
+n'en a pas), et le libellé prend alors le retrait des listes (18 px au lieu de 6)
+pour lui laisser la place : sans ça « Attack » perdait son A.
+
 ### Nature des dégâts et type élémentaire : deux informations distinctes
 
 Le champ `type` (1 ou 2) des catalogues **a été supprimé**. Il redisait
@@ -1159,6 +1175,37 @@ la première est CACHÉE dans le corps de la pastille : la maquette n'en montre
 que les rangées 1 et 2, en `x 237..240` puis `238..239`, aux ordonnées 202 et
 203. Le nœud se pose donc 15 px sous le haut de la pastille, pas 17 : la caler
 sur sa rangée 0 la décrochait de deux pixels.
+
+### Le terrain glisse vers le camp attaqué
+
+Les deux maquettes d'assaut le montrent, et c'est mesurable : entre la vignette
+au repos et celle où l'attaquant est au contact, **tout le terrain s'est déplacé
+de 60 px, purement à l'horizontale**. Relevé par recalage du fond d'hexagones
+(écart moyen 0,3), confirmé par le bord de la plateforme — 54 → 114 au tour
+allié, 425 → 365 au tour ennemi.
+
+**Ce n'est PAS la caméra.** Le HUD ne bouge pas d'un pixel sur les dix vignettes
+des deux maquettes ; la barre de rythme et les bandes noires non plus. Ce qui
+glisse, c'est le décor, les combattants et le fond capturé — et rien d'autre.
+D'où un nœud `_field` intercalé sous le Stage, premier de ses enfants : tout ce
+qui est monté après le recouvre sans bouger avec lui.
+
+Le signe suit CELUI QUI AGIT : un allié frappe vers la gauche, le terrain part
+donc vers la DROITE, comme si l'on se tournait vers les ennemis. Le mouvement
+accompagne l'APPROCHE — sur les maquettes, la vignette où l'attaquant est au
+contact est aussi celle où le décor a bougé — et se défait au retour.
+
+Le fond capturé suit, et il a fallu l'**agrandir de 12 %** pour ça : cadré pile
+sur l'écran, le déplacer découvrait du noir sur un bord. Sur une photo floutée
+sous un voile sombre, le recadrage ne se voit pas.
+
+```
+ 2.69  terrain +60   HUD 165   Iris attaque
+ 3.62  terrain   0   HUD 165   elle rentre
+ 6.62  terrain +60   HUD 165   Noah attaque
+10.10  terrain -60   HUD 165   un cactoon attaque
+13.86  terrain   0   HUD 165
+```
 
 ### Les bandes noires passent DEVANT les combattants
 

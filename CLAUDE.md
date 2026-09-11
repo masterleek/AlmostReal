@@ -500,6 +500,17 @@ pas partir en guerre contre des choix déjà faits et documentés dans ce repo :
   moitié allumée en remplaçant la texture du sprite éteint : aucune place pour
   une transition. Un calque allumé posé par-dessus, dont seule l'opacité bouge,
   donne le fondu sans toucher au reste.
+- **« La caméra bouge » ne veut pas dire qu'il faut bouger la caméra.** Sur les
+  maquettes d'assaut, le décor, les combattants et le fond se déplacent de 60 px
+  — mais le HUD, lui, ne bouge pas d'un pixel sur les dix vignettes. Une
+  transformation du calque (ou une Camera2D) aurait tout emporté. La bonne
+  réponse était un nœud intermédiaire ne contenant QUE ce qui doit glisser.
+  Vérifier ce qui reste immobile est aussi instructif que mesurer ce qui bouge.
+- **Déplacer un fond cadré pile sur l'écran découvre son bord.** Le fond de
+  combat est une capture 1920×1080 posée au pixel : le faire glisser laissait du
+  noir d'un côté. Remède : l'agrandir du décalage maximal (ici 12 %) et le
+  recentrer — invisible sur une photo floutée sous un voile, et sans quoi il
+  faudrait renoncer au mouvement.
 - **Une entrée qui « ne fait rien » est un bug, même quand c'est délibéré.**
   La barre de rythme ignorait les touches pressées avant que la note n'entre
   dans sa fenêtre, au nom d'une règle défendable — ne pas consommer une note qui

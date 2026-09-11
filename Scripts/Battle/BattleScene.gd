@@ -55,6 +55,24 @@ const STAGE_SCALE := 4
 const DARK_LINE_TOP := Vector2(0, -64)
 const DARK_LINE_BOTTOM := Vector2(0, 224)
 
+## DÉPLACEMENT DU TERRAIN PENDANT L'ASSAUT. Le décor, les combattants et le fond
+## glissent vers le camp qui se fait attaquer, pendant que le HUD, la barre de
+## rythme et les bandes noires restent en place. Mesuré entre les vignettes de
+## `mockup_assault_allies.jpg` et `..._ennemies.jpg` : 60 px, purement
+## horizontal (recalage du fond d'hexagones, écart moyen 0,3 ; confirmé par le
+## bord de la plateforme, 54 → 114 d'un côté et 425 → 365 de l'autre).
+##
+## Le signe suit CELUI QUI AGIT : un allié frappe vers la gauche, le terrain part
+## donc vers la DROITE — comme si la caméra se tournait vers les ennemis.
+const FIELD_SHIFT := 60
+const FIELD_SLIDE := 0.35
+
+## Débord du fond capturé. Il est cadré pile sur l'écran ; le déplacer
+## découvrirait du noir sur un bord, d'où cet agrandissement qui couvre le
+## décalage des deux côtés. Sur une photo floutée sous un voile sombre, le
+## recadrage de 12 % ne se voit pas.
+const BACKGROUND_OVERSCAN := (float(DESIGN_SIZE.x) + 2.0 * FIELD_SHIFT) / float(DESIGN_SIZE.x)
+
 ## PENDANT L'ASSAUT, la bande basse REMONTE pour dégager la barre de rythme.
 ## Mesuré entre mockup_preparation.png et la première vignette de
 ## mockup_assault_allies : 48 px exactement, sur les 22 colonnes où aucun décor
@@ -274,6 +292,9 @@ var _assault: BattleAssault
 var _effects: Node2D
 var _rhythm: RhythmBar
 var _banner: ActionBanner
+## Terrain déplaçable : décor, combattants et effets (cf. _build_field).
+var _field: Node2D
+var _field_tween: Tween
 ## Bande noire du bas, gardée sous la main : elle remonte pendant l'assaut.
 var _dark_bottom: Sprite2D
 var _dark_tween: Tween
@@ -333,6 +354,7 @@ func _ready() -> void:
 	# capturé suive : c'est l'écran qu'on grossit, pas seulement le décor.
 	add_child(CanvasZoom.new())
 	_setup_background()
+	_build_field()
 	_build_decor()
 	_build_units()
 	_build_dark_lines()
@@ -356,12 +378,28 @@ func _setup_background() -> void:
 	# dans la vue intégrée de l'éditeur, par exemple). Posée à l'échelle 1, la
 	# capture ne couvrait donc qu'un coin du canvas — le fond paraissait cadré
 	# trop serré. On la remet à l'échelle du canvas.
-	background.scale = Vector2(DESIGN_SIZE * STAGE_SCALE) / _pending_background.get_size()
+	# Agrandi au-delà du cadre (cf. BACKGROUND_OVERSCAN) et recentré, pour que le
+	# déplacement de terrain ne découvre jamais son bord.
+	background.scale = (
+		Vector2(DESIGN_SIZE * STAGE_SCALE) / _pending_background.get_size()
+		* BACKGROUND_OVERSCAN
+	)
+	background.position = -Vector2(DESIGN_SIZE * STAGE_SCALE) * (BACKGROUND_OVERSCAN - 1.0) / 2.0
 	# Rééchantillonnage non entier (1676 → 1920) : le filtrage linéaire donne un
 	# fond propre, là où le "nearest" hérité du projet doublerait irrégulièrement
 	# une colonne sur sept. C'est une photo floutée derrière un voile noir, pas
 	# de la pixel-art à préserver.
 	background.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+
+## TERRAIN : tout ce qui se déplace pendant l'assaut. Le sol, les combattants,
+## les nombres de dégâts, le ciblage — mais ni le HUD, ni la barre de rythme, ni
+## les bandes noires, qui restent posés sur l'écran (cf. FIELD_SHIFT et les
+## maquettes d'assaut, où le HUD ne bouge pas d'un pixel).
+##
+## Premier enfant du Stage : tout ce qui est monté après le recouvre.
+func _build_field() -> void:
+	_field = Node2D.new()
+	stage.add_child(_field)
 
 ## Le SOL seulement. Les bandes noires, elles, sont montées après les
 ## combattants (cf. _build_dark_lines) : elles passent DEVANT eux.
@@ -372,7 +410,7 @@ func _build_decor() -> void:
 		half.centered = false
 		half.flip_h = entry[1]
 		half.position = entry[0]
-		stage.add_child(half)
+		_field.add_child(half)
 
 func _build_units() -> void:
 	# Un conteneur en Y-sort plutôt que des z_index posés à la main : la
@@ -380,14 +418,14 @@ func _build_units() -> void:
 	# données d'emplacement, et reste juste si on ajoute ou déplace une unité.
 	var units := Node2D.new()
 	units.y_sort_enabled = true
-	stage.add_child(units)
+	_field.add_child(units)
 
 	# Les nombres de dégâts vivent DANS leur propre nœud, posé après le
 	# conteneur d'unités : celui-ci trie ses enfants par ordonnée, et un nombre
 	# — qui jaillit au-dessus des têtes, donc haut à l'écran — s'y retrouverait
 	# systématiquement derrière les combattants.
 	_effects = Node2D.new()
-	stage.add_child(_effects)
+	_field.add_child(_effects)
 
 	for i in mini(_enemies.size(), ENEMY_SLOTS.size()):
 		# Les ennemis sont retournés horizontalement : la planche les dessine
@@ -466,6 +504,7 @@ func _build_assault() -> void:
 	_assault.changed.connect(_refresh_allies)
 	_assault.finished.connect(_on_assault_finished)
 	_assault.impact.connect(_shake)
+	_assault.field_shift.connect(_shift_field)
 
 ## Secousse d'impact : une oscillation amortie autour de la position de repos du
 ## Stage. Les deux axes ont des fréquences différentes (l'un en sinus, l'autre en
@@ -488,6 +527,27 @@ func _shake() -> void:
 	)
 	_shake_tween.tween_callback(func() -> void: stage.position = base)
 
+## Fait glisser le terrain vers le camp attaqué. `direction` vaut +1 quand un
+## allié agit (le terrain part à droite, la caméra se tourne vers les ennemis),
+## −1 quand c'est un ennemi, 0 pour revenir au centre.
+##
+## Le fond capturé suit le mouvement : sur les maquettes, les hexagones se
+## déplacent avec le décor. Il est agrandi d'autant (cf. BACKGROUND_OVERSCAN)
+## pour ne jamais découvrir son bord.
+func _shift_field(direction: int) -> void:
+	if _field_tween != null and _field_tween.is_valid():
+		_field_tween.kill()
+	var x := float(direction * FIELD_SHIFT)
+	_field_tween = create_tween()
+	_field_tween.set_parallel(true)
+	_field_tween.tween_property(_field, "position:x", x, FIELD_SLIDE) \
+		.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	if background.visible:
+		var home := -float(DESIGN_SIZE.x * STAGE_SCALE) * (BACKGROUND_OVERSCAN - 1.0) / 2.0
+		_field_tween.tween_property(
+			background, "position:x", home + x * STAGE_SCALE, FIELD_SLIDE
+		).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+
 ## Fait monter ou redescendre la bande basse. `raised` = pendant l'assaut.
 func _slide_dark_band(raised: bool) -> void:
 	if _dark_tween != null and _dark_tween.is_valid():
@@ -505,7 +565,7 @@ func _combatants(units: Array[BattleUnit], sprites: Array[AnimatedSprite2D]) -> 
 
 func _build_targeting() -> void:
 	_target_selector = TargetSelector.new()
-	stage.add_child(_target_selector)
+	_field.add_child(_target_selector)
 	_target_selector.selection_changed.connect(_on_target_moved)
 	_target_selector.confirmed.connect(_on_target_confirmed)
 	_target_selector.cancelled.connect(_on_target_cancelled)
@@ -610,9 +670,22 @@ func _menu_offset(index: int) -> Vector2i:
 ## Le menu racine n'a ni coût ni description : ses entrées se réduisent à leur
 ## id, qui sert aussi de libellé.
 func _root_entries() -> Array[Dictionary]:
+	var unit := _active_unit()
+	# « Attack » porte la nature des dégâts de CELUI QUI JOUE — direct pour Noah,
+	# blessure pour Iris. L'icône reste cachée tant que le menu est déplié ; elle
+	# n'apparaît qu'une fois l'entrée réduite et posée près de la cible
+	# (cf. CommandMenu._shows_type_icon).
+	var attack_type := ""
+	if unit != null:
+		attack_type = String(
+			BattleData.get_unit(unit.id).get("basic_attack", {}).get("damage_type", "")
+		)
 	var entries: Array[Dictionary] = []
 	for id in MENU_ENTRIES:
-		entries.append({"id": id, "text_id": id})
+		var entry := {"id": id, "text_id": id}
+		if id == MENU_ATTACK:
+			entry["damage_type"] = attack_type
+		entries.append(entry)
 	return entries
 
 ## Remet les trois marqueurs d'état de chaque bloc d'allié en accord avec les

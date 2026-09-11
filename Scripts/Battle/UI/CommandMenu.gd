@@ -310,8 +310,11 @@ func setup(entries: Array[Dictionary], selected: int = 0) -> void:
 		label.rotation_degrees = _row_tilt_deg
 		add_child(label)
 		_entries[i]["label"] = label
+		# L'icône est MONTÉE dès que l'entrée a une nature de dégâts, même au menu
+		# racine où elle reste normalement cachée : c'est `_refresh` qui décide
+		# de l'afficher, et le mode réduit l'allume (cf. _shows_type_icon).
 		var icon_texture := _damage_icon(String(_entries[i].get("damage_type", "")))
-		if _typed and icon_texture != null:
+		if icon_texture != null:
 			# SVG déjà à la résolution de l'écran : rien à agrandir.
 			var icon := PixelScale.sprite_native(icon_texture)
 			# Au-dessus de la pastille, qu'elle déborde sur la gauche.
@@ -442,7 +445,7 @@ func _refresh() -> void:
 		if dots != null:
 			dots.visible = shown
 		if icon != null:
-			icon.visible = shown
+			icon.visible = shown and _shows_type_icon()
 		if amount != null:
 			amount.visible = shown
 		if not shown:
@@ -465,7 +468,12 @@ func _refresh() -> void:
 		# inférieur à la hauteur des pastilles, celle du dessous la
 		# recouvrirait sinon partiellement.
 		pill.z_index = 1 if selected else 0
-		label.position = pill.position + Vector2(_text_dx, TEXT_PADDING.y)
+		# Le libellé recule quand l'icône de nature s'invite : au menu racine le
+		# texte commence à 6 px du bord, l'icône en occupe 4 à 16, et « Attack »
+		# y perdait son A. En mode réduit il prend donc le retrait des LISTES,
+		# celui-là même qui a été calé pour laisser passer l'icône.
+		var text_dx: float = LIST_TEXT_DX if icon != null and icon.visible else _text_dx
+		label.position = pill.position + Vector2(text_dx, TEXT_PADDING.y)
 		label.z_index = pill.z_index
 		label.add_theme_color_override(
 			"default_color", TEXT_COLOR_SELECTED if selected else TEXT_COLOR
@@ -558,6 +566,15 @@ func _edge_alpha(distance: int) -> float:
 		return 1.0
 	var alpha: float = FADE[distance]
 	return alpha
+
+## Qui montre son icône de nature des dégâts. Les LISTES d'actions, toujours —
+## c'est leur maquette. Le MENU RACINE, lui, ne la montre pas dans son état
+## normal (mockup_preparation.png n'en a pas), mais bien une fois RÉDUIT à
+## l'action retenue, posée près de la cible : à ce moment la pastille ne dit plus
+## « voici une commande » mais « voici ce qui va être infligé », et la nature des
+## dégâts fait partie de cette annonce.
+func _shows_type_icon() -> bool:
+	return _typed or _focused
 
 ## Le curseur change d'orientation avec le mode : à droite de la pastille et
 ## tourné vers elle dans la liste, à sa gauche et incliné vers la cible pendant

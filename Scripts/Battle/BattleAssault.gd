@@ -43,6 +43,10 @@ signal finished(outcome: int)
 ## Un coup vient de porter. L'assaut ne connaît pas la caméra : il annonce
 ## l'impact, la scène le traduit en secousse.
 signal impact
+## Le terrain doit glisser vers le camp attaqué : +1 quand un allié agit, −1
+## quand c'est un ennemi, 0 pour revenir au centre. Même partage que ci-dessus —
+## l'assaut dit ce qui se passe, la scène décide de ce que ça déplace.
+signal field_shift(direction: int)
 
 ## VICTORY / DEFEAT arrêtent le combat (Lot 9 en fera un écran) ; ONGOING rend
 ## la main à une nouvelle phase de préparation.
@@ -220,6 +224,10 @@ func _resolve(entry: Dictionary) -> void:
 	# pas : elle n'a personne à aller chercher, et traverser le terrain pour
 	# tendre une potion se lirait comme une charge.
 	if offensive:
+		# Le terrain glisse VERS LA CIBLE en même temps que l'attaquant s'élance :
+		# sur les maquettes, la vignette où il est au contact est aussi celle où
+		# le décor a bougé.
+		field_shift.emit(1 if ally_acts else -1)
 		await _approach(entry, targets)
 
 	await _play_gesture(entry, targets, gesture, offensive)
@@ -237,6 +245,7 @@ func _resolve(entry: Dictionary) -> void:
 
 	await _finish_gesture(entry, gesture)
 	if offensive:
+		field_shift.emit(0)
 		await _return_home(entry)
 	else:
 		_node_of(entry).play_sheet(BattleData.get_animation(unit.id, "idle"))
