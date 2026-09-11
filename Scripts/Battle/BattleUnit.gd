@@ -5,8 +5,8 @@ extends RefCounted
 ## planches d'animation, portrait) que `BattleData` sert en lecture seule.
 ##
 ## Volontairement réduit à ce que les lots livrés exploitent : les PV (Lot 3),
-## les points d'action (Lot 4) et l'action retenue pour le tour (Lot 5). Ce que
-## l'action FAIT reste au Lot 6 : ici elle n'est qu'un bon de commande.
+## les points d'action (Lot 4), l'action retenue pour le tour (Lot 5) et les
+## stats de combat qu'elle consomme à l'assaut (Lot 6).
 ##
 ## DEUX SORTES DE DÉGÂTS. Une attaque « directe » retire les PV tout de suite.
 ## Une attaque « de blessure » ne les retire pas : elle les met en attente
@@ -34,6 +34,19 @@ var ap_max: int
 ## qui le seront au premier dégât direct. Toujours ≤ hp — une blessure ne peut
 ## pas mettre en jeu plus de PV que l'unité n'en a.
 var injury: int = 0
+## Stats de combat, recopiées de units.json au montage. Recopiées plutôt que
+## relues à chaque coup : la phase d'assaut les interroge plusieurs fois par
+## action, et elles ont vocation à VARIER en combat (buffs, équipement) — ce
+## que ne permettrait pas une lecture directe du catalogue, qui est en lecture
+## seule et partagé.
+var force: int
+var defense: int
+var agility: int
+var luck: int
+## L'unité s'est mise en garde pour ce tour : elle encaisse moitié moins
+## (cf. BattleRules.GUARD_FACTOR). Posé avant le premier coup de l'assaut,
+## effacé à la fin du tour.
+var guarding: bool = false
 ## Action retenue pour ce tour, vide tant que l'unité n'a pas choisi. Sa forme
 ## est celle des dictionnaires composés par BattleScene (source, id, target,
 ## cost, targets). Elle est posée à la validation d'une cible et reprise si le
@@ -47,6 +60,10 @@ func _init(unit_id: String) -> void:
 	hp = hp_max
 	ap_max = maxi(0, int(stats.get("ap_max", 0)))
 	ap = ap_max
+	force = int(stats.get("force", 0))
+	defense = int(stats.get("defense", 0))
+	agility = int(stats.get("agility", 0))
+	luck = int(stats.get("luck", 0))
 
 ## Bonus appliqué quand des dégâts de blessure sont convertis en dégâts
 ## directs. L'auteur a confirmé la FORME — une simple addition au total — mais
@@ -83,13 +100,23 @@ func take_injury_damage(amount: int) -> void:
 	injury = mini(hp, injury + amount)
 	_damaged_this_turn = true
 
-## Fin de tour : une unité épargnée guérit de sa blessure. Appelée pour TOUTES
-## les unités, y compris celles qui n'ont rien : c'est la fin de tour qui
-## remet le compteur de dégâts à zéro pour le tour suivant.
+## Soin. Plafonné aux PV max, et il efface la BLESSURE en priorité : rendre des
+## PV tout en laissant la part mise en jeu intacte serait incompréhensible à la
+## lecture de la jauge, où le soin repousserait le vert dans le bleu.
+func heal(amount: int) -> void:
+	if amount <= 0:
+		return
+	injury = maxi(0, injury - amount)
+	hp = mini(hp_max, hp + amount)
+
+## Fin de tour : une unité épargnée guérit de sa blessure, et la garde tombe.
+## Appelée pour TOUTES les unités, y compris celles qui n'ont rien fait : c'est
+## la fin de tour qui remet le compteur de dégâts à zéro pour le tour suivant.
 func end_turn() -> void:
 	if not _damaged_this_turn:
 		injury = 0
 	_damaged_this_turn = false
+	guarding = false
 
 func has_action() -> bool:
 	return not action.is_empty()

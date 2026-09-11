@@ -46,16 +46,22 @@ extends AnimatedSprite2D
 var _feet := Vector2i.ZERO
 var _mirrored := false
 
+## Planche actuellement montée. Publique, et c'est délibéré : elle dit ce que le
+## sprite joue VRAIMENT, ce qu'un état mis en cache ailleurs finirait par
+## contredire — la phase d'assaut change de planche dans le dos de l'écran qui
+## pilote les poses.
+var sheet_path: String = ""
+
 ## Construit les SpriteFrames d'une planche en grille. Statique et sans effet
 ## de bord : réutilisable pour n'importe quelle planche du projet, y compris
 ## hors combat. `first_frame` saute le début de la planche.
 static func build_frames(
 	texture: Texture2D, columns: int, rows: int, frame_count: int, fps: float,
-	first_frame: int = 0
+	first_frame: int = 0, loop: bool = true
 ) -> SpriteFrames:
 	var frames := SpriteFrames.new()
 	frames.set_animation_speed("default", fps)
-	frames.set_animation_loop("default", true)
+	frames.set_animation_loop("default", loop)
 	var cell := Vector2i(texture.get_width() / columns, texture.get_height() / rows)
 	for i in range(first_frame, first_frame + frame_count):
 		var atlas := AtlasTexture.new()
@@ -67,10 +73,11 @@ static func build_frames(
 ## `config` = bloc "animations.<nom>" de units.json.
 ## `feet` = point au sol en unités de design ; `mirrored` retourne le sprite
 ## horizontalement (les ennemis regardent l'équipe, cf. plan §4).
-func setup(config: Dictionary, feet: Vector2i, mirrored: bool = false) -> void:
+func setup(config: Dictionary, feet: Vector2i, mirrored: bool = false, loop: bool = true) -> void:
 	_feet = feet
 	_mirrored = mirrored
-	var texture: Texture2D = load(config["sheet"])
+	sheet_path = String(config["sheet"])
+	var texture: Texture2D = load(sheet_path)
 	var columns: int = int(config.get("columns", 1))
 	var rows: int = int(config.get("rows", 1))
 	sprite_frames = build_frames(
@@ -78,6 +85,7 @@ func setup(config: Dictionary, feet: Vector2i, mirrored: bool = false) -> void:
 		int(config.get("frames", columns * rows)),
 		float(config.get("fps", 6)),
 		int(config.get("first_frame", 0)),
+		loop,
 	)
 	# centered = false + offset explicite plutôt que centered = true : la
 	# cellule peut avoir une largeur impaire, et le centrage automatique
@@ -97,10 +105,32 @@ func setup(config: Dictionary, feet: Vector2i, mirrored: bool = false) -> void:
 ## Surtout PAS `set_animation` : AnimatedSprite2D a déjà une méthode de ce nom
 ## (l'accesseur de sa propriété `animation`, qui prend un StringName), et la
 ## redéfinir avec une autre signature est refusé au chargement du script.
-func play_sheet(config: Dictionary) -> void:
+##
+## `loop = false` sert aux planches qui se JOUENT une fois — un geste d'attaque
+## n'est pas un repos. La durée d'une telle planche se déduit alors de ses
+## propres données (`duration_of`), sans avoir à guetter un signal.
+func play_sheet(config: Dictionary, loop: bool = true) -> void:
 	if config.is_empty():
 		return
-	setup(config, _feet, _mirrored)
+	setup(config, _feet, _mirrored, loop)
+
+## Durée d'une planche en secondes, déduite de son nombre de frames et de sa
+## cadence. Sert à séquencer un geste sans dépendre de `animation_finished` :
+## l'environnement de debug tourne à une cadence irrégulière (cf. CLAUDE.md
+## §workflow, point 4), une attente en secondes est reproductible là où un
+## comptage de frames ne l'est pas.
+static func duration_of(config: Dictionary) -> float:
+	var fps: float = maxf(1.0, float(config.get("fps", 6)))
+	return float(config.get("frames", 1)) / fps
+
+## Instant, dans cette même durée, où le coup PORTE — c'est là que les dégâts
+## s'appliquent et que le nombre apparaît. Déclaré par planche (`hit_frame`,
+## relevé sur la frame où la lame ou le tir part) ; à défaut, le milieu du
+## geste, qui est le compromis le moins faux.
+static func hit_time_of(config: Dictionary) -> float:
+	var fps: float = maxf(1.0, float(config.get("fps", 6)))
+	var frames: int = int(config.get("frames", 1))
+	return float(config.get("hit_frame", frames / 2.0)) / fps
 
 ## Point de la cellule qui vient se poser sur `feet`, en unités de design.
 ## Défaut : centre-bas. `int()` plutôt qu'une division flottante — un

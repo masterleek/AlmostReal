@@ -396,11 +396,11 @@ passer devant.
 | 3 | Ciblage : Attack → 1 ennemi ; surbrillance, nom + jauge de vie de la cible | **fait** |
 | 4 | Ekos / Items : listes défilantes, coût AP, panneau de description, ciblage multiple | **fait** |
 | 5 | Garde, fin de tour, enchaînement des alliés, boucle préparation complète | **fait** |
-| 6 | Phase d'assaut : ordre par agilité, exécution des actions, dégâts, morts | |
+| 6 | Phase d'assaut : ordre par agilité, exécution des actions, dégâts, morts | **fait** |
 | 7 | Barre de rythme : défilement des notes, fenêtres Perfect/Great/Good/Miss, bonus de dégâts | |
 | 8 | Jauge de synergie (remplissage, 4 niveaux) | |
 | 9 | Victoire / défaite, transition worldmap ↔ combat, animations `win` / `dying` / `dead` | |
-| 10 | Édition des Ekos / objets / stats depuis MapEditor | |
+| 10 | Page « Combat » de MapEditor : unités (stats, comportement ennemi, Ekos connus), Ekos, objets | |
 
 ---
 
@@ -833,6 +833,160 @@ Lot 1. La touche continue de répondre par le son d'erreur.
 
 ---
 
+## 5 septies. Résultat du Lot 6
+
+La boucle de combat est fermée : préparation → assaut → nouvelle préparation,
+jusqu'à ce qu'un camp tombe.
+
+### Découpage
+
+`BattleAssault` **joue une liste d'actions**, rien de plus. Refermer le tour —
+rendre les PA, effacer les actions, guérir les blessures épargnées, faire tomber
+les gardes — reste à `BattleScene`, qui possède la boucle. Le partage suit la
+question « est-ce que ça a lieu PENDANT l'assaut ? » : les dégâts oui, la remise
+à zéro non.
+
+`BattleRules` isole les seuls nombres que l'auteur voudra régler, pour qu'il
+n'ait pas à lire la mécanique qui les emploie.
+
+### Règles chiffrées (réponses de l'auteur)
+
+| Règle | Valeur |
+|---|---|
+| Dégâts | `(puissance + force) − défense`, plancher à 1 |
+| Garde | dégâts subis divisés par deux |
+| Type de dégâts | champ `damage_type` par Eko / objet / attaque de base |
+| Bonus de conversion blessure → direct | une addition, **nombre encore à fixer** |
+
+La garde est posée AVANT le premier coup de l'assaut, pas au moment où l'unité
+aurait agi : elle a été choisie pendant la préparation, elle vaut pour le tour
+entier. Sinon une unité lente se ferait frapper à découvert par tous ceux qui la
+devancent.
+
+### Ordre et ciblage
+
+Agilité décroissante sur tous les combattants vivants ; à égalité, les alliés
+passent devant (il faut un départage stable, et l'avantage au joueur se défend
+le mieux). L'ordre est calculé UNE FOIS par tour : une unité qui tombe en cours
+d'assaut ne joue pas, mais l'ordre lui-même n'est pas recalculé — l'agilité
+départage le tour, elle ne doit pas dépendre de qui vient de tomber.
+
+Les cibles sont retenues **comme des unités** à la validation, pas comme un
+index : celui-ci désigne une place dans la liste des vivants au moment du choix,
+et cette liste a changé quand l'assaut s'exécute. Une cible tombée entre-temps
+est remplacée par une autre du même camp — le joueur a choisi une action, pas un
+cadavre. Vérifié : l'attaque de Noah bascule sur le cactoon suivant quand Iris
+abat le sien avant lui.
+
+### Mise en scène
+
+Chaque action joue la planche `atk` de son auteur, s'interrompt à l'instant où
+le coup porte (`hit_frame`, relevé sur la frame où la lame ou le tir part),
+applique ses effets, puis laisse le geste s'achever. **C'est là que le Lot 7
+s'insérera** : la barre de rythme prendra place entre le début du geste et
+l'application, sans toucher au reste.
+
+Les attentes sont en SECONDES, déduites du nombre de frames et de la cadence de
+la planche — l'environnement de debug tourne à une cadence irrégulière
+(cf. `CLAUDE.md` §workflow, point 4), un comptage de frames n'y serait pas
+reproductible.
+
+Deux cas n'ont pas de planche à jouer : une unité sans planche d'attaque (le
+cactoon n'a QUE des idles, sa page de rip n'en contient pas d'autre) et une
+action qui soigne. Elles font un **pas en avant puis reviennent** : un
+déplacement n'invente aucun dessin, contrairement à un sprite qu'on
+fabriquerait, et dit quand même « c'est mon tour ».
+
+Les **nombres de dégâts n'ont aucune maquette** — c'est le seul élément de
+l'écran qui ne soit pas relevé. Plutôt qu'inventer un style, `DamageNumber`
+réutilise celui du chiffre de niveau de la jauge de synergie (contour sombre,
+liseré clair, corps en dégradé) et n'en change que la palette, prise dans les
+couleurs déjà en service : brun/orangé pour les dégâts directs, les deux bleus
+de la zone rayée pour la blessure, le vert du libellé « HP » pour un soin.
+C'est le premier fichier à retoucher le jour où l'auteur fournit une maquette.
+
+### Comportement des ennemis — en donnée, pas en code
+
+Un ennemi n'a pas de phase de préparation : quelqu'un doit choisir à sa place.
+Ce choix est de la **donnée de jeu**, pas de la mécanique — l'auteur veut
+pouvoir dire « celui-ci est agressif, celui-là s'acharne sur Noah » depuis
+l'éditeur web. `Scripts/Battle/EnemyBehaviour.gd` traduit donc le bloc
+`behaviour` de `units.json` en une action de la même forme que celle qu'un allié
+retient au menu ; le reste de l'assaut ne distingue pas les deux.
+
+| Champ | Effet |
+|---|---|
+| `kind: "random"` | frappe un adversaire debout au hasard — **le défaut**, et le comportement d'un ennemi sans bloc `behaviour` |
+| `kind: "aggressive"` | achève : vise le plus entamé **en proportion** de ses PV max, pas en valeur absolue — sinon un gros réservoir passerait pour le plus faible en permanence |
+| `kind: "defensive"` | se met en garde sous `guard_below` (0,35 par défaut), frappe sinon |
+| `kind: "focused"` | s'acharne sur l'unité nommée par `focus` ; si elle est tombée, il frappe au hasard plutôt que de perdre son tour |
+| `eko_chance` | probabilité de lancer un Eko de sa liste `ekos` qu'il peut payer, plutôt que de frapper. **0 par défaut** : déclarer des Ekos ne suffit pas, il faut aussi dire qu'il s'en sert |
+
+Un `kind` inconnu retombe sur `random` **avec un avertissement** : une faute de
+frappe ne doit pas faire planter un combat, mais elle ne doit pas passer
+inaperçue non plus.
+
+Conséquence sur le modèle de ciblage, et c'est le vrai changement : un mode de
+ciblage est désormais lu **relativement à celui qui agit**. « ally » désigne son
+propre camp, « enemy » celui d'en face. C'est ce qui permet aux deux camps de
+partager **un seul catalogue d'Ekos** : un soin déclaré « ally » soigne le camp
+de celui qui le lance, sans qu'il faille deux versions de chaque compétence.
+Vérifié — « Rosée » lancée par un cactoon vise un cactoon, « Tempeste » lancée
+par un cactoon touche Noah et Iris.
+
+L'édition de tout ça depuis MapEditor est le **Lot 10** (cf. plus bas).
+
+### Ce qui reste minimal, délibérément
+
+- **Une unité vaincue s'efface** (fondu). Les planches `dying` et `dead`
+  existent mais relèvent du Lot 9.
+- **Le combat s'arrête sur place** à la victoire comme à la défaite, sur le
+  signal `battle_finished`. L'écran de résultat est au Lot 9.
+
+### Vérifié en jeu
+
+Combat complet mené par injection de touches réelles, du premier tour à la
+victoire, puis chaque règle isolément :
+
+```
+ordre d agilite : iris(ag13) > noah(ag11) > cactoon(ag8) ×3
+Tempeste (zone, blessure)  cactoon 30/30+bl16 ×3      pv intacts, 2 PA debites
+tour suivant, aucun degat  cactoon 30/30 ×3           la blessure a gueri
+Tempeste puis Attack       cactoon 1/30               conversion 16+13, plancher tenu
+garde                      degats 4 -> 2 et 5 -> 2    moitie, arrondie vers le bas
+potion                     noah 20 -> 50              +30, nombre vert
+cible morte                l attaque bascule sur le cactoon suivant
+victoire / defaite         signal emis, ecran fige
+```
+
+Les quatre comportements, sur 40 tirages chacun, face à un Noah à 20/62 et une
+Iris à 80/82 :
+
+```
+random                     noah 24, iris 16            reparti
+aggressive                 noah 40                     le plus entame en proportion
+focused: iris              iris 40
+focused: absent            noah 22, iris 18            repli sur le hasard
+defensive a 30/30          attaque
+defensive a  5/30          garde, cible lui-meme
+kind inconnu               repli sur random + avertissement
+rosee (ally) par cactoon   cible un cactoon            ciblage relatif
+tempeste (enemies) idem    touche noah ET iris
+```
+
+### Deux dettes ouvertes
+
+1. **La planche `atk` d'Iris la déporte hors de la plateforme.** Le déplacement
+   est encodé dans la cellule (224 px de large) et va vers la DROITE, alors que
+   les ennemis sont à gauche : l'animation la fait reculer, et elle sort de
+   l'écran. L'auteur remplacera tous les assets de ce personnage — le défaut est
+   consigné ici, pas contourné, pour ne pas calibrer sur une planche vouée à
+   disparaître.
+2. **Les valeurs d'équilibrage sont provisoires** : `basic_attack.power` (6, 5,
+   6), et le bonus de conversion blessure → direct toujours à 0.
+
+---
+
 ## 6. Vérification (Lot 1)
 
 Conforme au workflow de `CLAUDE.md` :
@@ -938,7 +1092,14 @@ le reste est reproductible au pixel près.
   existent (`ic_type_action_1/2.svg`, éclair bleu ou orange) ; le champ `type`
   du catalogue choisit laquelle, et les valeurs actuelles sont arbitraires.
 - **Le bonus de dégâts de la conversion blessure → direct** (`BattleUnit.
-  INJURY_CONVERSION_BONUS`, aujourd'hui 0 : simple addition).
+  INJURY_CONVERSION_BONUS`, aujourd'hui 0 : simple addition). L'auteur a
+  confirmé la forme, pas le nombre.
+- **L'équilibrage** : `basic_attack.power` de chaque unité (6 / 5 / 6) est
+  provisoire, choisi pour qu'un combat se résolve en quelques tours.
+- **La répartition direct / blessure** : `damage_type` existe sur chaque Eko et
+  chaque objet, mais seul `tempeste` est en `injury`, pour que le système soit
+  exerçable.
+- **Le comportement des ennemis** : ils se contentent de frapper au hasard.
 - **Une planche d'apprêt pour Iris** : elle n'a pas d'équivalent de
   `313000404_atkeff.png`, et reste donc au repos pendant qu'elle prépare une
   attaque ou un Eko.
@@ -949,6 +1110,47 @@ le reste est reproductible au pixel près.
   maquette ne montre qu'une cible (l'ennemi de droite). La pastille est
   actuellement ANCRÉE SUR LA CIBLE, donc elle suit la sélection ; une position
   fixe à l'écran est l'autre lecture possible de la même image.
+
+---
+
+## 7 bis. Lot 10 — page « Combat » de MapEditor
+
+Les trois catalogues du combat (`Battle/units.json`, `ekos.json`, `items.json`)
+n'ont aujourd'hui **aucun éditeur** : ils se modifient à la main. Ils suivent
+pourtant exactement le modèle que l'outil web sait déjà servir — un objet
+racine, un dictionnaire nommé, des ids `Localization` pour tout libellé.
+
+**Une page dédiée, pas une de plus par fichier.** Les trois catalogues se
+renvoient l'un à l'autre — une unité connaît des Ekos, un comportement ennemi
+nomme une unité — et les éditer dans trois onglets séparés obligerait à jongler.
+Une page « Combat » à trois sections (Unités / Ekos / Objets) garde ces
+renvois sous les yeux, et permet de proposer les listes déroulantes qui vont
+avec (choisir un Eko dans le catalogue, choisir la cible d'un `focus` parmi les
+alliés) plutôt que de laisser saisir un id à la main.
+
+Ce qu'elle doit couvrir :
+
+- **Unités** — stats (PV, PA, force, défense, agilité, chance), `basic_attack`,
+  liste des Ekos connus, et pour un ennemi le bloc `behaviour` (`kind`, `focus`,
+  `guard_below`, `eko_chance`) décrit au §5 septies.
+- **Ekos** — coût en PA, mode de ciblage, puissance ou soin, `damage_type`,
+  `type` d'icône, séquence de rythme (Lot 7).
+- **Objets** — mêmes champs, sans coût en PA.
+
+Côté serveur, rien de neuf à inventer : `metaRoutes` sert déjà ce genre de
+fichier pour `tiles` et `props`, il suffit de l'appeler trois fois de plus.
+Côté client, le gabarit `.crud-modal` de `tiles.js` / `props.js` / `systems.js` /
+`texts.js` s'applique tel quel.
+
+Deux points à ne pas perdre de vue :
+
+- **Aucun libellé ne vit dans ces fichiers.** Les noms et descriptions sont des
+  ids `Localization` : la page « Combat » doit donc renvoyer vers la page
+  « Textes » pour les éditer, ou afficher le texte résolu en lecture seule —
+  surtout pas ouvrir une deuxième porte d'écriture sur le même texte.
+- **Les entrées `test_N` d'`ekos.json` sont du décor de test** (défilement d'une
+  liste de 15 rangées) et doivent disparaître avant que la page serve
+  réellement.
 
 ---
 

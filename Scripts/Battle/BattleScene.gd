@@ -28,6 +28,7 @@ const CommandMenu = preload("res://Scripts/Battle/UI/CommandMenu.gd")
 const TargetSelector = preload("res://Scripts/Battle/UI/TargetSelector.gd")
 const DescriptionPanel = preload("res://Scripts/Battle/UI/DescriptionPanel.gd")
 const BattleUnit = preload("res://Scripts/Battle/BattleUnit.gd")
+const BattleAssault = preload("res://Scripts/Battle/BattleAssault.gd")
 const BattleData = preload("res://Scripts/Battle/BattleData.gd")
 const BattleText = preload("res://Scripts/Battle/UI/BattleText.gd")
 const PixelScale = preload("res://Scripts/Battle/UI/PixelScale.gd")
@@ -217,12 +218,15 @@ const DEFAULT_ALLIES: PackedStringArray = ["noah", "iris"]
 ## courant — il faut pouvoir y revenir sur « Back », et la pastille de l'action
 ## retenue reste affichée à côté de la cible : c'est le drapeau `active` de
 ## chaque composant, arbitré ici, qui décide lequel écoute.
-enum State { MENU, SUBLIST, TARGETING, DONE }
+enum State { MENU, SUBLIST, TARGETING, ASSAULT }
 
 ## Émis quand tous les alliés vivants ont retenu une action : la phase de
-## préparation est finie et l'assaut peut commencer (Lot 6). Porte les actions
-## dans l'ordre des alliés.
+## préparation est finie et l'assaut commence. Porte les actions dans l'ordre
+## des alliés.
 signal preparation_finished(actions: Array)
+## Fin du combat, `victory` disant de quel côté. Le Lot 9 en fera un écran de
+## résultat ; d'ici là l'écran reste en place, figé sur la dernière image.
+signal battle_finished(victory: bool)
 
 var _enemies: PackedStringArray = DEFAULT_ENEMIES
 var _allies: PackedStringArray = DEFAULT_ALLIES
@@ -236,10 +240,10 @@ var _enemy_sprites: Array[AnimatedSprite2D] = []
 var _enemy_units: Array[BattleUnit] = []
 var _ally_sprites: Array[AnimatedSprite2D] = []
 var _ally_units: Array[BattleUnit] = []
-## Planche actuellement jouée par chaque allié. Reconstruire des SpriteFrames
-## coûte une lecture de texture : on ne change de planche que quand elle
-## change vraiment, pas à chaque rafraîchissement de l'écran.
-var _ally_anim: Array[String] = []
+## Phase d'assaut, montée une fois et rejouée à chaque tour.
+var _assault: BattleAssault
+## Calque des nombres de dégâts, au-dessus des combattants (cf. _build_units).
+var _effects: Node2D
 ## Allié dont c'est le tour. Vaut le nombre d'alliés quand ils ont tous choisi
 ## (état DONE) : `_previous_acted_ally` remonte alors depuis le dernier.
 var _active_ally: int = 0
@@ -268,6 +272,9 @@ var _focus_list: CommandMenu
 var _menu_frame: Node2D
 var _legend_cancel_icon: Sprite2D
 var _legend_cancel_label: RichTextLabel
+## Le groupe incliné de la légende. Masqué en bloc pendant l'assaut : aucune
+## touche n'y répond, une invite affichée serait un mensonge.
+var _legend: Node2D
 var _pending_background: Texture2D
 var _sfx_move: AudioStreamPlayer
 var _sfx_confirm: AudioStreamPlayer
@@ -294,6 +301,7 @@ func _ready() -> void:
 	_setup_background()
 	_build_decor()
 	_build_units()
+	_build_assault()
 	_build_targeting()
 	_build_sfx()
 	_build_hud()
@@ -350,6 +358,13 @@ func _build_units() -> void:
 	units.y_sort_enabled = true
 	stage.add_child(units)
 
+	# Les nombres de dégâts vivent DANS leur propre nœud, posé après le
+	# conteneur d'unités : celui-ci trie ses enfants par ordonnée, et un nombre
+	# — qui jaillit au-dessus des têtes, donc haut à l'écran — s'y retrouverait
+	# systématiquement derrière les combattants.
+	_effects = Node2D.new()
+	stage.add_child(_effects)
+
 	for i in mini(_enemies.size(), ENEMY_SLOTS.size()):
 		# Les ennemis sont retournés horizontalement : la planche les dessine
 		# tournés dans l'autre sens (vérifié au pixel près sur le mockup).
@@ -368,7 +383,6 @@ func _build_units() -> void:
 			continue
 		_ally_sprites.append(ally)
 		_ally_units.append(BattleUnit.new(_allies[i]))
-		_ally_anim.append(ANIM_IDLE)
 
 func _spawn_unit(
 	parent: Node2D, unit_id: String, feet: Vector2i, mirrored: bool
@@ -390,6 +404,21 @@ func _spawn_unit(
 ## chaque touche en premier. C'est ce qui fait que la validation qui OUVRE le
 ## ciblage n'est pas aussitôt reconsommée par celui-ci : le menu la marque
 ## traitée avant que le sélecteur ne soit interrogé.
+## L'assaut est un nœud comme un autre : il a besoin de l'arbre pour ses
+## attentes (cf. BattleAssault._wait). Monté une fois, relancé à chaque tour.
+func _build_assault() -> void:
+	_assault = BattleAssault.new()
+	add_child(_assault)
+	_assault.setup(_combatants(_ally_units, _ally_sprites), _combatants(_enemy_units, _enemy_sprites), _effects)
+	_assault.changed.connect(_refresh_allies)
+	_assault.finished.connect(_on_assault_finished)
+
+func _combatants(units: Array[BattleUnit], sprites: Array[AnimatedSprite2D]) -> Array[Dictionary]:
+	var entries: Array[Dictionary] = []
+	for i in mini(units.size(), sprites.size()):
+		entries.append({"unit": units[i], "sprite": sprites[i]})
+	return entries
+
 func _build_targeting() -> void:
 	_target_selector = TargetSelector.new()
 	stage.add_child(_target_selector)
@@ -508,7 +537,11 @@ func _refresh_allies() -> void:
 	for i in mini(_status_panels.size(), _ally_units.size()):
 		var unit := _ally_units[i]
 		_status_panels[i].set_active(i == _active_ally)
-		_status_panels[i].set_confirmed(unit.has_action())
+		# Pendant l'assaut, plus personne n'est « en attente » : l'action n'est
+		# plus un choix retenu, elle est en train de se jouer. La coche et la
+		# teinte du portrait tomberaient sinon en contradiction avec le sprite,
+		# qui a déjà repris ses couleurs sur le terrain.
+		_status_panels[i].set_confirmed(_state != State.ASSAULT and unit.has_action())
 		_status_panels[i].set_ap(unit.ap, unit.ap_max)
 		_status_panels[i].set_hp(unit.hp, unit.hp_max, unit.injury)
 	_refresh_unit_visuals()
@@ -785,12 +818,20 @@ func _set_units_dimmed(dim_enemies: bool, dim_allies: bool) -> void:
 ## qu'on regarde en ce moment » et rend translucide ; l'assombrissement dit
 ## « celui-là a fini de choisir » et reste plein. Un allié qui a joué garde donc
 ## sa présence sur le terrain, même pendant qu'un autre parcourt une liste.
+##
+## UNE UNITÉ TOMBÉE N'EST PAS TOUCHÉE ICI : sa disparition est une animation en
+## cours, portée par la phase d'assaut (cf. BattleAssault._bury_the_dead). La
+## réécrire à chaque rafraîchissement la ferait ressusciter en plein fondu.
 func _refresh_unit_visuals() -> void:
 	var faded := Color(1.0, 1.0, 1.0, INACTIVE_UNIT_ALPHA)
-	for sprite in _enemy_sprites:
-		sprite.modulate = faded if _dim_enemies else Color.WHITE
+	for i in mini(_enemy_sprites.size(), _enemy_units.size()):
+		if not _enemy_units[i].is_alive():
+			continue
+		_enemy_sprites[i].modulate = faded if _dim_enemies else Color.WHITE
 	for i in mini(_ally_sprites.size(), _ally_units.size()):
-		if _ally_units[i].has_action():
+		if not _ally_units[i].is_alive():
+			continue
+		if _state != State.ASSAULT and _ally_units[i].has_action():
 			_ally_sprites[i].modulate = CONFIRMED_SPRITE_MODULATE
 		elif _dim_allies and i != _active_ally:
 			_ally_sprites[i].modulate = faded
@@ -835,16 +876,25 @@ func _is_aiming() -> bool:
 ## repos — Iris n'a pas encore d'`atkeff`, elle garde donc son idle pendant
 ## qu'elle prépare une attaque, ce qui est exactement ce qu'on veut d'un asset
 ## manquant : rien, pas un état inventé.
+##
+## PENDANT L'ASSAUT, cette fonction s'abstient : c'est la phase d'assaut qui
+## pilote les planches (geste d'attaque, retour au repos), et elle a besoin de
+## les tenir plus longtemps qu'un rafraîchissement d'écran.
 func _refresh_ally_poses() -> void:
+	if _state == State.ASSAULT:
+		return
 	for i in mini(_ally_sprites.size(), _ally_units.size()):
-		var wanted := _ally_animation(i)
-		if wanted == _ally_anim[i]:
-			continue
-		var config: Dictionary = BattleData.get_animation(_allies[i], wanted)
+		var config: Dictionary = BattleData.get_animation(_allies[i], _ally_animation(i))
 		if config.is_empty():
 			continue
-		_ally_anim[i] = wanted
-		(_ally_sprites[i] as UnitSprite).play_sheet(config)
+		var sprite: UnitSprite = _ally_sprites[i]
+		# Comparée à la planche RÉELLEMENT montée, pas à un état gardé de côté :
+		# la phase d'assaut change de planche sans passer par ici, et un cache
+		# finirait par mentir. Reconstruire des SpriteFrames relit la texture, il
+		# ne faut donc le faire que sur un vrai changement.
+		if sprite.sheet_path == String(config.get("sheet", "")):
+			continue
+		sprite.play_sheet(config)
 
 ## ──────────────────────────────────────────────────────────────────────────
 ##  BOUCLE DE PRÉPARATION
@@ -862,8 +912,13 @@ func _queue_action(pending: Dictionary, target: int) -> void:
 	if unit == null:
 		return
 	var action := pending.duplicate()
-	action["target"] = pending.get("target", "self")
+	var kind := String(pending.get("target", "self"))
+	action["target"] = kind
 	action["target_index"] = target
+	# Les cibles sont retenues comme des UNITÉS, pas seulement comme un index :
+	# celui-ci désigne une place dans la liste des vivants au moment du choix, et
+	# cette liste aura changé quand l'assaut exécutera l'action.
+	action["targets"] = _resolve_targets(kind, target)
 	unit.action = action
 	if String(pending.get("source", "")) == "item":
 		var id := String(pending.get("id", ""))
@@ -871,6 +926,19 @@ func _queue_action(pending: Dictionary, target: int) -> void:
 	else:
 		unit.spend_ap(int(pending.get("cost", 0)))
 	_advance_turn()
+
+## Unités effectivement visées par une action, résolues à la validation.
+## `index` est l'index dans la liste proposée par _targets_for ; il est ignoré
+## pour un ciblage de groupe, qui retient tout le camp.
+func _resolve_targets(kind: String, index: int) -> Array[BattleUnit]:
+	var offered := _targets_for(kind)
+	var chosen: Array[BattleUnit] = []
+	if kind in GROUP_TARGETS:
+		for entry in offered:
+			chosen.append(entry["unit"])
+	elif index >= 0 and index < offered.size():
+		chosen.append(offered[index]["unit"])
+	return chosen
 
 ## Rend ce que l'action de `unit` avait pris, puis l'oublie.
 func _undo_action(unit: BattleUnit) -> void:
@@ -930,18 +998,48 @@ func _open_root_menu() -> void:
 	_refresh_allies()
 	_set_legend_cancel(_root_cancel_prompt())
 
-## Tous les alliés vivants ont choisi : la préparation est finie. L'assaut
-## (Lot 6) prendra le relais sur ce signal ; d'ici là l'écran reste sur place,
-## et « Cancel » permet encore de revenir sur le dernier choix.
+## Tous les alliés vivants ont choisi : la préparation est finie, l'assaut
+## commence. L'écran se vide de tout ce qui appelle une entrée — plus de menu,
+## plus de légende : pendant l'assaut le joueur regarde, il ne décide plus.
 func _finish_preparation() -> void:
-	_state = State.DONE
+	_state = State.ASSAULT
 	_active_ally = _ally_units.size()
 	_menu.active = false
 	_menu.visible = false
 	_set_units_dimmed(false, false)
 	_refresh_allies()
-	_set_legend_cancel(_root_cancel_prompt())
+	_legend.visible = false
 	preparation_finished.emit(_planned_actions())
+	_assault.run()
+
+## Fin de l'assaut : le tour se referme pour tout le monde — c'est là que les
+## blessures épargnées guérissent et que les gardes tombent (cf.
+## BattleUnit.end_turn) — puis un nouveau tour s'ouvre, ou le combat s'arrête.
+func _on_assault_finished(outcome: int) -> void:
+	for unit in _ally_units + _enemy_units:
+		unit.end_turn()
+	if outcome != BattleAssault.Outcome.ONGOING:
+		_refresh_allies()
+		battle_finished.emit(outcome == BattleAssault.Outcome.VICTORY)
+		return
+	_start_round()
+
+## Nouveau tour de préparation. Les PA repartent au maximum et les actions du
+## tour précédent sont oubliées : elles ont été jouées, elles ne doivent pas
+## reparaître comme des choix déjà pris.
+func _start_round() -> void:
+	for unit in _ally_units:
+		unit.clear_action()
+		unit.restore_ap()
+	var first := _next_ally_to_play(0)
+	if first < 0:
+		# Plus un allié debout pour jouer : l'assaut l'aurait déjà vu, mais on
+		# ne rouvre pas un menu sur personne.
+		battle_finished.emit(false)
+		return
+	_active_ally = first
+	_legend.visible = true
+	_open_root_menu()
 
 func _planned_actions() -> Array:
 	var actions: Array = []
@@ -949,15 +1047,6 @@ func _planned_actions() -> Array:
 		if unit.has_action():
 			actions.append(unit.action)
 	return actions
-
-## Une fois la préparation finie, plus aucune liste n'écoute : c'est la scène
-## qui reprend « Back » pour revenir sur le dernier choix.
-func _unhandled_input(event: InputEvent) -> void:
-	if _state != State.DONE:
-		return
-	if event.is_action_pressed("battle_cancel"):
-		get_viewport().set_input_as_handled()
-		_step_back()
 
 ## Libellé de la touche « cercle » au menu racine. Le premier allié à jouer n'a
 ## rien à défaire : l'invite est alors MASQUÉE plutôt qu'affichée sans effet —
@@ -987,6 +1076,7 @@ func _set_legend_cancel(text_id: String) -> void:
 
 func _build_legend() -> void:
 	var legend := _tilted_group(LEGEND_PIVOT, LEGEND_TILT_DEG)
+	_legend = legend
 
 	# SVG déjà à la résolution de l'écran : pas d'agrandissement à faire.
 	# L'invite « cercle » est posée par _set_legend_cancel, qui l'aligne à

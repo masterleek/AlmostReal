@@ -6,7 +6,8 @@
     "power": "puissance offensive brute, exploitée au Lot 6",
     "heal": "PV rendus, exploités au Lot 6",
     "sequence": "touches de la barre de rythme, exploitées au Lot 7",
-    "type": "1 ou 2 — choisit la couleur de l'icône de type (éclair bleu ou orange)"
+    "type": "1 ou 2 — choisit la couleur de l'icône de type (éclair bleu ou orange)",
+    "damage_type": "direct | injury — direct retire les PV tout de suite, injury les met en attente (cf. Scripts/Battle/BattleUnit.gd). PROVISOIRE : seul 'tempeste' est en injury, pour que le systeme soit exerçable ; c'est a l'auteur de repartir."
   },
   "ekos": {
     "fulgura": {
@@ -17,7 +18,8 @@
         "cross",
         "circle"
       ],
-      "type": 1
+      "type": 1,
+      "damage_type": "direct"
     },
     "tempeste": {
       "ap_cost": 2,
@@ -28,7 +30,8 @@
         "cross",
         "circle"
       ],
-      "type": 2
+      "type": 2,
+      "damage_type": "injury"
     },
     "brise": {
       "ap_cost": 1,
@@ -38,7 +41,8 @@
         "triangle",
         "cross"
       ],
-      "type": 1
+      "type": 1,
+      "damage_type": "direct"
     },
     "rosee": {
       "ap_cost": 1,
@@ -77,63 +81,72 @@
       "target": "enemies",
       "power": 6,
       "type": 2,
-      "_test": true
+      "_test": true,
+      "damage_type": "direct"
     },
     "test_2": {
       "ap_cost": 3,
       "target": "ally",
       "power": 7,
       "type": 1,
-      "_test": true
+      "_test": true,
+      "damage_type": "direct"
     },
     "test_3": {
       "ap_cost": 1,
       "target": "enemy",
       "power": 8,
       "type": 2,
-      "_test": true
+      "_test": true,
+      "damage_type": "direct"
     },
     "test_4": {
       "ap_cost": 2,
       "target": "enemies",
       "power": 9,
       "type": 1,
-      "_test": true
+      "_test": true,
+      "damage_type": "direct"
     },
     "test_5": {
       "ap_cost": 3,
       "target": "ally",
       "power": 10,
       "type": 2,
-      "_test": true
+      "_test": true,
+      "damage_type": "direct"
     },
     "test_6": {
       "ap_cost": 1,
       "target": "enemy",
       "power": 11,
       "type": 1,
-      "_test": true
+      "_test": true,
+      "damage_type": "direct"
     },
     "test_7": {
       "ap_cost": 2,
       "target": "enemies",
       "power": 12,
       "type": 2,
-      "_test": true
+      "_test": true,
+      "damage_type": "direct"
     },
     "test_8": {
       "ap_cost": 3,
       "target": "ally",
       "power": 13,
       "type": 1,
-      "_test": true
+      "_test": true,
+      "damage_type": "direct"
     },
     "test_9": {
       "ap_cost": 1,
       "target": "enemy",
       "power": 14,
       "type": 2,
-      "_test": true
+      "_test": true,
+      "damage_type": "direct"
     }
   }
 }

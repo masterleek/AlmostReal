@@ -423,6 +423,37 @@ pas partir en guerre contre des choix déjà faits et documentés dans ce repo :
   de ces déplacements. `(frame.global_transform.affine_inverse() *
   global_transform).affine_inverse() * point` couvre tous les cas, y compris
   celui d'une liste posée à même le terrain (où il se réduit à l'identité).
+- **Une planche d'attaque ripée peut faire SORTIR le personnage de l'écran.**
+  Celle d'Iris la fait reculer de 108 px de design sous le recul du tir avant de
+  la ramener à 4 px de son point de départ : à son emplacement (x = 365), le
+  sommet du recul la met à 473 sur un écran large de 480. C'est l'animation
+  telle qu'elle est dessinée, pas un défaut d'ancrage — mais l'amplitude est à
+  vérifier contre la place réellement disponible avant d'adopter une planche.
+- **Ancrer une planche de déplacement sur sa PREMIÈRE frame.** L'ombre y bouge
+  d'une frame à l'autre (c'est le mouvement encodé dans la cellule) : la caler
+  sur une frame quelconque déplacerait le personnage au lancement de
+  l'animation. Sur frame 0, il part de son emplacement et le geste l'emmène.
+- **Un `const … = preload(…)` chez l'appelant permet `Truc.new()` ; une
+  fonction STATIQUE dans un script sans `class_name` ne peut pas s'instancier
+  elle-même** (`new()` seul n'existe pas). Un « constructeur statique de
+  confort » (`Machin.pop(parent, …)`) est donc à écrire chez l'appelant, pas
+  dans le script instancié.
+- **`AnimatedSprite2D.animation_finished` ne suffit pas à séquencer un combat.**
+  Les durées se déduisent des données de la planche (frames / fps) et les
+  attentes passent par un timer en SECONDES : l'environnement de debug tourne à
+  une cadence irrégulière, un comptage de frames n'y est pas reproductible.
+- **Un état d'affichage mis en cache finit par mentir dès qu'un second système
+  écrit dessus.** Les poses des alliés étaient suivies par un tableau de noms
+  d'animation dans `BattleScene` ; la phase d'assaut change de planche sans
+  passer par là, et le tableau devenait faux. Remède : publier ce que le nœud
+  joue VRAIMENT (`UnitSprite.sheet_path`) et comparer à ça. Corollaire du même
+  incident : une fonction de rafraîchissement doit s'abstenir sur ce qu'un autre
+  système anime à cet instant (unité en train de tomber, geste en cours),
+  sinon elle le réécrit à chaque passage.
+- **Poser l'état AVANT d'appeler ce qui le lit.** `_close_sublist` rafraîchissait
+  les combattants puis passait l'état à « menu » : le rafraîchissement voyait
+  encore la liste ouverte et laissait l'allié dégainé. Dans une fonction de
+  transition, l'affectation d'état vient en premier.
 - **Reconstruire une liste de nœuds : `remove_child()` AVANT `queue_free()`.**
   La libération est différée à la fin de la frame, donc les anciens nœuds
   restent enfants — et donc affichés par-dessus les nouveaux — le temps d'une

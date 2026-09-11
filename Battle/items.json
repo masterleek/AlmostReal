@@ -14,12 +14,14 @@
     "bombe": {
       "target": "enemies",
       "power": 12,
-      "type": 2
+      "type": 2,
+      "damage_type": "direct"
     },
     "eclat": {
       "target": "enemy",
       "power": 22,
-      "type": 2
+      "type": 2,
+      "damage_type": "direct"
     }
   }
 }
