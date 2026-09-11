@@ -108,14 +108,25 @@ const LIST_ROW_TILT_DEG := -3.0
 ## choix d'une action (cf. BattleScene).
 const LIST_MAX_VISIBLE := 7
 
-## Icône de type de l'action, à cheval sur le bord gauche de la pastille et
-## présente sur CHAQUE rangée (cf. menu_long_list.png). Les deux variantes ne
-## diffèrent que par la couleur de l'éclair — bleu pour le type 1, orange pour
-## le type 2 : c'est le type de l'Eko ou de l'objet qui choisit.
-const TYPE_ICONS: Array[Texture2D] = [
-	preload("res://UI/Battle/ic_type_action_1.svg"),
-	preload("res://UI/Battle/ic_type_action_2.svg"),
-]
+## Icône de l'action, à cheval sur le bord gauche de la pastille et présente sur
+## chaque rangée (cf. menu_long_list.png).
+##
+## LES DEUX VARIANTES NE DIFFÈRENT QUE PAR LA COULEUR DE L'ÉCLAIR, et cette
+## couleur dit CE QUE L'ACTION INFLIGE — pas un identifiant abstrait. Les
+## fichiers le prouvent : le bleu de la première est #007BFF, exactement la
+## couleur des rayures de blessure de la jauge de PV (cf. HpBar) ; le rouge de
+## la seconde est #FF3700.
+##
+## C'est pour ça qu'aucun champ « type » n'est plus stocké dans les catalogues :
+## il redisait `damage_type` dans une autre notation, et les deux avaient fini
+## par se contredire (« fulgura » portait l'éclair bleu tout en infligeant des
+## dégâts directs). L'icône se DÉDUIT donc, elle ne se déclare pas.
+##
+## À VENIR : l'auteur prévoit de vrais types élémentaires (foudre, feu…). Ils
+## changeront la FORME de l'éclair ; la couleur, elle, continuera de dire la
+## nature des dégâts. Les deux informations sont indépendantes.
+const ICON_INJURY := preload("res://UI/Battle/ic_type_action_1.svg")
+const ICON_DIRECT := preload("res://UI/Battle/ic_type_action_2.svg")
 ## Relevé sur menu_long_list.png, qui est en PNG et à l'échelle de design —
 ## contrairement aux maquettes de scène, en JPEG, dont la compression décale
 ## d'un pixel le bord des petits aplats. Rangée 0 : coin de pastille en
@@ -299,9 +310,10 @@ func setup(entries: Array[Dictionary], selected: int = 0) -> void:
 		label.rotation_degrees = _row_tilt_deg
 		add_child(label)
 		_entries[i]["label"] = label
-		if _typed:
+		var icon_texture := _damage_icon(String(_entries[i].get("damage_type", "")))
+		if _typed and icon_texture != null:
 			# SVG déjà à la résolution de l'écran : rien à agrandir.
-			var icon := PixelScale.sprite_native(_type_texture(int(_entries[i].get("type", 1))))
+			var icon := PixelScale.sprite_native(icon_texture)
 			# Au-dessus de la pastille, qu'elle déborde sur la gauche.
 			icon.z_index = 2
 			icon.rotation_degrees = _row_tilt_deg
@@ -347,10 +359,18 @@ func setup(entries: Array[Dictionary], selected: int = 0) -> void:
 	add_child(_cursor)
 	_refresh()
 
-## Un type hors catalogue retombe sur le premier plutôt que de faire planter
+## Icône correspondant à la nature des dégâts. `null` pour une action qui
+## n'inflige RIEN — un soin n'est ni « blessure » ni « direct », et lui coller
+## l'une des deux couleurs annoncerait des dégâts qu'elle ne fait pas. Sa rangée
+## reste donc sans icône en attendant que l'auteur tranche.
 ## l'affichage : une donnée fautive doit se voir, pas casser l'écran.
-func _type_texture(type_index: int) -> Texture2D:
-	return TYPE_ICONS[clampi(type_index - 1, 0, TYPE_ICONS.size() - 1)]
+func _damage_icon(damage_type: String) -> Texture2D:
+	match damage_type:
+		"injury":
+			return ICON_INJURY
+		"direct":
+			return ICON_DIRECT
+	return null
 
 ## Réduit la liste à sa seule entrée sélectionnée, posée à `at`. Les autres
 ## entrées disparaissent : pendant le ciblage, la maquette ne garde que

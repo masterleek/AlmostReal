@@ -880,22 +880,142 @@ abat le sien avant lui.
 
 ### Mise en scène
 
-Chaque action joue la planche `atk` de son auteur, s'interrompt à l'instant où
-le coup porte (`hit_frame`, relevé sur la frame où la lame ou le tir part),
-applique ses effets, puis laisse le geste s'achever. **C'est là que le Lot 7
-s'insérera** : la barre de rythme prendra place entre le début du geste et
-l'application, sans toucher au reste.
+Référence : `_assets/battle/mockup_assault_allies.jpg`, cinq vignettes de
+480×270 natif (extraites à `x = 140`, `y = 139 + 320k`). **C'est un JPEG** : on y
+lit la composition et l'enchaînement, on n'y cale rien au pixel — les valeurs
+reprises ci-dessous viennent toutes de relevés antérieurs sur PNG.
+
+**Aller au contact, frapper, revenir.** L'attaquant quitte son emplacement,
+s'arrête à `APPROACH_DISTANCE` (30 px) de sa cible **du côté d'où il vient**
+— la règle vaut pour les deux camps, et reste juste si les emplacements
+changent. Sur un ciblage de groupe il se poste au barycentre des cibles, comme
+le fait déjà le ciblage (cf. `TargetSelector`). Une action qui SOIGNE ne se
+déplace pas : elle n'a personne à aller chercher, et traverser le terrain pour
+tendre une potion se lirait comme une charge.
+
+**La planche est choisie par l'ACTION, pas figée dans le code.** Une attaque ou
+un Eko nomme un geste (`"animation": "atk"`), cherché dans le bloc `animations`
+de l'unité **qui agit** — pas dans le catalogue de l'action : un Eko est partagé
+par plusieurs personnages, chacun le joue avec sa propre planche. La fourchette
+de frames se règle donc sur la planche (`first_frame`, `frames`, `hit_frame`),
+ce qui permet à un même fichier de servir plusieurs gestes. L'attaque de Noah
+s'arrête ainsi aux frames 1 à 4 de `313000404_atk.png` (soit `first_frame: 0`,
+`frames: 4`) alors que la planche en compte 20. Une planche absente n'est pas
+une erreur : l'unité frappe sans geste. **L'édition depuis MapEditor est le
+Lot 10** ; ce qui est livré ici est le modèle de données qu'elle pilotera.
+
+**Le retour peut avoir sa propre planche**, `move_back`, jouée pendant que
+l'unité regagne son emplacement (les deux durent le même temps, pour qu'elle ne
+se termine pas en chemin). Personne n'en a aujourd'hui : le fichier livré sous
+ce nom s'est révélé être **la première rangée de `313000404_limit_atk.png`**,
+identique au pixel près — `move_back.png` = `limit_atk.png[3:132, 5:500]`, zéro
+différence sur 63 855 pixels. Ce sont donc les trois premières images d'une
+attaque spéciale (garde basse, garde haute, éclat), pas un retour. L'asset a été
+retiré du projet ; la mécanique reste en place, déclarer l'animation suffira à la
+faire jouer. D'ici là tout le monde revient sur sa planche de repos.
+
+Chaque action s'interrompt à l'instant où le coup porte (`hit_frame`, relevé sur
+la frame où la lame ou le tir part), applique ses effets, puis laisse le geste
+s'achever. **C'est là que le Lot 7 s'insérera** : la barre de rythme prendra
+place entre le début du geste et l'application, sans toucher au reste.
+
+**Le coup se voit à trois choses** (`HitFeedback`, `BattleScene._shake`) :
+
+- la silhouette touchée **s'embrase** un cinquième de seconde — même shader que
+  la surbrillance de ciblage et que la tuile de révélation du worldmap, avec le
+  même seuil de luminance qui épargne l'ombre au sol ;
+- la **caméra tremble**, deux pixels de design amortis sur un quart de seconde.
+  C'est le `Stage` qui bouge, pas le calque : celui-ci appartient déjà à
+  `CanvasZoom`. Le fond capturé, qui vit hors du `Stage`, ne tremble donc pas —
+  invisible à cette amplitude ;
+- la **jauge de vie de la cible** apparaît sous ses pieds, **centrée** sur elle
+  (décalage (−16, −1)). C'est le composant du ciblage à la même largeur
+  (32 px), mais pas son décalage : là-bas la jauge se cale sous un nom de cible,
+  ici elle est seule.
+
+  Relevé sur `anim_jauge_hp.png`, dont les vignettes sont à ×2 du design. La
+  correspondance verticale vient de la **frontière claire/sombre de la
+  plateforme**, parfaitement horizontale et présente dans les deux images :
+  y = 166 sur la référence, y = 179 en jeu, donc `design = référence/2 + 96`
+  (vérifié sur dix colonnes). Le haut de la gouttière y tombe à 164 et le bas de
+  l'ombre du personnage à 161 ; en remontant les 4 px qui séparent l'ombre du
+  bas de sa cellule, le point « pieds » est à 165. **Le haut de la jauge est
+  donc un pixel au-dessus des pieds**, pas dix en dessous comme au premier jet.
+
+**L'encaissement s'anime en deux temps** (`HpBar.play_hit`), d'après la
+référence `anim_jauge_hp` de l'auteur. Les deux cas partagent la même mécanique
+— le bord du vert recule de l'acquis d'avant à l'acquis d'après — et ne
+diffèrent que par la couleur de l'aperçu et par ce qu'il devient :
+
+| | aperçu | résolution |
+|---|---|---|
+| **blessure** | aplat BLANC sur la part mise en jeu, FIXE | le bleu rayé le recouvre en suivant le bord du vert qui recule |
+| **direct** | aplat ROUGE sur la part perdue | **seul le bord EXTÉRIEUR du rouge se rétracte**, jusqu'à disparaître dans le vert. Le vert visible, lui, est déjà à sa valeur finale et ne bouge plus |
+
+L'aperçu se pose **sur la queue du vert**, pas après : il montre ce qui est sur
+le point d'être perdu. D'où l'ordre de dessin — vert, aperçu, bleu — le bleu
+passant bien « par dessus la partie blanche » comme demandé.
+
+Le cas direct a demandé deux corrections, et la mesure colonne par colonne les
+a tranchées toutes les deux. Relevé sur la piste de la référence (positions en
+pixels de la planche, à ×2) :
+
+```
+vignette 2   vert ..124   rouge 125..139
+vignette 3   vert ..118   rouge 119..127
+vignette 4   vert ..118   rouge -
+```
+
+**Le bord du vert ne bouge pas** (à 3 px de design près, que le tracé à la main
+explique), **seul le bord extérieur du rouge se déplace** : 139, puis 127, puis
+plus rien. Deux premières versions se sont donc trompées — l'une laissait le
+rouge immobile et le faisait s'effacer par transparence, l'autre faisait remonter
+son bord gauche, ce qui faisait GRANDIR le vert visible en cours d'animation.
+Une jauge de vie qui se remplit pendant qu'on encaisse : le genre de faute qu'on
+ne voit qu'en mesurant, parce qu'à l'œil « ça bouge dans le bon sens ».
+
+Le rouge de l'aperçu n'est pas choisi : c'est **#FF3700**, celui de l'éclair de
+`ic_type_action_2.svg` — l'icône qui annonce un coup direct dans les listes.
+Les deux disent la même chose, ils doivent être de la même couleur. Le blanc
+vient de la référence d'animation, où il est franc.
+
+### Nature des dégâts et type élémentaire : deux informations distinctes
+
+Le champ `type` (1 ou 2) des catalogues **a été supprimé**. Il redisait
+`damage_type` dans une autre notation, et les deux avaient fini par se
+contredire : « fulgura » portait l'éclair BLEU tout en infligeant des dégâts
+DIRECTS. Les fichiers d'icônes tranchent — `ic_type_action_1.svg` et `_2.svg`
+sont identiques au `fill` près, et le bleu de la première est **#007BFF**,
+exactement la couleur des rayures de blessure de la jauge de PV. L'icône dit
+donc ce que l'action inflige, et se **déduit** désormais de `damage_type` :
+
+| `damage_type` | icône |
+|---|---|
+| `injury` | éclair bleu #007BFF |
+| `direct` | éclair rouge #FF3700 |
+| absent (l'action n'inflige rien) | pas d'icône |
+
+**Les attaques de base ont leur nature**, fixée par l'auteur : Noah frappe
+DIRECT, Iris inflige des BLESSURES. (Le cactoon est resté en direct, faute de
+consigne.)
+
+**Le type élémentaire (foudre, feu…) reste à définir** et sera une information
+SÉPARÉE : un même élément pourra infliger l'une ou l'autre nature de dégâts. Le
+champ est réservé sous le nom `element` dans les `_champs` des catalogues, et
+n'est pas encore lu. Il changera la FORME de l'éclair ; la couleur continuera
+de dire la nature.
 
 Les attentes sont en SECONDES, déduites du nombre de frames et de la cadence de
 la planche — l'environnement de debug tourne à une cadence irrégulière
 (cf. `CLAUDE.md` §workflow, point 4), un comptage de frames n'y serait pas
 reproductible.
 
-Deux cas n'ont pas de planche à jouer : une unité sans planche d'attaque (le
-cactoon n'a QUE des idles, sa page de rip n'en contient pas d'autre) et une
-action qui soigne. Elles font un **pas en avant puis reviennent** : un
-déplacement n'invente aucun dessin, contrairement à un sprite qu'on
-fabriquerait, et dit quand même « c'est mon tour ».
+Deux cas n'ont pas de planche à jouer. Une unité **sans planche d'attaque** (le
+cactoon n'a QUE des idles) marque un temps d'arrêt au contact : le déplacement
+tient lieu de geste. Une action qui **soigne** fait un pas en avant depuis son
+emplacement. Dans les deux cas un déplacement n'invente aucun dessin,
+contrairement à un sprite qu'on fabriquerait, et dit quand même « c'est mon
+tour ».
 
 Les **nombres de dégâts n'ont aucune maquette** — c'est le seul élément de
 l'écran qui ne soit pas relevé. Plutôt qu'inventer un style, `DamageNumber`
@@ -976,13 +1096,21 @@ tempeste (enemies) idem    touche noah ET iris
 
 ### Deux dettes ouvertes
 
-1. **La planche `atk` d'Iris la déporte hors de la plateforme.** Le déplacement
-   est encodé dans la cellule (224 px de large) et va vers la DROITE, alors que
-   les ennemis sont à gauche : l'animation la fait reculer, et elle sort de
-   l'écran. L'auteur remplacera tous les assets de ce personnage — le défaut est
-   consigné ici, pas contourné, pour ne pas calibrer sur une planche vouée à
-   disparaître.
-2. **Les valeurs d'équilibrage sont provisoires** : `basic_attack.power` (6, 5,
+0. **Trois éléments de la maquette d'assaut ne sont pas faits** et relèvent du
+   Lot 7 : la barre de rythme, le libellé « PERFECT », et la **pastille du nom
+   de l'action** (« Fulgura ») posée en bas au centre pendant toute l'action.
+1. **Aucune planche de retour.** `_noah/move_back.png` est un export erroné
+   (première rangée de `limit_atk`), à refaire.
+2. ~~**La planche `atk` d'Iris la déporte hors de la plateforme.**~~ **Réglé**
+   par la plage de frames et la venue au contact : l'auteur ne retient que les
+   frames 4 à 10 (`first_frame: 3`, `frames: 7`), et l'ancre est relevée sur
+   l'ombre de la frame 3 — la première de la PLAGE JOUÉE, pas de la planche.
+   L'ombre dérive ensuite de 57 px vers la droite, ce qui est le recul du tir ;
+   partie du point de contact (cible + 30) sa cellule occupe 25..249 au lieu de
+   déborder à 473 sur un écran large de 480. `hit_frame: 0` : la lueur de bouche
+   est sur la première frame de la plage, le coup porte donc là.
+   L'auteur remplacera tout de même les assets de ce personnage.
+3. **Les valeurs d'équilibrage sont provisoires** : `basic_attack.power` (6, 5,
    6), et le bonus de conversion blessure → direct toujours à 0.
 
 ---

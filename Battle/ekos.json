@@ -6,8 +6,9 @@
     "power": "puissance offensive brute, exploitée au Lot 6",
     "heal": "PV rendus, exploités au Lot 6",
     "sequence": "touches de la barre de rythme, exploitées au Lot 7",
-    "type": "1 ou 2 — choisit la couleur de l'icône de type (éclair bleu ou orange)",
-    "damage_type": "direct | injury — direct retire les PV tout de suite, injury les met en attente (cf. Scripts/Battle/BattleUnit.gd). PROVISOIRE : seul 'tempeste' est en injury, pour que le systeme soit exerçable ; c'est a l'auteur de repartir."
+    "damage_type": "direct | injury — direct retire les PV tout de suite, injury les met en attente (cf. Scripts/Battle/BattleUnit.gd). C'est AUSSI ce qui choisit l'icone de la rangee : eclair rouge #FF3700 pour direct, eclair bleu #007BFF pour injury, aucune icone pour une action qui n'inflige rien. Le champ 'type' qui redisait la meme chose en 1/2 a ete supprime — les deux s'etaient contredits. PROVISOIRE : seul 'tempeste' est en injury, c'est a l'auteur de repartir.",
+    "animation": "nom de la planche a jouer, cherche dans le bloc 'animations' de l'unite QUI AGIT (pas dans ce fichier) : un Eko est partage par plusieurs personnages, chacun le joue avec sa propre planche. La fourchette de frames (first_frame / frames / hit_frame) se regle donc la-bas, sur la planche. Absent ou introuvable chez l'unite, elle se rabat sur un pas en avant.",
+    "element": "A VENIR, pas encore implemente : le type elementaire (foudre, feu...). Independant de damage_type — un element donne peut infliger l'une ou l'autre nature de degats. Il changera la FORME de l'eclair, la couleur continuant de dire la nature."
   },
   "ekos": {
     "fulgura": {
@@ -18,8 +19,8 @@
         "cross",
         "circle"
       ],
-      "type": 1,
-      "damage_type": "direct"
+      "damage_type": "direct",
+      "animation": "atk"
     },
     "tempeste": {
       "ap_cost": 2,
@@ -30,8 +31,8 @@
         "cross",
         "circle"
       ],
-      "type": 2,
-      "damage_type": "injury"
+      "damage_type": "injury",
+      "animation": "atk"
     },
     "brise": {
       "ap_cost": 1,
@@ -41,8 +42,8 @@
         "triangle",
         "cross"
       ],
-      "type": 1,
-      "damage_type": "direct"
+      "damage_type": "direct",
+      "animation": "atk"
     },
     "rosee": {
       "ap_cost": 1,
@@ -52,7 +53,7 @@
         "triangle",
         "triangle"
       ],
-      "type": 2
+      "animation": "atk"
     },
     "aubaine": {
       "ap_cost": 2,
@@ -63,7 +64,7 @@
         "square",
         "triangle"
       ],
-      "type": 2
+      "animation": "atk"
     },
     "elan": {
       "ap_cost": 3,
@@ -74,79 +75,79 @@
         "circle",
         "circle"
       ],
-      "type": 1
+      "animation": "atk"
     },
     "test_1": {
       "ap_cost": 2,
       "target": "enemies",
       "power": 6,
-      "type": 2,
       "_test": true,
-      "damage_type": "direct"
+      "damage_type": "direct",
+      "animation": "atk"
     },
     "test_2": {
       "ap_cost": 3,
       "target": "ally",
       "power": 7,
-      "type": 1,
       "_test": true,
-      "damage_type": "direct"
+      "damage_type": "direct",
+      "animation": "atk"
     },
     "test_3": {
       "ap_cost": 1,
       "target": "enemy",
       "power": 8,
-      "type": 2,
       "_test": true,
-      "damage_type": "direct"
+      "damage_type": "direct",
+      "animation": "atk"
     },
     "test_4": {
       "ap_cost": 2,
       "target": "enemies",
       "power": 9,
-      "type": 1,
       "_test": true,
-      "damage_type": "direct"
+      "damage_type": "direct",
+      "animation": "atk"
     },
     "test_5": {
       "ap_cost": 3,
       "target": "ally",
       "power": 10,
-      "type": 2,
       "_test": true,
-      "damage_type": "direct"
+      "damage_type": "direct",
+      "animation": "atk"
     },
     "test_6": {
       "ap_cost": 1,
       "target": "enemy",
       "power": 11,
-      "type": 1,
       "_test": true,
-      "damage_type": "direct"
+      "damage_type": "direct",
+      "animation": "atk"
     },
     "test_7": {
       "ap_cost": 2,
       "target": "enemies",
       "power": 12,
-      "type": 2,
       "_test": true,
-      "damage_type": "direct"
+      "damage_type": "direct",
+      "animation": "atk"
     },
     "test_8": {
       "ap_cost": 3,
       "target": "ally",
       "power": 13,
-      "type": 1,
       "_test": true,
-      "damage_type": "direct"
+      "damage_type": "direct",
+      "animation": "atk"
     },
     "test_9": {
       "ap_cost": 1,
       "target": "enemy",
       "power": 14,
-      "type": 2,
       "_test": true,
-      "damage_type": "direct"
+      "damage_type": "direct",
+      "animation": "atk"
     }
   }
 }

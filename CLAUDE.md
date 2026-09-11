@@ -454,6 +454,42 @@ pas partir en guerre contre des choix déjà faits et documentés dans ce repo :
   les combattants puis passait l'état à « menu » : le rafraîchissement voyait
   encore la liste ouverte et laissait l'allié dégainé. Dans une fonction de
   transition, l'affectation d'état vient en premier.
+- **Changer la planche d'un AnimatedSprite2D ne doit pas le repositionner.**
+  `UnitSprite.setup()` repose l'unité sur son emplacement, ce qui est juste au
+  montage et faux partout ailleurs : pendant l'assaut l'unité quitte son
+  emplacement pour aller au contact, et changer de planche en chemin la
+  téléportait chez elle au milieu du déplacement. `play_sheet()` sauve donc la
+  position et la restaure ; seul `offset`, qui porte l'ancrage, suit la nouvelle
+  planche.
+- **Caler une vignette de maquette sans repère absolu : chercher une ARÊTE
+  HORIZONTALE de décor présente dans les deux images.** Les vignettes
+  d'`anim_jauge_hp.png` sont des recadrages à ×2, sans origine connue, et un
+  recalage par corrélation échouait (fond capturé différent, personnage qui
+  clignote). La frontière claire/sombre de la plateforme, elle, est parfaitement
+  horizontale et identique : y = 166 sur la référence, y = 179 en jeu, donc
+  `design = référence/2 + 96`, vérifié sur dix colonnes. Un seul repère de ce
+  genre suffit à convertir toutes les mesures verticales.
+- **Une maquette d'animation faite à la main n'est pas numériquement
+  cohérente** — ses vignettes ne décrivent pas forcément un même état qui
+  évolue. Y lire la GRAMMAIRE (quelles zones existent, laquelle bouge, dans quel
+  sens) et pas des valeurs : sur `anim_jauge_hp`, le vert de la première
+  vignette ne correspond à aucune des trois suivantes, mais la forme — un
+  capuchon rouge de plus en plus court au bout d'un vert de plus en plus court —
+  est sans ambiguïté.
+- **Deux champs qui encodent la même chose finissent par se contredire.** Les
+  catalogues de combat portaient un `type` (1 ou 2) choisissant l'icône de
+  rangée, ET un `damage_type` (direct/injury). Les fichiers d'icônes ont montré
+  que c'était la même information : `ic_type_action_1/2.svg` ne diffèrent que
+  par le `fill` de l'éclair, et le bleu de la première est #007BFF — exactement
+  la couleur des rayures de blessure de la jauge. Les deux champs s'étaient déjà
+  désynchronisés. Remède : supprimer le champ redondant et DÉDUIRE l'affichage.
+  Méthode générale : quand deux champs semblent parler du même sujet, ouvrir les
+  assets et comparer les valeurs — une couleur partagée au chiffre près n'est
+  jamais une coïncidence.
+- **Pour capturer un instant précis en jeu, s'accrocher au SIGNAL, pas à une
+  horloge.** Viser « 2,70 s après le lancement » rate l'instant une fois sur
+  deux — la cadence du debug est irrégulière. Un `signal impact` connecté à la
+  capture tombe juste à tous les coups.
 - **Reconstruire une liste de nœuds : `remove_child()` AVANT `queue_free()`.**
   La libération est différée à la fin de la frame, donc les anciens nœuds
   restent enfants — et donc affichés par-dessus les nouveaux — le temps d'une

@@ -52,6 +52,26 @@ const STRIPE_PERIOD := 8
 ## clignoter à côté du reste du HUD.
 const STRIPE_SPEED := 16.0
 
+## APERÇU DU COUP. Quand une unité encaisse, la part de jauge mise en jeu
+## s'allume d'abord d'un aplat — blanc pour une blessure, rouge pour un coup
+## direct — avant que la jauge ne se résolve (cf. play_hit et
+## `anim_jauge_hp` fourni par l'auteur). L'aperçu se pose SUR la queue du vert :
+## il montre ce qui est sur le point d'être perdu, pas ce qui l'est déjà.
+##
+## Le rouge n'est pas choisi : c'est celui de l'éclair de `ic_type_action_2.svg`,
+## l'icône qui annonce un coup direct dans les listes d'actions — les deux
+## disent la même chose, ils doivent donc être de la même couleur. (Son pendant
+## bleu, #007BFF, est déjà la couleur des rayures ci-dessus.) Le blanc, lui,
+## vient de la référence d'animation, où il est franc.
+const PREVIEW_INJURY_COLOR := Color(1, 1, 1)
+const PREVIEW_DIRECT_COLOR := Color8(0xFF, 0x37, 0x00)
+
+## Temps d'affichage de l'aperçu avant que la jauge ne bouge — il doit être vu
+## avant d'être résolu, c'est toute sa raison d'être.
+const PREVIEW_HOLD := 0.18
+## Durée de la résolution : le bord vert recule, et avec lui ce qui le suit.
+const SETTLE_DURATION := 0.35
+
 ## Seuls les coins arrondis sont préservés par le 9-slice ; le corps de la
 ## gouttière est uni sur toute sa longueur, 2 px suffisent donc largement.
 const PATCH_MARGIN := 2
@@ -62,9 +82,20 @@ var design_width: int = 0
 
 var _fill: Sprite2D
 var _injury: Sprite2D
+var _preview: Sprite2D
 ## Largeur de la zone de blessure, en pixels d'écran. 0 = pas de blessure, donc
 ## rien à animer.
 var _injury_width: float = 0.0
+## État courant de la jauge. Gardé plutôt que recalculé : c'est `_acquired` que
+## la résolution d'un coup anime, et il faut pouvoir redessiner à chaque pas.
+var _acquired: float = 1.0
+var _full: float = 1.0
+var _hit_tween: Tween
+## Bornes du coup en cours, gardées pour que la résolution puisse redessiner
+## l'aperçu à chaque pas.
+var _hit_from: float = 0.0
+var _hit_to: float = 0.0
+var _hit_injury: bool = false
 
 func _ready() -> void:
 	var natural := PixelScale.design_size(UNDERLAYER)
@@ -103,6 +134,23 @@ func _ready() -> void:
 	_fill.position = FILL_INSET
 	add_child(_fill)
 
+	# ORDRE DE DESSIN, et il compte : l'aperçu passe SUR le vert (il en colore
+	# la queue), et le bleu passe SUR l'aperçu (l'auteur demande qu'il s'affiche
+	# « par dessus la partie blanche »). D'où vert, puis aperçu, puis bleu —
+	# ce dernier est donc remonté en dernier enfant.
+	var solid := Image.create_empty(
+		int(PixelScale.design_size(FILL).x), int(PixelScale.design_size(FILL).y),
+		false, Image.FORMAT_RGBA8,
+	)
+	solid.fill(Color(1, 1, 1))
+	_preview = PixelScale.sprite(ImageTexture.create_from_image(solid))
+	_preview.region_enabled = true
+	_preview.region_rect = Rect2()
+	_preview.position = FILL_INSET
+	_preview.scale.x *= _track_width() / PixelScale.design_size(FILL).x
+	add_child(_preview)
+	move_child(_injury, get_child_count() - 1)
+
 	# Étirement horizontal de la piste, en plus de la contre-échelle posée par
 	# PixelScale. Vaut exactement 1 sur une jauge de largeur naturelle : le
 	# HUD n'est pas rééchantillonné. Il ne s'applique qu'au dégradé : les
@@ -112,6 +160,77 @@ func _ready() -> void:
 
 	set_process(false)
 	set_ratio(1.0)
+
+## Joue l'encaissement d'un coup, en deux temps : l'aperçu de ce qui est mis en
+## jeu, puis sa résolution.
+##
+## Les deux cas ne diffèrent que par la COULEUR de l'aperçu et par ce qui reste
+## après — la mécanique est la même, et c'est voulu : dans les deux cas le bord
+## du vert recule de `before_acquired` à `after_acquired`.
+##
+##   - BLESSURE : l'aperçu est blanc, et le bleu le recouvre en suivant le bord
+##     qui recule. Les PV ne bougent pas, seul ce qui est acquis diminue.
+##   - DIRECT : l'aperçu est rouge, le vert se vide sous lui, puis le rouge
+##     s'efface et découvre la gouttière.
+func play_hit(
+	before_acquired: float, after_acquired: float, after_full: float, injury: bool
+) -> void:
+	_kill_hit()
+	_hit_injury = injury
+	_hit_from = clampf(before_acquired, 0.0, 1.0)
+	_hit_to = clampf(after_acquired, 0.0, 1.0)
+
+	_preview.modulate = PREVIEW_INJURY_COLOR if injury else PREVIEW_DIRECT_COLOR
+
+	# L'état d'ARRIVÉE est posé tout de suite pour les PV ; seul le bord acquis
+	# part de l'ancienne valeur, puisque c'est lui qu'on anime.
+	_full = clampf(after_full, 0.0, 1.0)
+	_acquired = _hit_from
+	_redraw()
+	_draw_preview(0.0)
+
+	_hit_tween = create_tween()
+	_hit_tween.tween_interval(PREVIEW_HOLD)
+	_hit_tween.tween_method(_settle, 0.0, 1.0, SETTLE_DURATION)
+	_hit_tween.tween_callback(func() -> void: _preview.region_rect = Rect2())
+
+## Un pas de résolution. `t` va de 0 (l'aperçu vient d'être vu) à 1 (c'est
+## réglé).
+func _settle(t: float) -> void:
+	_acquired = lerpf(_hit_from, _hit_to, t)
+	_redraw()
+	_draw_preview(t)
+
+## Pose l'aperçu. Les deux cas divergent ICI, et nulle part ailleurs :
+##
+##   - BLESSURE : il ne bouge pas. Il marque la part mise en jeu, et c'est le
+##     bleu qui vient le recouvrir en suivant le bord du vert.
+##   - DIRECT : son bord gauche reste sur la valeur d'arrivée, son bord DROIT
+##     suit le bord du vert qui recule. Le rouge se vide donc par la droite
+##     jusqu'à disparaître, et le vert VISIBLE — celui qui dépasse à gauche du
+##     rouge — ne bouge pas : il est déjà à sa valeur finale.
+##
+##     C'est le point que le premier jet ratait. En faisant remonter le bord
+##     gauche du rouge vers le bord du vert, il faisait GRANDIR le vert visible
+##     en cours d'animation avant de le ramener — une jauge de vie qui se
+##     remplit pendant qu'on encaisse. Relevé sur la référence, colonne par
+##     colonne : le vert s'arrête au même pixel sur les trois vignettes, seul
+##     le bord extérieur du rouge se déplace (139 → 127 → disparu).
+func _draw_preview(_t: float) -> void:
+	var left := _hit_to
+	var right := _hit_from
+	if not _hit_injury:
+		right = _acquired
+	var track := _track_width()
+	var lx: float = round(track * left)
+	var rx: float = round(track * right)
+	_preview.position = FILL_INSET + Vector2(lx, 0)
+	_preview.region_rect = _region(rx - lx, PixelScale.design_size(FILL), track)
+
+func _kill_hit() -> void:
+	if _hit_tween != null and _hit_tween.is_valid():
+		_hit_tween.kill()
+	_preview.region_rect = Rect2()
 
 ## Motif de rayures diagonales, en pixels d'écran. Une seule tuile de la
 ## largeur d'une période : le mode « repeat » se charge du reste.
@@ -136,6 +255,15 @@ func _track_width() -> float:
 ## courants, blessure comprise. C'est entre les deux que se dessine le segment
 ## bleu. `full_ratio` omis (ou inférieur) = pas de blessure.
 func set_ratio(ratio: float, full_ratio: float = -1.0) -> void:
+	_kill_hit()
+	_acquired = clampf(ratio, 0.0, 1.0)
+	_full = maxf(_acquired, clampf(full_ratio, 0.0, 1.0))
+	_redraw()
+
+## Repose les trois segments d'après `_acquired` et `_full`. Séparé de
+## set_ratio parce que la résolution d'un coup le rappelle à chaque pas sans
+## vouloir, elle, réinitialiser l'aperçu.
+func _redraw() -> void:
 	# `design_size()`, pas `Vector2(FILL.get_width(), FILL.get_height())` : FILL
 	# est un SVG déjà rastérisé ×4, son get_width() renvoie la taille ÉCRAN
 	# (228), pas la taille de DESIGN (57) sur laquelle tout le calcul qui suit
@@ -144,15 +272,15 @@ func set_ratio(ratio: float, full_ratio: float = -1.0) -> void:
 	var track := _track_width()
 	# On arrondit la largeur AFFICHÉE, pas la largeur de texture : c'est elle
 	# qui doit tomber sur un pixel de design entier.
-	var width: float = round(track * clampf(ratio, 0.0, 1.0))
+	var width: float = round(track * _acquired)
 	_fill.region_rect = _region(width, full, track)
 
-	if full_ratio <= ratio:
+	if _full <= _acquired:
 		_injury_width = 0.0
 		_injury.region_rect = Rect2()
 		set_process(false)
 		return
-	var full_width: float = round(track * clampf(full_ratio, 0.0, 1.0))
+	var full_width: float = round(track * _full)
 	# La zone de blessure est mesurée directement en pixels d'écran : son motif
 	# n'est pas étiré avec la piste, il est dessiné à sa période.
 	_injury_width = (full_width - width) * PixelScale.SCALE

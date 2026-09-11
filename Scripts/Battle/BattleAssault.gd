@@ -28,6 +28,7 @@ const BattleData = preload("res://Scripts/Battle/BattleData.gd")
 const BattleRules = preload("res://Scripts/Battle/BattleRules.gd")
 const UnitSprite = preload("res://Scripts/Battle/Stage/UnitSprite.gd")
 const DamageNumber = preload("res://Scripts/Battle/UI/DamageNumber.gd")
+const HitFeedback = preload("res://Scripts/Battle/UI/HitFeedback.gd")
 const EnemyBehaviour = preload("res://Scripts/Battle/EnemyBehaviour.gd")
 
 ## Émis dès qu'une valeur affichée par le HUD a bougé (PV, blessure, mort).
@@ -36,16 +37,41 @@ const EnemyBehaviour = preload("res://Scripts/Battle/EnemyBehaviour.gd")
 signal changed
 ## Fin de l'assaut, avec l'issue du combat.
 signal finished(outcome: int)
+## Un coup vient de porter. L'assaut ne connaît pas la caméra : il annonce
+## l'impact, la scène le traduit en secousse.
+signal impact
 
 ## VICTORY / DEFEAT arrêtent le combat (Lot 9 en fera un écran) ; ONGOING rend
 ## la main à une nouvelle phase de préparation.
 enum Outcome { ONGOING, VICTORY, DEFEAT }
 
-## Geste de repli pour une unité sans planche d'attaque : un pas en avant puis
-## un retour. Le cactoon n'a QUE des planches d'idle (sa page de rip n'en
-## contient pas d'autre), et une action qui soigne n'a pas de geste d'attaque
-## à jouer non plus. Un déplacement n'invente aucun dessin — contrairement à un
-## sprite qu'on fabriquerait — et dit quand même « c'est mon tour ».
+## VENIR AU CONTACT. La maquette d'assaut montre l'attaquant quitter son
+## emplacement, frapper au corps à corps, puis revenir : il s'arrête à
+## APPROACH_DISTANCE de sa cible, du côté d'où il vient. La distance est lue sur
+## la maquette (une trentaine de pixels entre les deux silhouettes) — approchée,
+## puisque cette maquette est un JPEG et qu'on ne cale rien au pixel dessus.
+const APPROACH_DISTANCE := 30.0
+const APPROACH_DURATION := 0.35
+const RETURN_DURATION := 0.35
+
+## Planche jouée en revenant, quand l'unité en a une (`move_back`). Sinon le
+## déplacement se fait seul, sur la planche de repos — ce qui est le cas de TOUT
+## LE MONDE aujourd'hui : aucun personnage n'a encore de planche de retour. Le
+## fichier livré sous ce nom s'est révélé être la première rangée de
+## `313000404_limit_atk.png` (identique au pixel près, cf. le plan), donc le
+## début d'une attaque spéciale, pas un retour. La mécanique reste en place :
+## déclarer l'animation suffira à la faire jouer.
+const ANIM_RETURN := "move_back"
+
+## Temps passé au contact quand l'unité n'a PAS de planche d'attaque — le
+## cactoon n'a que des idles, sa page de rip n'en contient pas d'autre. Le
+## déplacement tient alors lieu de geste : il n'invente aucun dessin, et dit
+## quand même d'où vient le coup.
+const CONTACT_PAUSE := 0.25
+
+## Geste de repli d'une action qui ne frappe pas (un soin) : un pas en avant
+## puis un retour, sans quitter son emplacement. Elle n'a personne à aller
+## chercher.
 const LUNGE_DISTANCE := 7.0
 const LUNGE_DURATION := 0.5
 
@@ -63,11 +89,24 @@ var _enemies: Array[Dictionary] = []
 ## Nœud sous lequel jaillissent les nombres de dégâts — le conteneur d'unités,
 ## pour qu'ils soient triés en profondeur avec les combattants.
 var _effects: Node2D
+## Emplacement de départ de chaque unité, relevé au montage : c'est là qu'elle
+## revient après avoir frappé. Gardé ici plutôt que lu sur le sprite, dont la
+## position est justement ce qui bouge.
+var _home: Dictionary = {}
+## Un retour visuel par unité (éclat + jauge), monté une fois pour toutes.
+var _feedback: Dictionary = {}
 
 func setup(allies: Array[Dictionary], enemies: Array[Dictionary], effects: Node2D) -> void:
 	_allies = allies
 	_enemies = enemies
 	_effects = effects
+	for entry in _allies + _enemies:
+		var unit := _unit_of(entry)
+		_home[unit] = _node_of(entry).position
+		var feedback: Node2D = HitFeedback.new()
+		_effects.add_child(feedback)
+		feedback.setup(_node_of(entry))
+		_feedback[unit] = feedback
 
 ## ──────────────────────────────────────────────────────────────────────────
 ##  DÉROULEMENT
@@ -136,15 +175,42 @@ func _resolve(entry: Dictionary) -> void:
 		return
 
 	var effect := _effect_of(unit, action)
-	var gesture: Dictionary = (
-		BattleData.get_animation(unit.id, "atk") if effect["offensive"] else {}
-	)
-	await _play_gesture(entry, targets, gesture)
+	var offensive := bool(effect["offensive"])
+	var gesture := _gesture_for(unit, action)
+
+	# Aller au contact, frapper, revenir. Une action qui SOIGNE ne se déplace
+	# pas : elle n'a personne à aller chercher, et traverser le terrain pour
+	# tendre une potion se lirait comme une charge.
+	if offensive:
+		await _approach(entry, targets)
+	await _play_gesture(entry, targets, gesture, offensive)
+
 	for target in targets:
+		# Relevé AVANT le coup : c'est le point de départ de l'animation de
+		# jauge, et il n'est plus lisible une fois les PV appliqués.
+		var before := target.solid_ratio()
 		_apply(unit, target, effect)
+		if offensive:
+			_feedback[target].hit(target, before, bool(effect["injury"]))
 	changed.emit()
+	if offensive:
+		impact.emit()
+
 	await _finish_gesture(entry, gesture)
+	if offensive:
+		await _return_home(entry)
+	else:
+		_node_of(entry).play_sheet(BattleData.get_animation(unit.id, "idle"))
 	await _bury_the_dead()
+
+## Planche que cette action fait jouer, cherchée dans le bloc `animations` de
+## l'unité QUI AGIT — pas dans le catalogue de l'action. Un Eko est partagé par
+## plusieurs personnages : il nomme un geste (`animation`), chacun le joue avec
+## sa propre planche et sa propre fourchette de frames. Une planche absente
+## n'est pas une erreur : l'unité frappe sans geste (cf. _play_gesture).
+func _gesture_for(unit: BattleUnit, action: Dictionary) -> Dictionary:
+	var name := String(_definition_of(unit, action).get("animation", "atk"))
+	return BattleData.get_animation(unit.id, name)
 
 ## Action de l'unité. Un allié joue celle qu'il a retenue ; un ennemi n'a pas de
 ## phase de préparation, il attaque.
@@ -266,28 +332,94 @@ func _pop_number(anchor: Vector2, amount: int, kind: int) -> void:
 ##  GESTES
 ## ──────────────────────────────────────────────────────────────────────────
 
+## Amène l'unité devant sa cible. Elle s'arrête à APPROACH_DISTANCE, DU CÔTÉ
+## D'OÙ ELLE VIENT — pas systématiquement à droite : la règle vaut pour les deux
+## camps, et reste juste si les emplacements changent un jour.
+##
+## Sur un ciblage de groupe, le point visé est le barycentre des cibles : se
+## poster devant un membre arbitraire donnerait l'impression de n'attaquer que
+## celui-là. C'est déjà la règle du ciblage (cf. TargetSelector).
+func _approach(entry: Dictionary, targets: Array[BattleUnit]) -> void:
+	var sprite := _node_of(entry)
+	var home: Vector2 = _home[_unit_of(entry)]
+	var focus := _centre_of(targets)
+	if focus == Vector2.ZERO:
+		return
+	var side := signf(home.x - focus.x)
+	if side == 0.0:
+		side = 1.0
+	# Arrondi : une position à virgule devient un demi-pixel flou une fois le
+	# Stage agrandi ×4.
+	var stop := Vector2(focus.x + side * APPROACH_DISTANCE, focus.y).round()
+	var tween := create_tween()
+	tween.tween_property(sprite, "position", stop, APPROACH_DURATION) \
+		.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	await _wait(APPROACH_DURATION)
+
+## Ramène l'unité à son emplacement, sur sa planche de retour si elle en a une.
+## Les deux durent le même temps : le déplacement dure au moins la planche, pour
+## qu'elle ne se termine pas en chemin.
+func _return_home(entry: Dictionary) -> void:
+	var unit := _unit_of(entry)
+	var sprite := _node_of(entry)
+	var gesture := BattleData.get_animation(unit.id, ANIM_RETURN)
+	var duration := RETURN_DURATION
+	if not gesture.is_empty():
+		duration = maxf(duration, UnitSprite.duration_of(gesture))
+		sprite.play_sheet(gesture, false)
+	else:
+		# Sans planche de retour, on repasse au repos DÈS LE DÉPART plutôt qu'à
+		# l'arrivée : le geste d'attaque ne boucle pas, l'unité resterait figée
+		# sur sa dernière image — bras tendu — pendant tout le trajet du retour.
+		sprite.play_sheet(BattleData.get_animation(unit.id, "idle"))
+	var tween := create_tween()
+	tween.tween_property(sprite, "position", _home[unit], duration) \
+		.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	await _wait(duration)
+	sprite.play_sheet(BattleData.get_animation(unit.id, "idle"))
+
+## Barycentre des pieds des cibles, arrondi. Vector2.ZERO quand il n'y a
+## personne — aucune cible ne se tient à l'origine de l'écran.
+func _centre_of(targets: Array[BattleUnit]) -> Vector2:
+	var sum := Vector2.ZERO
+	var count := 0
+	for target in targets:
+		var sprite := _sprite_of(target)
+		if sprite != null:
+			sum += sprite.position
+			count += 1
+	if count == 0:
+		return Vector2.ZERO
+	return (sum / float(count)).round()
+
 ## Joue le geste jusqu'à l'instant où le coup PORTE, et rend la main là — c'est
 ## l'appelant qui applique les effets, pour que le Lot 7 puisse insérer sa barre
 ## de rythme entre les deux sans toucher à cette fonction.
-func _play_gesture(entry: Dictionary, targets: Array[BattleUnit], gesture: Dictionary) -> void:
-	var sprite := _node_of(entry)
-	if gesture.is_empty():
-		await _lunge(entry, targets)
+##
+## Sans planche, deux cas distincts : une unité venue au contact marque un temps
+## d'arrêt (le déplacement tient lieu de geste), une unité qui soigne fait un pas
+## en avant depuis son emplacement.
+func _play_gesture(
+	entry: Dictionary, targets: Array[BattleUnit], gesture: Dictionary, offensive: bool
+) -> void:
+	if not gesture.is_empty():
+		_node_of(entry).play_sheet(gesture, false)
+		await _wait(UnitSprite.hit_time_of(gesture))
 		return
-	sprite.play_sheet(gesture, false)
-	await _wait(UnitSprite.hit_time_of(gesture))
+	if offensive:
+		await _wait(CONTACT_PAUSE)
+		return
+	await _lunge(entry, targets)
 
-## Laisse le geste s'achever, puis remet l'unité dans sa planche de repos.
-func _finish_gesture(entry: Dictionary, gesture: Dictionary) -> void:
+## Laisse le geste s'achever. Ne remet PAS l'unité au repos : ce qui suit — le
+## retour à l'emplacement — a sa propre planche, et la lui reprendre ici la
+## ferait clignoter.
+func _finish_gesture(_entry: Dictionary, gesture: Dictionary) -> void:
 	if gesture.is_empty():
 		return
-	var sprite := _node_of(entry)
 	await _wait(UnitSprite.duration_of(gesture) - UnitSprite.hit_time_of(gesture))
-	sprite.play_sheet(BattleData.get_animation(_unit_of(entry).id, "idle"))
 
-## Pas en avant puis retour, vers la cible. La direction se déduit de la
-## position de celle-ci plutôt que du camp : c'est la même règle pour tout le
-## monde, et elle reste juste si les emplacements changent un jour.
+## Pas en avant puis retour, vers la cible, sans quitter son emplacement.
 func _lunge(entry: Dictionary, targets: Array[BattleUnit]) -> void:
 	var sprite := _node_of(entry)
 	var toward := _sprite_of(targets[0])

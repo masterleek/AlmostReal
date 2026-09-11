@@ -155,6 +155,22 @@ const DEFAULT_INVENTORY := {
 ## mockup_preparation_select_eko.jpg.
 const DESCRIPTION_POS := Vector2(213, 159)
 
+## Secousse d'impact. Amplitude en unités de design — deux pixels, « léger »
+## comme demandé : à l'écran ça fait huit, assez pour marquer le coup sans
+## rendre le HUD illisible.
+##
+## C'est le STAGE qui bouge, pas le calque : celui-ci appartient déjà à
+## CanvasZoom, qui écrit son `offset` pour zoomer autour du curseur (deux
+## systèmes sur la même propriété se marcheraient dessus). Conséquence assumée :
+## le fond capturé du worldmap, qui vit HORS du Stage (cf. §1.2 du plan), ne
+## tremble pas — à cette amplitude, c'est invisible.
+const SHAKE_AMPLITUDE := 2.0
+const SHAKE_DURATION := 0.25
+## Nombre d'allers-retours sur la durée. Une oscillation déterministe plutôt
+## qu'un tirage aléatoire : deux captures de la même frame doivent donner la
+## même image, sans quoi rien n'est vérifiable.
+const SHAKE_CYCLES := 3.0
+
 ## Opacité des combattants qu'on ne regarde pas. L'allié dont c'est le tour y
 ## échappe toujours ; pour les autres, cela dépend de l'écran :
 ##   - dans une liste d'actions, TOUT LE MONDE s'efface — elle descend jusqu'à
@@ -244,6 +260,7 @@ var _ally_units: Array[BattleUnit] = []
 var _assault: BattleAssault
 ## Calque des nombres de dégâts, au-dessus des combattants (cf. _build_units).
 var _effects: Node2D
+var _shake_tween: Tween
 ## Allié dont c'est le tour. Vaut le nombre d'alliés quand ils ont tous choisi
 ## (état DONE) : `_previous_acted_ally` remonte alors depuis le dernier.
 var _active_ally: int = 0
@@ -412,6 +429,28 @@ func _build_assault() -> void:
 	_assault.setup(_combatants(_ally_units, _ally_sprites), _combatants(_enemy_units, _enemy_sprites), _effects)
 	_assault.changed.connect(_refresh_allies)
 	_assault.finished.connect(_on_assault_finished)
+	_assault.impact.connect(_shake)
+
+## Secousse d'impact : une oscillation amortie autour de la position de repos du
+## Stage. Les deux axes ont des fréquences différentes (l'un en sinus, l'autre en
+## cosinus plus lent) — sur la même, le tremblement se réduirait à un
+## va-et-vient en diagonale.
+func _shake() -> void:
+	var base := Vector2.ZERO
+	if _shake_tween != null and _shake_tween.is_valid():
+		_shake_tween.kill()
+		stage.position = base
+	_shake_tween = create_tween()
+	_shake_tween.tween_method(
+		func(t: float) -> void:
+			var decay := 1.0 - t
+			stage.position = base + Vector2(
+				sin(t * TAU * SHAKE_CYCLES),
+				cos(t * TAU * SHAKE_CYCLES * 0.7),
+			) * SHAKE_AMPLITUDE * STAGE_SCALE * decay,
+		0.0, 1.0, SHAKE_DURATION,
+	)
+	_shake_tween.tween_callback(func() -> void: stage.position = base)
 
 func _combatants(units: Array[BattleUnit], sprites: Array[AnimatedSprite2D]) -> Array[Dictionary]:
 	var entries: Array[Dictionary] = []
@@ -608,7 +647,7 @@ func _eko_entries() -> Array[Dictionary]:
 			"text_id": "eko.%s.name" % id,
 			"cost": cost,
 			"affordable": unit.can_pay(cost),
-			"type": int(eko.get("type", 1)),
+			"damage_type": String(eko.get("damage_type", "")),
 		})
 	return entries
 
@@ -621,7 +660,7 @@ func _item_entries() -> Array[Dictionary]:
 			"id": id,
 			"text_id": "item.%s.name" % id,
 			"quantity": int(_inventory[id]),
-			"type": int(BattleData.get_item(id).get("type", 1)),
+			"damage_type": String(BattleData.get_item(id).get("damage_type", "")),
 		})
 	return entries
 

@@ -112,7 +112,15 @@ func setup(config: Dictionary, feet: Vector2i, mirrored: bool = false, loop: boo
 func play_sheet(config: Dictionary, loop: bool = true) -> void:
 	if config.is_empty():
 		return
+	# La POSITION COURANTE survit au changement de planche. `setup()` repose
+	# l'unité sur son emplacement, ce qui est juste au montage et faux partout
+	# ailleurs : pendant l'assaut l'unité quitte son emplacement pour aller au
+	# contact, et changer de planche en chemin la téléportait chez elle au
+	# milieu du déplacement. Seul `offset` doit suivre la nouvelle planche —
+	# c'est lui qui porte l'ancrage, et il change bien d'une planche à l'autre.
+	var where := position
 	setup(config, _feet, _mirrored, loop)
+	position = where
 
 ## Durée d'une planche en secondes, déduite de son nombre de frames et de sa
 ## cadence. Sert à séquencer un geste sans dépendre de `animation_finished` :
