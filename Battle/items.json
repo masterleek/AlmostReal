@@ -4,24 +4,41 @@
     "potion": {
       "target": "ally",
       "heal": 30,
-      "animation": "atk"
+      "animation": "atk",
+      "sequence": [
+        "cross"
+      ]
     },
     "grand_baume": {
       "target": "allies",
       "heal": 15,
-      "animation": "atk"
+      "animation": "atk",
+      "sequence": [
+        "cross",
+        "circle"
+      ]
     },
     "bombe": {
       "target": "enemies",
       "power": 12,
       "damage_type": "direct",
-      "animation": "atk"
+      "animation": "atk",
+      "sequence": [
+        "square",
+        "square"
+      ]
     },
     "eclat": {
       "target": "enemy",
       "power": 22,
       "damage_type": "direct",
-      "animation": "atk"
+      "animation": "atk",
+      "sequence": [
+        "triangle"
+      ]
     }
+  },
+  "_champs": {
+    "sequence": "touches de la barre de rythme, dans l'ordre : cross | circle | square | triangle | up | down | left | right. Toute action qui passe par l'assaut en a une, objets compris (choix de l'auteur)."
   }
 }

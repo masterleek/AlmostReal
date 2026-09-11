@@ -38,6 +38,44 @@ const GUARD_FACTOR := 0.5
 static func damage(power: int, force: int, defense: int) -> int:
 	return maxi(MIN_DAMAGE, power + force - defense)
 
+## ──────────────────────────────────────────────────────────────────────────
+##  RYTHME
+## ──────────────────────────────────────────────────────────────────────────
+
+## Verdict d'une note. L'ordre compte : il indexe les deux tables ci-dessous.
+enum Judgement { PERFECT, GREAT, GOOD, MISS }
+
+## Ce qu'un bon timing rapporte quand c'est l'équipe qui frappe, et ce qu'il
+## épargne quand c'est elle qui encaisse. Valeurs données par l'auteur.
+##
+## Les deux tables se lisent ensemble : un Perfect multiplie les dégâts par 1,5
+## à l'attaque et les divise par deux en défense — donc il compte à peu près
+## autant dans les deux sens. Un Miss ne PUNIT pas, il ne récompense pas : les
+## deux tables valent 1, et le combat se joue alors sur les seules stats. C'est
+## la règle tranchée au §7 du plan — un bon timing réduit les dégâts subis sans
+## jamais les annuler, d'où un plancher à 0,5 et non à 0.
+const ATTACK_MULTIPLIER: Array[float] = [1.5, 1.25, 1.1, 1.0]
+const DEFENCE_MULTIPLIER: Array[float] = [0.5, 0.7, 0.85, 1.0]
+
+## Multiplicateur d'une SÉQUENCE, à partir de ses verdicts note par note.
+##
+## Moyenne, et pas le meilleur ni le dernier : une séquence de quatre notes doit
+## valoir plus qu'une seule note réussie, et rater la moitié d'un Eko doit se
+## voir. Une séquence vide rend 1 — l'action n'avait rien à jouer.
+static func rhythm_attack(judgements: Array) -> float:
+	return _average(judgements, ATTACK_MULTIPLIER)
+
+static func rhythm_defence(judgements: Array) -> float:
+	return _average(judgements, DEFENCE_MULTIPLIER)
+
+static func _average(judgements: Array, table: Array[float]) -> float:
+	if judgements.is_empty():
+		return 1.0
+	var total := 0.0
+	for judgement: int in judgements:
+		total += table[clampi(judgement, 0, table.size() - 1)]
+	return total / float(judgements.size())
+
 ## Dégâts effectivement subis, garde comprise. `floori` plutôt qu'un arrondi :
 ## la garde ne doit jamais AUGMENTER les dégâts d'un point par arrondi
 ## supérieur. Le plancher reste garanti — une garde ne rend pas invulnérable.

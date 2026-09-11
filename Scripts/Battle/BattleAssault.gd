@@ -29,6 +29,9 @@ const BattleRules = preload("res://Scripts/Battle/BattleRules.gd")
 const UnitSprite = preload("res://Scripts/Battle/Stage/UnitSprite.gd")
 const DamageNumber = preload("res://Scripts/Battle/UI/DamageNumber.gd")
 const HitFeedback = preload("res://Scripts/Battle/UI/HitFeedback.gd")
+const RhythmBar = preload("res://Scripts/Battle/UI/RhythmBar.gd")
+const ActionBanner = preload("res://Scripts/Battle/UI/ActionBanner.gd")
+const ActorCursor = preload("res://Scripts/Battle/UI/ActorCursor.gd")
 const EnemyBehaviour = preload("res://Scripts/Battle/EnemyBehaviour.gd")
 
 ## Émis dès qu'une valeur affichée par le HUD a bougé (PV, blessure, mort).
@@ -89,6 +92,14 @@ var _enemies: Array[Dictionary] = []
 ## Nœud sous lequel jaillissent les nombres de dégâts — le conteneur d'unités,
 ## pour qu'ils soient triés en profondeur avec les combattants.
 var _effects: Node2D
+## Barre de rythme, montée par la scène et prêtée à l'assaut : c'est lui qui
+## sait quand une action se joue, et de quel côté.
+var _rhythm: RhythmBar
+## Pastille qui nomme l'action en cours, au-dessus de la barre.
+var _banner: ActionBanner
+## Curseur au-dessus de l'unité qui joue sa séquence. Monté ici et non par la
+## scène : il ne sert qu'à l'assaut, et sa profondeur est celle des effets.
+var _cursor: ActorCursor
 ## Emplacement de départ de chaque unité, relevé au montage : c'est là qu'elle
 ## revient après avoir frappé. Gardé ici plutôt que lu sur le sprite, dont la
 ## position est justement ce qui bouge.
@@ -96,10 +107,15 @@ var _home: Dictionary = {}
 ## Un retour visuel par unité (éclat + jauge), monté une fois pour toutes.
 var _feedback: Dictionary = {}
 
-func setup(allies: Array[Dictionary], enemies: Array[Dictionary], effects: Node2D) -> void:
+func setup(
+	allies: Array[Dictionary], enemies: Array[Dictionary], effects: Node2D,
+	rhythm: RhythmBar, banner: ActionBanner,
+) -> void:
 	_allies = allies
 	_enemies = enemies
 	_effects = effects
+	_rhythm = rhythm
+	_banner = banner
 	for entry in _allies + _enemies:
 		var unit := _unit_of(entry)
 		_home[unit] = _node_of(entry).position
@@ -107,12 +123,15 @@ func setup(allies: Array[Dictionary], enemies: Array[Dictionary], effects: Node2
 		_effects.add_child(feedback)
 		feedback.setup(_node_of(entry))
 		_feedback[unit] = feedback
+	_cursor = ActorCursor.new()
+	_effects.add_child(_cursor)
 
 ## ──────────────────────────────────────────────────────────────────────────
 ##  DÉROULEMENT
 ## ──────────────────────────────────────────────────────────────────────────
 
 func run() -> void:
+	_rhythm.open()
 	_raise_guards()
 	for entry in _order():
 		var unit: BattleUnit = entry["unit"]
@@ -125,6 +144,7 @@ func run() -> void:
 		if _outcome() != Outcome.ONGOING:
 			break
 		await _wait(BETWEEN_ACTIONS)
+	_rhythm.close()
 	finished.emit(_outcome())
 
 ## Les gardes sont posées AVANT le premier coup, pas au moment où l'unité
@@ -177,12 +197,31 @@ func _resolve(entry: Dictionary) -> void:
 	var effect := _effect_of(unit, action)
 	var offensive := bool(effect["offensive"])
 	var gesture := _gesture_for(unit, action)
+	var ally_acts := _allies.has(entry)
+	# Annoncée dès le départ : la maquette montre la pastille déjà en place
+	# pendant que l'attaquant se déplace, avant même la première note.
+	_banner.show_action(
+		_text_id_of(unit, action), ally_acts, String(_definition_of(unit, action).get("damage_type", ""))
+	)
+
+	# LE RYTHME D'ABORD, ET L'UNITÉ NE BOUGE PAS ENCORE. Elle reste à son
+	# emplacement le temps de la séquence : le joueur a les yeux sur la barre, un
+	# personnage qui traverse le terrain au même moment lui dispute son
+	# attention. Le déplacement ne part qu'une fois le dernier verdict tombé.
+	#
+	# Le geste, lui, vient APRÈS le rythme et pas pendant : il ne boucle pas, le
+	# tenir le temps de trois notes figerait le personnage bras levé. Le verdict
+	# restant affiché une demi-seconde, il se lit encore au moment de l'impact,
+	# comme sur la maquette.
+	var multiplier := await _run_rhythm(unit, action, ally_acts)
+	effect["multiplier"] = multiplier
 
 	# Aller au contact, frapper, revenir. Une action qui SOIGNE ne se déplace
 	# pas : elle n'a personne à aller chercher, et traverser le terrain pour
 	# tendre une potion se lirait comme une charge.
 	if offensive:
 		await _approach(entry, targets)
+
 	await _play_gesture(entry, targets, gesture, offensive)
 
 	for target in targets:
@@ -201,7 +240,51 @@ func _resolve(entry: Dictionary) -> void:
 		await _return_home(entry)
 	else:
 		_node_of(entry).play_sheet(BattleData.get_animation(unit.id, "idle"))
+	_rhythm.rest()
+	_banner.hide_action()
 	await _bury_the_dead()
+
+## Fait jouer la séquence de l'action et en tire le multiplicateur de dégâts.
+##
+## LE SENS S'INVERSE SELON LE CAMP, et c'est toute la mécanique : quand l'équipe
+## frappe, un bon timing AUGMENTE ce qu'elle inflige ; quand elle encaisse, il
+## RÉDUIT ce qu'elle subit. La barre est la même, la table de conversion non
+## (cf. BattleRules).
+func _run_rhythm(unit: BattleUnit, action: Dictionary, ally_acts: bool) -> float:
+	var sequence := _sequence_of(unit, action)
+	if sequence.is_empty():
+		return 1.0
+	# Le curseur dit QUI joue : pendant la séquence, le joueur a les yeux sur la
+	# barre, et l'unité n'a pas encore bougé.
+	_cursor.show_above(_sprite_of(unit))
+	var judgements := await _rhythm.play(
+		sequence, RhythmBar.Side.ALLY if ally_acts else RhythmBar.Side.ENEMY
+	)
+	_cursor.hide_above()
+	return (
+		BattleRules.rhythm_attack(judgements) if ally_acts
+		else BattleRules.rhythm_defence(judgements)
+	)
+
+## Identifiant Localization du nom affiché. Une attaque de base n'a pas d'entrée
+## propre : elle reprend celle du menu, « Attack » — ce que montre d'ailleurs la
+## maquette du tour ennemi.
+func _text_id_of(unit: BattleUnit, action: Dictionary) -> String:
+	var id := String(action.get("id", ""))
+	match String(action.get("source", "attack")):
+		"eko":
+			return "eko.%s.name" % id
+		"item":
+			return "item.%s.name" % id
+	return "battle.menu.attack"
+
+## Suite de notes de l'action, prise là où sa définition vit — catalogue pour un
+## Eko ou un objet, fiche de l'unité pour une attaque de base.
+func _sequence_of(unit: BattleUnit, action: Dictionary) -> PackedStringArray:
+	var sequence := PackedStringArray()
+	for note in _definition_of(unit, action).get("sequence", []):
+		sequence.append(String(note))
+	return sequence
 
 ## Planche que cette action fait jouer, cherchée dans le bloc `animations` de
 ## l'unité QUI AGIT — pas dans le catalogue de l'action. Un Eko est partagé par
@@ -302,12 +385,17 @@ func _definition_of(unit: BattleUnit, action: Dictionary) -> Dictionary:
 func _apply(actor: BattleUnit, target: BattleUnit, effect: Dictionary) -> void:
 	var anchor := _head_of(target)
 	if not bool(effect["offensive"]):
-		var healed := int(effect["heal"])
+		# Le timing pèse aussi sur les soins : l'auteur a voulu la barre sur
+		# TOUTES les actions, objets compris, et un soin bien joué doit rendre
+		# davantage. Un soin lancé par un ennemi passe, lui, par la table de
+		# défense — bien jouer le prive donc d'une partie de ce qu'il se rend.
+		var healed := roundi(int(effect["heal"]) * float(effect.get("multiplier", 1.0)))
 		target.heal(healed)
 		_pop_number(anchor, healed, DamageNumber.Kind.HEAL)
 		return
 	var amount := BattleRules.guarded(
-		BattleRules.damage(int(effect["power"]), actor.force, target.defense),
+		roundi(BattleRules.damage(int(effect["power"]), actor.force, target.defense)
+			* float(effect.get("multiplier", 1.0))),
 		target.guarding,
 	)
 	if bool(effect["injury"]):

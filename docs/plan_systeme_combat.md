@@ -397,7 +397,7 @@ passer devant.
 | 4 | Ekos / Items : listes défilantes, coût AP, panneau de description, ciblage multiple | **fait** |
 | 5 | Garde, fin de tour, enchaînement des alliés, boucle préparation complète | **fait** |
 | 6 | Phase d'assaut : ordre par agilité, exécution des actions, dégâts, morts | **fait** |
-| 7 | Barre de rythme : défilement des notes, fenêtres Perfect/Great/Good/Miss, bonus de dégâts | |
+| 7 | Barre de rythme : défilement des notes, fenêtres Perfect/Great/Good/Miss, bonus de dégâts | **fait** |
 | 8 | Jauge de synergie (remplissage, 4 niveaux) | |
 | 9 | Victoire / défaite, transition worldmap ↔ combat, animations `win` / `dying` / `dead` | |
 | 10 | Page « Combat » de MapEditor : unités (stats, comportement ennemi, Ekos connus), Ekos, objets | |
@@ -1112,6 +1112,226 @@ tempeste (enemies) idem    touche noah ET iris
    L'auteur remplacera tout de même les assets de ce personnage.
 3. **Les valeurs d'équilibrage sont provisoires** : `basic_attack.power` (6, 5,
    6), et le bonus de conversion blessure → direct toujours à 0.
+
+---
+
+## 5 octies. Résultat du Lot 7 — la barre de rythme
+
+### Découpage
+
+| Fichier | Rôle |
+|---|---|
+| `UI/RhythmBar.gd` | la barre : moitiés, anneau, notes, fenêtres, verdicts |
+| `UI/ActionBanner.gd` | la pastille qui nomme l'action, au-dessus de la barre |
+| `BattleRules` | les deux tables de conversion verdict → multiplicateur |
+
+### Géométrie, relevée sur `ui_rythmn_bar.jpg`
+
+Cette planche de composants est **à l'échelle 1:1 du design** (ses barres font
+480 px de large), ce qui en fait une source exacte malgré le JPEG — les bandes
+de fenêtres y sont des aplats francs, pas des bords flous.
+
+```
+Perfect   |dx| <=  5 px      Great  <= 21      Good  <= 32      Miss  au-dela
+barre     2 moities de 239x43, en x=1 et x=240, y=209
+anneau    rhythm_circle en (219, 210) -> cercle blanc centre sur (239,5 ; 230,5)
+verdict   corps 28, centre a 90 px de l anneau, du cote OPPOSE aux notes
+pastille  noeud en (184, 186), largeur FIXE de 110 -> aplat en x 186..291, y 187..201
+```
+
+Les bandes de la planche sont **complémentaires au pixel près** (vert 375..384,
+jaune 359..374 et 385..400, orange 348..358 et 401..411, rouge tout le reste,
+pour une barre en 140..619) : c'est ce qui rend la lecture sûre.
+
+**Les fenêtres sont en PIXELS, pas en millisecondes** — c'est ainsi que l'auteur
+les a dessinées, en bandes concentriques. Le jugement se fait donc sur la
+DISTANCE de la note à l'anneau au moment où la touche tombe. La vitesse de
+défilement (`NOTE_SPEED`, 170 px/s) est le seul réglage de difficulté : c'est
+elle qui convertit ces pixels en durées — Perfect ±29 ms, Great ±124 ms,
+Good ±188 ms. Rien ne la fixe sur les maquettes.
+
+**La pastille est à largeur fixe**, et c'est une mesure : « Fulgura » et
+« Attack » occupent exactement le même `x 186..291` sur les deux maquettes.
+Elle ne s'ajuste donc pas à son texte, contrairement à celles du menu.
+
+Sa **pointe** n'a que trois rangées d'aplat — 9 px de large, puis 4, puis 2 — et
+la première est CACHÉE dans le corps de la pastille : la maquette n'en montre
+que les rangées 1 et 2, en `x 237..240` puis `238..239`, aux ordonnées 202 et
+203. Le nœud se pose donc 15 px sous le haut de la pastille, pas 17 : la caler
+sur sa rangée 0 la décrochait de deux pixels.
+
+### Les bandes noires passent DEVANT les combattants
+
+Elles étaient montées en premier, donc derrière tout le reste. Ce n'est pas un
+détail de goût : la bande du bas remonte de 48 px pendant l'assaut et vient
+recouvrir le bas du terrain — derrière les unités elle se glissait sous leurs
+pieds au lieu de les masquer, et le cadrage de l'écran se déchirait. Elles sont
+désormais montées **après la plateforme et les unités**.
+
+### La bande noire du bas remonte de 48 px pendant l'assaut
+
+Comparaison de `mockup_preparation.png` et de la première vignette de
+`mockup_assault_allies` : **48 px exactement**, sur les 22 colonnes où aucun
+décor ne masque le bord. La bande HAUTE ne bouge pas — le HUD reste dégagé sur
+les deux maquettes. L'écran se décale donc pour faire place à la barre, et
+revient à la préparation suivante.
+
+### ThorVG ignore les `<filter>` SVG
+
+Les trois `rhythm_line_*` et `btn_directions` passent toute leur lueur par des
+filtres SVG (`feGaussianBlur`, `feColorMatrix`), que le rastériseur de Godot
+ignore **silencieusement**. Mesuré en comparant l'intensité moyenne du rendu SVG
+à celle du PNG d'origine :
+
+```
+rhythm_line_empty   0,003 contre 0,039      btn_cross       0,093 contre 0,092  ok
+rhythm_line_yellow  0,021 contre 0,174      rhythm_circle   0,259 contre 0,261  ok
+rhythm_line_red     0,011 contre 0,098      command_red     0,347 contre 0,353  ok
+```
+
+Il ne restait qu'un dixième de la lueur. Ces quatre assets sont donc restés en
+**PNG**, agrandis en bilinéaire (97 % de leurs pixels sont à alpha partiel, donc
+de l'art anticrénelé et pas du pixel-art). Les huit autres n'ont pas de filtre
+et restent en vectoriel. Après correction, la barre tombe sur la maquette :
+2/3/6/9 à gauche contre 2/3/6/9, 49/32/17 à droite contre 49/33/18.
+
+### Ce que le rythme change au combat
+
+| verdict | l'équipe frappe | l'équipe encaisse |
+|---|---|---|
+| Perfect | ×1,5 | −50 % |
+| Great | ×1,25 | −30 % |
+| Good | ×1,1 | −15 % |
+| Miss | ×1 | aucune réduction |
+
+Valeurs données par l'auteur. Un Miss ne PUNIT pas : les deux tables valent 1, et
+le combat se joue alors sur les seules stats. Le multiplicateur d'une séquence
+est la **moyenne** de ses verdicts — quatre notes doivent valoir plus qu'une, et
+rater la moitié d'un Eko doit se voir.
+
+**Toutes les actions passent par la barre**, objets compris (choix de l'auteur) :
+`sequence` existe désormais sur les Ekos, sur les objets et sur `basic_attack`.
+Un soin bien joué rend donc davantage — et un soin lancé par un ENNEMI passe par
+la table de défense, si bien que bien jouer l'en prive.
+
+### Le rythme se joue AVANT tout mouvement
+
+L'ordre d'une action est : pastille → **rythme** → approche → geste → effets →
+retour.
+
+**L'unité ne quitte pas son emplacement tant que la séquence n'est pas finie** :
+le joueur a les yeux sur la barre, un personnage qui traverse le terrain au même
+moment lui dispute son attention. Le déplacement ne part qu'une fois le dernier
+verdict tombé.
+
+Le geste, lui, vient après le rythme et non pendant, comme le Lot 6 l'avait
+prévu : il ne boucle pas, le tenir le temps de trois notes figerait le
+personnage bras levé. Le verdict restant affiché une demi-seconde, il se lit
+encore au moment de l'impact — comme sur la maquette.
+
+### Fondus, et un curseur sur celui qui joue
+
+La barre **ne s'allume plus d'un coup** : la moitié colorée est un calque posé
+par-dessus la moitié éteinte, dont seule l'opacité bouge (0,25 s à la montée,
+0,3 s à la descente). Échanger la texture d'un sprite unique, comme au premier
+jet, ne laissait aucune place à un fondu.
+
+**Le fondu suit le CAMP, pas l'unité.** Deux alliés qui jouent l'un après
+l'autre ne font pas clignoter la barre : elle reste allumée d'un bout à l'autre,
+et ne bascule qu'au changement de camp — en fondu croisé, la moitié rouge
+montant pendant que la jaune descend. Elle ne s'éteint qu'à la fin de l'assaut,
+et disparaît APRÈS son fondu. Tracé sur un tour complet :
+
+```
+ 0.23 -> 3.53   ALLIEE pleine     Iris
+ 3.79           ALLIEE pleine     Noah enchaine, aucune extinction
+ 7.81 -> 8.04   fondu             changement de camp
+ 8.04 -> 10.60  ENNEMIE pleine    premier cactoon
+10.86           ENNEMIE pleine    deuxieme cactoon, aucune extinction
+13.93 -> 14.21  fondu puis retrait
+```
+
+Pendant la séquence, un **curseur** — celui du worldmap, repris tel quel — se
+pose au-dessus de l'unité qui joue, avec le même fondu. Il répond à un vrai
+problème : le joueur a les yeux sur la barre, en bas, et l'unité ne s'est pas
+encore déplacée ; plus rien ne dit qui agit.
+
+**Il reprend la place exacte du curseur de CIBLAGE**, celui qui désigne une
+cible pendant la préparation : `pieds + (9,703 79 ; −92,311 4)`, incliné de 33°.
+Ce ne sont pas des valeurs choisies — elles ont été relevées en jeu, et vérifiées
+constantes à la sixième décimale sur les trois emplacements d'ennemis. Là-bas
+elles résultent de la composition du menu réduit (`FOCUS_PILL_OFFSET` puis
+`CURSOR_FOCUS_OFFSET`, dans le repère incliné du menu) ; ici il n'y a pas de
+pastille à accompagner, le curseur se pose donc directement au résultat.
+
+Deux essais précédents sont tombés à côté et méritent d'être consignés. Se caler
+sur le **sommet de la cellule** convient à Noah et au cactoon mais pas à Iris,
+dont la planche monte jusqu'à la bouche de sa carabine — 14 px au-dessus de son
+chapeau. Et **aucune règle tirée de la silhouette** ne s'en sort : une tête est
+plus étroite qu'un corps, donc un seuil de largeur descend DANS le personnage
+(mesuré : 51, 62 et 49 px au-dessus des pieds au lieu de 69, 66 et 67). La
+bonne réponse n'était pas une heuristique mais une position DÉJÀ CALIBRÉE
+ailleurs dans l'écran.
+
+La position est fractionnaire, et c'est voulu : le curseur est tourné, donc déjà
+rendu par le chemin lissé de `PixelScale` — l'arrondir le décalerait de son
+jumeau du ciblage.
+
+### Vérifié en jeu
+
+Séquence complète jouée par injection de vraies touches, en visant le centre :
+
+```
+circle -> PERFECT (dx +3,2)    Iris, attaque de base
+circle -> PERFECT (dx +2,9)
+cross  -> PERFECT (dx +2,8)    Noah
+cross  -> PERFECT (dx +2,8)
+right  -> PERFECT (dx -2,9)    cactoon : dx negatif, les notes viennent de gauche
+```
+
+Effets mesurés : Noah encaisse 2 au lieu de 4 (−50 %), et le premier cactoon
+tombe sous les coups majorés. Iris reste en `x = 365` — son emplacement —
+pendant toute la séquence, et ne part qu'après. Pastille et pointe recalées au
+pixel sur la maquette : corps en x 186..291 / y 187..201, pointe en 237..240
+puis 238..239, identiques dans les deux.
+
+### Les quatre verdicts, éprouvés
+
+```
+PERFECT   touche juste, dx +2,8      -> cactoon 30 -> 0 PV   (35 de degats)
+GREAT     touche juste, dx +16,7     -> libelle jaune a gauche de l anneau
+MISS      mauvaise touche dans la fenetre
+MISS      aucune touche, la note depasse la fenetre
+          les deux -> cactoon 30 -> 7 PV, soit les 23 de base sans bonus
+```
+
+Le multiplicateur retombe donc bien à 1 sur un raté — il ne punit pas. Et la
+note DIRECTIONNELLE du cactoon sort à 270° : la flèche pointe vers la droite,
+donc vers l'anneau qu'elle rejoint depuis la gauche, comme sur la maquette du
+tour ennemi.
+
+### Reste ouvert
+
+- **Aucun son.** C'est le vrai manque du lot : le retour de timing est
+  entièrement visuel, alors qu'une mécanique de rythme se joue d'abord à
+  l'oreille. Le combat a déjà trois effets (`move`, `validation`, `error`) mais
+  aucun ne convient à une note réussie ou ratée — il faut des sons dédiés.
+- **La vitesse des notes** est un réglage, pas un relevé : à ajuster en jouant.
+- **Les séquences sont provisoires**, comme le reste du contenu.
+- Le verdict **GREAT** n'apparaît sur aucune maquette : sa couleur (jaune) est
+  choisie, les trois autres sont relevées.
+- **Toute touche compte dès que les notes défilent.** Mauvaise touche, ou bonne
+  touche hors de la dernière fenêtre : c'est un raté dans les deux cas. Un
+  premier jet ignorait les touches trop précoces — pour ne pas « consommer une
+  note qui n'est pas encore là » — mais ça rendait le martèlement gratuit et,
+  surtout, ça donnait au joueur une manette morte pendant la moitié de la
+  séquence sans rien lui dire. Vérifié :
+
+```
+touche a dx=+237  ->  MISS      la note vient d entrer, l appui compte quand meme
+touche a dx= +30  ->  GOOD
+touche a dx=  +6  ->  PERFECT
+```
 
 ---
 

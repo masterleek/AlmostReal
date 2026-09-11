@@ -486,6 +486,51 @@ pas partir en guerre contre des choix déjà faits et documentés dans ce repo :
   Méthode générale : quand deux champs semblent parler du même sujet, ouvrir les
   assets et comparer les valeurs — une couleur partagée au chiffre près n'est
   jamais une coïncidence.
+- **ThorVG ignore les `<filter>` SVG — mesurer avant de choisir SVG ou PNG.**
+  Même famille que la balise `<image>` non rastérisée : le rendu est
+  silencieusement incomplet, pas en erreur. Les barres de rythme portent toute
+  leur lueur dans des `feGaussianBlur`/`feColorMatrix` et sortaient à un dixième
+  de leur intensité (0,021 contre 0,174 en luminance moyenne pondérée par
+  l'alpha). Test systématique avant d'adopter un SVG : `grep -c '<filter'`, puis
+  comparer l'intensité moyenne du rendu importé à celle du PNG d'origine. Un
+  asset qui perd plus d'un quart revient au PNG — en bilinéaire s'il est
+  anticrénelé.
+- **Pour faire un FONDU entre deux états d'un même élément, superposer deux
+  nœuds plutôt que d'échanger une texture.** La barre de rythme montrait sa
+  moitié allumée en remplaçant la texture du sprite éteint : aucune place pour
+  une transition. Un calque allumé posé par-dessus, dont seule l'opacité bouge,
+  donne le fondu sans toucher au reste.
+- **Une entrée qui « ne fait rien » est un bug, même quand c'est délibéré.**
+  La barre de rythme ignorait les touches pressées avant que la note n'entre
+  dans sa fenêtre, au nom d'une règle défendable — ne pas consommer une note qui
+  n'est pas encore là. Résultat : une manette morte pendant la moitié de la
+  séquence, sans aucun retour. Une action du joueur doit toujours produire un
+  effet visible, quitte à ce que ce soit un échec.
+- **Avant d'inventer une position, chercher si l'écran en contient déjà une
+  équivalente — et la MESURER en jeu.** Le curseur du rythme devait se poser
+  au-dessus de l'unité qui joue ; deux tentatives dérivées de la planche sont
+  tombées à côté (le sommet de cellule rate dès qu'une arme levée ou un familier
+  volant élargit le cadre ; aucun seuil de largeur ne trouve une tête, qui est
+  plus étroite qu'un corps — 51, 62 et 49 px au lieu de 69, 66 et 67). La bonne
+  réponse était le curseur de CIBLAGE, déjà calibré : relevé en jeu à
+  `pieds + (9,703 79 ; −92,311 4)` et 33°, constant à la sixième décimale sur
+  les trois emplacements. Lire une position existante par introspection coûte
+  moins cher que d'en dériver une, et garantit que les deux écrans concordent.
+- **Un asset dont les premières rangées sont cachées se cale sur la première
+  rangée VISIBLE, pas sur son bord.** La pointe de la pastille d'action a trois
+  rangées d'aplat (9 px, puis 4, puis 2) dont la première disparaît sous le
+  corps de la pastille : la caler sur sa rangée 0 la décrochait de deux pixels.
+  Mesurer l'asset rangée par rangée avant de le positionner, puis identifier
+  quelle rangée correspond à ce qu'on voit sur la maquette.
+- **`flip_h` ne DÉPLACE PAS un Sprite2D.** Avec `centered = false`, son rectangle
+  part toujours de `position` ; le retournement ne fait que miroiter la texture
+  dedans. Poser une moitié droite en la décalant de DEUX largeurs, comme le
+  ferait un retournement autour de l'origine, l'envoie hors de l'écran — et
+  silencieusement, puisque rien n'est dessiné.
+- **L'enum d'un script sans `class_name` ne s'utilise pas comme ANNOTATION de
+  type** dans ce même script (« Cannot assign a value of type X.gd.Side as
+  Side »). Déclarer l'enum pour les noms, et typer les variables et paramètres
+  en `int` — c'est déjà la convention de `BattleAssault.Outcome`.
 - **Pour capturer un instant précis en jeu, s'accrocher au SIGNAL, pas à une
   horloge.** Viser « 2,70 s après le lancement » rate l'instant une fois sur
   deux — la cadence du debug est irrégulière. Un `signal impact` connecté à la

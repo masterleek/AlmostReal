@@ -29,6 +29,8 @@ const TargetSelector = preload("res://Scripts/Battle/UI/TargetSelector.gd")
 const DescriptionPanel = preload("res://Scripts/Battle/UI/DescriptionPanel.gd")
 const BattleUnit = preload("res://Scripts/Battle/BattleUnit.gd")
 const BattleAssault = preload("res://Scripts/Battle/BattleAssault.gd")
+const RhythmBar = preload("res://Scripts/Battle/UI/RhythmBar.gd")
+const ActionBanner = preload("res://Scripts/Battle/UI/ActionBanner.gd")
 const BattleData = preload("res://Scripts/Battle/BattleData.gd")
 const BattleText = preload("res://Scripts/Battle/UI/BattleText.gd")
 const PixelScale = preload("res://Scripts/Battle/UI/PixelScale.gd")
@@ -52,6 +54,16 @@ const STAGE_SCALE := 4
 ## plein.
 const DARK_LINE_TOP := Vector2(0, -64)
 const DARK_LINE_BOTTOM := Vector2(0, 224)
+
+## PENDANT L'ASSAUT, la bande basse REMONTE pour dégager la barre de rythme.
+## Mesuré entre mockup_preparation.png et la première vignette de
+## mockup_assault_allies : 48 px exactement, sur les 22 colonnes où aucun décor
+## ne vient masquer le bord. La bande HAUTE, elle, ne bouge pas — le HUD reste
+## dégagé sur les deux maquettes.
+const DARK_LINE_ASSAULT_RISE := 48
+## Le temps que la bande met à monter. Rien ne le fixe sur les maquettes, qui
+## ne montrent que les deux états ; assez court pour ne pas retarder l'assaut.
+const DARK_LINE_SLIDE := 0.25
 
 ## Les deux moitiés se recouvrent de 2 px (41→240 et 239→438) : le
 ## chevauchement est voulu, il évite une couture visible au centre.
@@ -260,6 +272,11 @@ var _ally_units: Array[BattleUnit] = []
 var _assault: BattleAssault
 ## Calque des nombres de dégâts, au-dessus des combattants (cf. _build_units).
 var _effects: Node2D
+var _rhythm: RhythmBar
+var _banner: ActionBanner
+## Bande noire du bas, gardée sous la main : elle remonte pendant l'assaut.
+var _dark_bottom: Sprite2D
+var _dark_tween: Tween
 var _shake_tween: Tween
 ## Allié dont c'est le tour. Vaut le nombre d'alliés quand ils ont tous choisi
 ## (état DONE) : `_previous_acted_ally` remonte alors depuis le dernier.
@@ -318,6 +335,7 @@ func _ready() -> void:
 	_setup_background()
 	_build_decor()
 	_build_units()
+	_build_dark_lines()
 	_build_assault()
 	_build_targeting()
 	_build_sfx()
@@ -345,20 +363,9 @@ func _setup_background() -> void:
 	# de la pixel-art à préserver.
 	background.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
 
+## Le SOL seulement. Les bandes noires, elles, sont montées après les
+## combattants (cf. _build_dark_lines) : elles passent DEVANT eux.
 func _build_decor() -> void:
-	var bottom := Sprite2D.new()
-	bottom.texture = DARK_LINES
-	bottom.centered = false
-	bottom.position = DARK_LINE_BOTTOM
-	stage.add_child(bottom)
-
-	var top := Sprite2D.new()
-	top.texture = DARK_LINES
-	top.centered = false
-	top.flip_v = true
-	top.position = DARK_LINE_TOP
-	stage.add_child(top)
-
 	for entry in [[PLATFORM_LEFT, false], [PLATFORM_RIGHT, true]]:
 		var half := Sprite2D.new()
 		half.texture = PLATFORM
@@ -412,6 +419,25 @@ func _spawn_unit(
 	sprite.setup(config, feet, mirrored)
 	return sprite
 
+## Les deux bandes noires, montées APRÈS la plateforme et les combattants pour
+## passer devant eux. Ce n'est pas un détail de goût : la bande du bas remonte
+## de 48 px pendant l'assaut (cf. DARK_LINE_ASSAULT_RISE) et vient alors
+## recouvrir le bas du terrain — derrière les unités, elle se glisserait sous
+## leurs pieds au lieu de les masquer, et le cadrage de l'écran se déchirerait.
+func _build_dark_lines() -> void:
+	_dark_bottom = Sprite2D.new()
+	_dark_bottom.texture = DARK_LINES
+	_dark_bottom.centered = false
+	_dark_bottom.position = DARK_LINE_BOTTOM
+	stage.add_child(_dark_bottom)
+
+	var top := Sprite2D.new()
+	top.texture = DARK_LINES
+	top.centered = false
+	top.flip_v = true
+	top.position = DARK_LINE_TOP
+	stage.add_child(top)
+
 ## Le sélecteur est posé sur le Stage APRÈS le conteneur d'unités et AVANT les
 ## groupes d'interface : sa plaque passe donc au-dessus des combattants, et
 ## sous le menu et le HUD.
@@ -426,7 +452,17 @@ func _spawn_unit(
 func _build_assault() -> void:
 	_assault = BattleAssault.new()
 	add_child(_assault)
-	_assault.setup(_combatants(_ally_units, _ally_sprites), _combatants(_enemy_units, _enemy_sprites), _effects)
+	# Montée à même le Stage, après les unités : elle occupe le bas de l'écran,
+	# par-dessus le décor et les combattants.
+	_rhythm = RhythmBar.new()
+	stage.add_child(_rhythm)
+	_banner = ActionBanner.new()
+	stage.add_child(_banner)
+	_assault.setup(
+		_combatants(_ally_units, _ally_sprites),
+		_combatants(_enemy_units, _enemy_sprites),
+		_effects, _rhythm, _banner,
+	)
 	_assault.changed.connect(_refresh_allies)
 	_assault.finished.connect(_on_assault_finished)
 	_assault.impact.connect(_shake)
@@ -451,6 +487,15 @@ func _shake() -> void:
 		0.0, 1.0, SHAKE_DURATION,
 	)
 	_shake_tween.tween_callback(func() -> void: stage.position = base)
+
+## Fait monter ou redescendre la bande basse. `raised` = pendant l'assaut.
+func _slide_dark_band(raised: bool) -> void:
+	if _dark_tween != null and _dark_tween.is_valid():
+		_dark_tween.kill()
+	var target := DARK_LINE_BOTTOM - Vector2(0, DARK_LINE_ASSAULT_RISE if raised else 0)
+	_dark_tween = create_tween()
+	_dark_tween.tween_property(_dark_bottom, "position", target, DARK_LINE_SLIDE) \
+		.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 
 func _combatants(units: Array[BattleUnit], sprites: Array[AnimatedSprite2D]) -> Array[Dictionary]:
 	var entries: Array[Dictionary] = []
@@ -1048,6 +1093,7 @@ func _finish_preparation() -> void:
 	_set_units_dimmed(false, false)
 	_refresh_allies()
 	_legend.visible = false
+	_slide_dark_band(true)
 	preparation_finished.emit(_planned_actions())
 	_assault.run()
 
@@ -1078,6 +1124,7 @@ func _start_round() -> void:
 		return
 	_active_ally = first
 	_legend.visible = true
+	_slide_dark_band(false)
 	_open_root_menu()
 
 func _planned_actions() -> Array:
