@@ -38,6 +38,15 @@ const LINE_ALLY := preload("res://UI/Battle/rhythm_line_yellow.png")
 const LINE_ENEMY := preload("res://UI/Battle/rhythm_line_red.png")
 const RING := preload("res://UI/Battle/rhythm_circle.svg")
 
+## Lueur de frappe. En PNG pour la MÊME raison, et c'est le cas le plus net de
+## tous : son SVG ne contient qu'un disque rempli à `fill-opacity="0.01"` —
+## invisible — et TOUT son dessin tient dans deux ombres internes
+## (feMorphology + feGaussianBlur + feComposite). Importé tel quel, Godot en
+## rend un aplat à alpha 3/255 : 2,6 % de l'asset (alpha moyen 0,009 contre
+## 0,354 pour un rendu qui applique les filtres). Le PNG est rastérisé à
+## l'échelle du projet (256 px pour 64 de design), donc `sprite_native()`.
+const GLOW := preload("res://UI/Battle/rhythm_glow.png")
+
 ## Notes jouables. La clé est ce qu'on écrit dans `sequence` (cf. ekos.json),
 ## la valeur l'action d'entrée à presser. Les quatre directions partagent un
 ## seul dessin, tourné : `btn_directions.svg` pointe vers le BAS.
@@ -107,6 +116,15 @@ const JUDGEMENT_Y := 212
 ## chevauchent pas à l'écran.
 const JUDGEMENT_HOLD := 0.5
 
+## Pulse de frappe. La lueur naît à la TAILLE DE LA NOTE (32 px de design pour
+## 64 dessinés, soit 0,5) et s'ouvre au-delà en s'effaçant : le geste part du
+## bouton qu'on vient de taper, il ne tombe pas dessus. Court — c'est un accusé
+## de réception, pas une animation à regarder ; au-delà, deux frappes proches se
+## superposeraient et on ne saurait plus laquelle a répondu.
+const GLOW_FROM := 0.5
+const GLOW_TO := 1.0
+const GLOW_PULSE := 0.28
+
 ## Fondu de l'allumage. La barre ne s'allume pas d'un coup : elle monte quand
 ## l'unité prend la main et retombe quand elle a fini.
 const GLOW_IN := 0.25
@@ -155,6 +173,11 @@ var _glow_left: Sprite2D
 var _glow_right: Sprite2D
 var _glow_tween: Tween
 var _ring: Sprite2D
+## UN seul nœud, réutilisé, comme le libellé de verdict : un martèlement en
+## sèmerait autrement une dizaine à l'écran, et c'est toujours la DERNIÈRE
+## frappe qui intéresse le joueur.
+var _glow: Sprite2D
+var _glow_pulse: Tween
 var _judgement: RichTextLabel
 var _judgement_tween: Tween
 var _side: int = Side.NONE
@@ -202,6 +225,18 @@ func _ready() -> void:
 	_ring = PixelScale.sprite_native(RING)
 	_ring.position = RING_POS
 	add_child(_ring)
+
+	# Posée AVANT les notes — qui sont ajoutées à chaque séquence, donc toujours
+	# après — pour que la lueur passe DERRIÈRE la note : un halo se lit comme ce
+	# qui entoure le bouton, pas comme ce qui le recouvre.
+	#
+	# Décalée d'une demi-largeur, elle se centre sur `position` — et l'échelle du
+	# pulse s'applique alors autour de ce centre. La demi-largeur se DÉDUIT de la
+	# texture (`design_size`, pas `get_size`) : l'asset est natif ×4, une mesure
+	# brute donnerait 128 au lieu de 32.
+	_glow = PixelScale.sprite_native(GLOW, -PixelScale.design_size(GLOW) / 2.0)
+	_glow.visible = false
+	add_child(_glow)
 
 	_judgement = BattleText.make_centered("", JUDGEMENT_BOX, JUDGEMENT_SIZE, Color(1, 1, 1))
 	_judgement.visible = false
@@ -263,6 +298,9 @@ func rest() -> void:
 	_running = false
 	set_process(false)
 	_judgement.visible = false
+	if _glow_pulse != null and _glow_pulse.is_valid():
+		_glow_pulse.kill()
+	_glow.visible = false
 	for note in _notes:
 		(note["node"] as Node).queue_free()
 	_notes.clear()
@@ -351,6 +389,11 @@ func _unhandled_input(event: InputEvent) -> void:
 	if not _is_note_input(event):
 		return
 	get_viewport().set_input_as_handled()
+	# La lueur part AVANT le jugement, et quel que soit ce jugement : elle dit
+	# « la touche est passée », pas « c'était bon ». Un raté a d'autant plus
+	# besoin de cette réponse — c'est elle qui montre au joueur de combien il
+	# s'est trompé, en se posant là où il a tapé plutôt que sur l'anneau.
+	_pulse_glow()
 	var note := _notes[_pending]
 	var distance: float = absf(_offset_of(_pending))
 	# TOUTE touche compte, dès l'instant où les notes défilent — y compris bien
@@ -378,6 +421,28 @@ func _is_note_input(event: InputEvent) -> bool:
 		if event.is_action_pressed(action):
 			return true
 	return false
+
+## Pose la lueur LÀ OÙ SE TROUVE LA NOTE À CET INSTANT, et non sur l'anneau :
+## l'écart entre les deux EST le retard ou l'avance du joueur, rendu visible.
+## Les entrées sont traitées APRÈS `_process` dans la même image : `_elapsed`
+## vaut donc déjà ce qui vient d'être dessiné, et la lueur tombe exactement sur
+## la note telle qu'elle est à l'écran (mesuré : 443,59 contre 443,59).
+func _pulse_glow() -> void:
+	if _glow_pulse != null and _glow_pulse.is_valid():
+		_glow_pulse.kill()
+	_glow.position = Vector2(CENTRE.x + _offset_of(_pending), CENTRE.y)
+	_glow.visible = true
+	_glow.modulate.a = 1.0
+	# L'échelle de base n'est pas 1 : `PixelScale.apply()` contre-échelonne le
+	# nœud de SCALE pour que la texture native retombe à sa taille de design.
+	# Le pulse se multiplie donc à cette base, il ne la remplace pas.
+	var base := Vector2.ONE / float(PixelScale.SCALE)
+	_glow.scale = base * GLOW_FROM
+	_glow_pulse = create_tween()
+	_glow_pulse.set_parallel(true)
+	_glow_pulse.tween_property(_glow, "scale", base * GLOW_TO, GLOW_PULSE)
+	_glow_pulse.tween_property(_glow, "modulate:a", 0.0, GLOW_PULSE)
+	_glow_pulse.chain().tween_callback(func() -> void: _glow.visible = false)
 
 func _resolve(judgement: int) -> void:
 	_judgements.append(judgement)

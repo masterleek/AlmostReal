@@ -594,6 +594,15 @@ pas partir en guerre contre des choix déjà faits et documentés dans ce repo :
   comparer l'intensité moyenne du rendu importé à celle du PNG d'origine. Un
   asset qui perd plus d'un quart revient au PNG — en bilinéaire s'il est
   anticrénelé.
+  Cas extrême rencontré depuis : `rhythm_glow.svg` ne contient QU'un disque à
+  `fill-opacity="0.01"` et deux ombres internes — tout le dessin est dans le
+  filtre. Importé, il rend un aplat à alpha 3/255, soit 2,6 % de l'asset (alpha
+  moyen 0,009 contre 0,354). Repérage immédiat, sans rien lancer : si le SVG
+  n'a qu'un `<path>` à opacité quasi nulle sous un `<g filter>`, il n'y a rien
+  à rastériser. Faute de rastériseur SVG sur la machine (ni rsvg, ni cairosvg,
+  ni Inkscape), les filtres de Figma se réimplémentent en numpy sans trop de
+  peine : une ombre interne, c'est `alpha_dur − flou(alpha_érodé)`, en blanc,
+  composée autant de fois qu'il y a de `feBlend`.
   **`bkg_description.svg` est dans ce cas et n'est PAS encore corrigé** : tout
   son bord flou tient dans un `feGaussianBlur stdDeviation="2.5"`, et Godot en
   fait un rectangle à bord dur — l'alpha de sa ligne médiane saute de 0 à 153

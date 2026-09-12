@@ -1,4 +1,4 @@
-[gd_resource type="AudioBusLayout" format=3]
+[gd_resource type="AudioBusLayout" format=3 uid="uid://c7hpogfvmkvwx"]
 
 [sub_resource type="AudioEffectCompressor" id="AudioEffectCompressor_ai37j"]
 threshold = -16.0
