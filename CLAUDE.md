@@ -90,6 +90,64 @@ Repo git, remote `origin` → github.com/masterleek/AlmostReal, branche `main`.
 - Le serveur du MapEditor **ne se recharge pas tout seul** : après une
   modification de `server.js`, le relancer (les fichiers de `public/` sont
   servis depuis le disque et n'ont, eux, besoin que d'un rafraîchissement).
+- **Un relevé qui rend une donnée INCOMPLÈTE est un piège pire qu'un relevé
+  absent.** L'import d'une planche posait la grille mais laissait l'ancrage au
+  défaut du moteur (centre-bas de la cellule). Ce défaut n'est juste que pour
+  une cellule collée au dessin : la planche d'attaque d'Iris réserve 24 px sous
+  les pieds pour les étincelles d'une autre ligne, et le personnage flottait 18
+  px au-dessus du sol. L'auteur voit une grille juste et croit le reste réglé.
+  Tout ce qui se mesure doit être mesuré du même geste.
+- **L'ancrage se relève RELATIVEMENT à la planche de repos, jamais dans
+  l'absolu.** Le point au sol d'une unité est une convention arbitraire (chez
+  Noah il tombe 7,5 px à gauche du milieu de l'ombre, chez Iris 1,5 px à
+  droite), fixée une fois par `idle`. Ce qui doit être vrai n'est pas « le point
+  au sol est au milieu de l'ombre » mais « le personnage NE SAUTE PAS en
+  changeant de planche ».
+- **Le canevas du navigateur MENT sur les pixels presque transparents** : il
+  stocke les couleurs pré-multipliées par l'alpha, et à alpha 1/255 la couleur
+  est écrasée à zéro sans retour. Un halo orangé très transparent ressort donc
+  du canevas en NOIR PUR — assez pour être pris pour une ombre et déplacer le
+  relevé de 15 px. Toute détection par couleur lue sur un canevas a besoin d'un
+  plancher d'opacité.
+- **Une coupe de grille ne doit pas TRANCHER une bande dessinée — pas ne rien
+  toucher.** Exiger les deux côtés vides réclame une gouttière de 2 px à cheval
+  sur la coupe et rejette les planches dont le dessin descend jusqu'au bord de
+  sa cellule. De même, **un pixel isolé n'est pas un dessin** : un seul pixel
+  débordant d'une colonne faisait rendre 1 colonne au lieu de 3.
+- **Remplacer une image DÉTACHE les valeurs relevées sur l'ancienne.** Un
+  ancrage, un `frames`, un commentaire qui décrit une cellule de 46×68 : tous
+  restent en place et deviennent faux en silence. Après un changement de
+  planche, relire ce que le fichier PRÉTEND et le confronter à l'image.
+- **Un raccourci « rien n'a changé » doit distinguer le CHOIX de la MESURE.**
+  `frames`/`first_frame` sont des choix d'auteur, à ne pas écraser ; l'ancrage
+  est une mesure, et rien n'est gagné à garder celle d'hier. Les traiter
+  ensemble a laissé passer le bug une seconde fois : une planche importée dans
+  un emplacement NEUF part de colonnes/lignes indéfinies, lues comme 1 × 1, et
+  une planche à vignette unique mesure 1 × 1 — « même grille », donc aucun
+  relevé.
+- **La page d'édition tient TOUT le catalogue en mémoire et le renvoie
+  ENTIER.** Un onglet ouvert depuis une heure réécrit donc le fichier tel qu'il
+  était il y a une heure. Ce n'est pas théorique : une série d'ancrages relevés
+  au pixel a disparu au premier import fait depuis un onglet resté ouvert. D'où
+  le VERROU OPTIMISTE des catalogues (`X-Catalog-Revision` / `X-Expected-
+  Revision`, 409 si le disque a bougé). Une empreinte du contenu, pas un
+  compteur `_rev` comme les maps : ces fichiers sont de la donnée de jeu lue
+  par Godot, et une empreinte voit aussi passer une modification faite à la
+  main.
+- **Après avoir corrigé un fichier que l'éditeur web édite, recharger la
+  page** — sinon la correction sera écrasée par l'onglet à sa prochaine
+  sauvegarde. C'est maintenant refusé au lieu d'être silencieux, mais le
+  réflexe reste.
+- **Ce que la page peut MESURER, la page doit le SIGNALER.** Un ancrage faux ne
+  lève aucune erreur et ne se voit qu'en lançant le combat et en amenant ce
+  personnage dans cet état-là ; il est passé deux fois. L'en-tête de chaque
+  planche porte donc l'écart au relevé (« ⚠ ancrage : 18 px trop haut »),
+  **planche repliée** — le mettre dans les champs le rendrait invisible, on
+  n'ouvre pas le bloc qu'on ne soupçonne pas. Un avertissement se formule dans
+  les termes de CE QU'ON VERRA À L'ÉCRAN, pas en coordonnées de cellule.
+- **Un contrôle automatique doit se taire sur les exceptions assumées**, sinon
+  on apprend à l'ignorer : la tolérance est d'1 px parce que deux ancrages du
+  projet sont posés exprès un pixel à côté du relevé.
 
 ## Qualité de code attendue
 
@@ -900,6 +958,96 @@ pas partir en guerre contre des choix déjà faits et documentés dans ce repo :
   été rapportée (ici le quart de la course de la bande basse) et ce qu'elle
   évite (atteindre les plaques d'état, qui commencent à y = 21), vaut mieux
   qu'un nombre nu qui passera plus tard pour une mesure.
+- **Déposer un PNG dans le projet ne suffit pas : sans la passe d'import de
+  Godot, le fichier existe et le jeu ne sait pas le charger.** Un asset ajouté
+  depuis MapEditor est donc visible dans l'éditeur web et INVISIBLE en combat,
+  sans la moindre erreur. Deux remèdes, tous deux nécessaires : le serveur
+  enchaîne lui-même la passe (`--headless --editor --quit-after 40`, ~3 s) et
+  l'ATTEND pour pouvoir dire si elle a réussi ; et la liste des planches marque
+  celles qui n'ont pas de `.import` à côté d'elles, là où on les choisit.
+- **Recevoir un fichier sans dépendance multipart : le corps brut.** `POST` avec
+  `Content-Type: image/png` et `express.raw({ type: "image/png" })` côté
+  serveur ; le client passe l'objet `File` tel quel en `body`. Vérifier la
+  SIGNATURE (les huit octets d'en-tête d'un PNG) et pas seulement l'extension —
+  un JPEG renommé irait autrement jusque dans `units.json` pour n'échouer qu'au
+  combat. Et refuser un nom invalide plutôt que de l'assainir : un nom corrigé
+  en silence se retrouve dans la donnée sans que personne ne l'ait voulu.
+- **La grille peut se relever AUTOMATIQUEMENT, mais par mesure, jamais par
+  division.** Recette, validée sur les douze planches du dépôt qu'elle redonne
+  toutes exactement : lister les colonnes et les lignes entièrement
+  transparentes ; ne garder que les découpages DIVISEURS de l'image (le moteur
+  découpe en division entière, cf. `UnitSprite.build_frames` — un découpage qui
+  ne tombe pas juste décale toutes les vignettes) dont chaque frontière tombe
+  entre deux colonnes vides ; départager par le nombre de PLAGES DESSINÉES que
+  compte l'œil, et à égalité prendre le PLUS PETIT découpage. Ce dernier point
+  n'est pas cosmétique : sur `iris_win_before`, 3 et 9 colonnes valident tous
+  deux, et sur-découper coupe chaque vignette en trois.
+  La TAILLE de vignette, elle, ne se stocke pas : elle se déduit de l'image et
+  du découpage, exactement comme le fait le moteur. L'éditeur l'AFFICHE (et
+  signale un découpage qui ne tombe pas juste) plutôt que d'en faire un champ —
+  deux vérités concurrentes finiraient par diverger.
+- **Avant d'accuser une donnée, regarder si l'ASSET a bougé.** `iris/atk`
+  déclare 3 × 9 et l'image sur le disque n'a que quatre bandes de lignes : j'y ai
+  d'abord vu une déclaration fausse. Elle était juste — pour l'image du commit
+  (672 × 972, que 9 divise exactement). L'auteur venait de remplacer le fichier.
+  Le réflexe : comparer à `git show HEAD:<chemin>` avant de conclure, et valider
+  une méthode de relevé sur un ensemble COHÉRENT (les images du commit avec les
+  valeurs du commit), pas sur un mélange des deux.
+- **La CLÉ d'une planche n'est pas une étiquette, c'est une liaison.** Le moteur
+  va chercher ses planches par leur nom (`idle`, `atkeff`, `standby`,
+  `win_before`, `win`, `move_back` — les constantes ANIM_* des .gd), et une
+  action désigne la sienne de la même façon. Renommer une planche dans un
+  éditeur de texte est donc un geste qui DÉTACHE, sans aucune erreur nulle
+  part : le personnage garde simplement la pose qu'il avait. D'où, dans l'outil,
+  un choix d'ÉTAT plutôt qu'un nom libre, qui renomme la clé sur place (une clé
+  supprimée puis réécrite reviendrait en fin d'objet), entraîne avec elle
+  l'attaque de base de la même unité — mais PAS les Ekos, qui sont partagés
+  entre personnages — et qui dit, pour une planche au nom libre, qui l'appelle
+  ou que personne ne l'appelle.
+- **Trois styles d'intertitre pour le même rôle, et deux pages qui ne se lisent
+  plus pareil.** La page Unités structurait son détail en sections
+  (`battle-section-title`), la page Ekos n'en avait aucune et empilait un titre
+  de bloc puis des sous-libellés (`battle-block-title`, `battle-sub-label`) —
+  alors que les deux disent la même chose : des réglages, un geste, des sons. Un
+  seul traitement pour « une section de cette fiche », et les sous-libellés
+  disparaissent avec leur CSS. Règle générale : quand deux écrans montrent la
+  même structure, c'est la STRUCTURE qu'il faut rendre identique, pas seulement
+  les couleurs.
+- **Une liaison par NOM se montre des deux bords.** Une action nomme la planche
+  qu'elle joue, l'unité nomme l'état auquel la sienne répond : c'est la même
+  chaîne, vue de deux côtés. Elle doit donc porter le même libellé partout
+  (« Repos — idle », pas « idle » d'un côté), et chaque bord doit dire ce que
+  l'autre en fait — « appelée par : l'attaque de base » côté unité, « déclarée
+  par : noah — absente chez iris » côté action. C'est ce qui rend visible le
+  seul cas qui casse sans erreur : une action qui réclame une planche que le
+  personnage n'a pas.
+- **Un « état » d'animation n'existe que si le moteur le JOUE.** Ajouter une
+  entrée dans `units.json` ou une ligne dans l'éditeur ne crée rien : il faut un
+  `const ANIM_X := "x"` et un appel à `play_sheet()` au bon endroit du déroulé.
+  Les cinq états ajoutés se branchent chacun en un point précis — `approach`
+  dans `_approach`, `attack` dans `_gesture_for`, `hurt` dans `_apply`,
+  `dying`/`dead` dans `_bury_the_dead`. En échange, l'éditeur n'a RIEN à
+  changer : il lit les constantes dans les `.gd`, donc tout état ajouté au jeu
+  apparaît seul dans sa liste. C'est ce que paie le fait de lire le vocabulaire
+  du moteur plutôt que de le recopier.
+- **Le geste d'une action retombe sur celui du PERSONNAGE.** Un Eko est partagé
+  entre plusieurs héros et nomme une seule planche (`atk`) : sans repli, le jour
+  où l'un renomme la sienne, il attaque sans geste et sans erreur. L'ordre est
+  donc « la planche que l'action nomme, sinon l'état `attack` de celui qui
+  frappe ». La règle générale : quand une donnée PARTAGÉE désigne par nom une
+  donnée PROPRE à chaque porteur, il faut un repli côté porteur.
+- **Un marqueur d'état ne doit pas être un effet de bord visuel.** « Déjà
+  enterré » se lisait sur l'opacité du sprite (`modulate.a > 0`), ce qui marchait
+  tant que tout mort finissait effacé. Dès qu'un corps RESTE visible (planche
+  `dead` tenue), le même mort est ré-enterré à chaque action suivante et rejoue
+  son agonie. Un ensemble explicite d'unités enterrées coûte trois lignes et ne
+  dépend d'aucune apparence.
+- **Tester un état avec une planche VOLONTAIREMENT étrangère.** Premier essai de
+  vérification : `approach` injecté sur `noah_idle.png` et `hurt` sur
+  `noah_standby.png` — deux planches que le personnage utilise déjà pour
+  d'autres états. La trace montrait bien un changement de planche, mais ne
+  disait pas QUEL état l'avait posé. Avec `iris_win.png` en planche d'approche,
+  la trace est sans ambiguïté même si l'image n'a aucun sens.
 - **Le panneau navigateur intégré bride `requestAnimationFrame` à ~3/s.** Une
   animation y paraît figée alors qu'elle tourne : vérifier qu'un canevas bouge
   demande d'échantillonner sur plusieurs SECONDES, ou de se synchroniser sur les
