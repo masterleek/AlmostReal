@@ -67,7 +67,8 @@ func _ready() -> void:
 # Deux entrées provisoires vers l'écran de combat, tant que le déclenchement
 # d'un combat en jeu n'est pas conçu (rencontre aléatoire ? ennemi posé sur une
 # case depuis MapEditor ? — cf. docs/plan_systeme_combat.md §7) :
-#   - l'action `battle_start` (touche Z), pour tester à la main ;
+#   - l'action `battle_start` — touche Z au clavier, L1 à la manette — pour
+#     tester à la main ;
 #   - `godot --path <projet> -- --battle`, même mécanique que `--map=`, pour
 #     ouvrir l'écran directement au lancement.
 func _unhandled_input(event: InputEvent) -> void:

@@ -1127,6 +1127,11 @@ pas partir en guerre contre des choix déjà faits et documentés dans ce repo :
   injecter l'événement tel que le clavier réel l'enverrait (sur AZERTY, touche
   marquée Z = `keycode = KEY_Z` ET `physical_keycode = KEY_W`), sinon le test
   passe au vert sur un binding qui ne marche pas en vrai.
+- **Une liaison de manette se pose sur `device = -1`** (toutes les manettes),
+  pas sur `0`. Une manette qui se reconnecte peut revenir sous un autre numéro,
+  et une liaison figée sur la 0 cesse alors de répondre — sans erreur, comme
+  toujours avec l'input. C'est ce que fait `ui_accept`, le réglage livré par
+  Godot ; les actions `battle_*` du projet, elles, sont encore sur `0`.
 - **L'éditeur Godot ne recharge pas `project.godot` à chaud** si le fichier
   est modifié depuis l'extérieur pendant qu'une session d'éditeur est déjà
   ouverte. Si un test en direct ne voit pas un changement (nouvelle action
