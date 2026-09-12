@@ -83,6 +83,30 @@
             70
           ],
           "_comment": "Pose de victoire tenue EN BOUCLE apres 'win_before'. 4 cases pleines sur 6 (grille 3x2, cellule 52x70). Meme recalage d'ombre : la frame 0 d'ici et la derniere de 'win_before' ont la meme ombre au pixel pres, la transition ne saute pas. fps 6 comme idle - c'est une respiration, pas un geste."
+        },
+        "approach": {
+          "sheet": "res://Sprites/Battle/noah_approach.png",
+          "columns": 1,
+          "rows": 1,
+          "frames": 1,
+          "fps": 6,
+          "_comment": "Deplacement vers la cible. Une seule vignette : la planche ne porte qu'une pose de course. anchor releve sur l'ellipse d'ombre - le centre-bas de la cellule aurait decale Noah de 7 px.",
+          "anchor": [
+            20,
+            56
+          ]
+        },
+        "move_back": {
+          "sheet": "res://Sprites/Battle/noah_approach.png",
+          "columns": 1,
+          "rows": 1,
+          "frames": 1,
+          "fps": 6,
+          "anchor": [
+            20,
+            56
+          ],
+          "_comment": "Retour a l'emplacement apres l'assaut, meme planche que 'approach'."
         }
       },
       "ekos": [
@@ -158,56 +182,79 @@
           "fps": 6
         },
         "standby": {
-          "sheet": "res://Sprites/Battle/iris_standby.png",
+          "sheet": "res://Sprites/Battle/iris_idle.png",
           "columns": 3,
           "rows": 2,
           "frames": 4,
           "fps": 6,
           "anchor": [
-            30,
-            93
+            26,
+            67
           ],
-          "_comment": "anchor deduit de l'ellipse d'ombre - aucune maquette ne montre Iris en standby. A verifier si un ecart d'un pixel se voit, comme pour Noah."
-        },
-        "atk": {
-          "sheet": "res://Sprites/Battle/iris_atk.png",
-          "columns": 3,
-          "rows": 9,
-          "frames": 7,
-          "fps": 15,
-          "loop": false,
-          "hit_frame": 0,
-          "anchor": [
-            108,
-            108
-          ],
-          "_comment": "Planche d'attaque complete (26 frames) dont l'auteur ne retient que les frames 4 a 10 comptees a partir de 1, soit first_frame 3 et frames 7. hit_frame 0 : le coup de feu part des la premiere frame de la plage (lueur de bouche visible, orientee vers la gauche donc vers les ennemis). anchor relevee sur l'ellipse d'ombre de la frame 3 — la PREMIERE de la plage jouee, pas de la planche : c'est elle qui doit coincider avec l'emplacement de l'unite. L'ombre derive ensuite de 57 px vers la droite au fil des 7 frames, c'est le recul du tir ; parti du point de contact (cible + 30) il reste a l'ecran, alors que la plage complete depuis l'emplacement d'Iris l'en faisait sortir.",
-          "first_frame": 3
+          "_comment": "Meme planche que 'idle' : Iris n'a pas de pose d'attente distincte. anchor releve sur l'ellipse d'ombre - il retombe ici exactement sur le centre-bas de la cellule, c'est-a-dire sur le defaut du moteur."
         },
         "win_before": {
           "sheet": "res://Sprites/Battle/iris_win_before.png",
           "columns": 3,
-          "rows": 12,
-          "frames": 34,
-          "fps": 15,
+          "rows": 7,
+          "frames": 20,
+          "fps": 6,
           "loop": false,
+          "_comment": "Celebration de victoire, jouee UNE fois, avant la pose tenue 'win'. Grille 3x7, cellule 54x67, 20 cases pleines sur 21. anchor releve sur l'ellipse d'ombre de la frame 0, qui ne bouge pas d'un pixel sur les 20 : meme ecart a l'ombre que 'idle', donc pas de saut en changeant de planche.",
           "anchor": [
-            273,
-            94
-          ],
-          "_comment": "Celebration de victoire, jouee UNE fois : Iris fete la victoire avec sa mascotte, qui s'en va, puis elle prend la pose au fusil. 34 cases pleines sur 36 (grille 3x12, cellule 339x103). La cellule est TRES large parce que la mascotte traverse tout le cadre aux frames 24-26 ; le personnage, lui, occupe le tiers droit. anchor relevee sur l'ombre SEULE d'Iris aux frames 31-33 (centre 281,5 / 82,5) et pas sur la frame 0, ou l'ombre fusionne avec celle de la mascotte et decale le centre de 17 px. Ecart residuel : Iris demarre 3 px a droite de son emplacement et s'y recale en marchant."
+            26,
+            67
+          ]
         },
         "win": {
           "sheet": "res://Sprites/Battle/iris_win.png",
           "columns": 3,
           "rows": 2,
-          "frames": 6,
+          "frames": 4,
           "fps": 6,
           "anchor": [
-            14,
-            68
+            26,
+            66
           ],
-          "_comment": "Pose de victoire tenue EN BOUCLE apres 'win_before'. 6 cases pleines sur 6 (grille 3x2, cellule 46x68). L'ombre de la frame 0 est identique (36x12, meme nombre de pixels) a celle des dernieres frames de 'win_before' : la transition ne saute pas."
+          "_comment": "Pose de victoire tenue EN BOUCLE apres 'win_before'. Grille 3x2, cellule 54x66, 4 cases pleines sur 6. Ce sont litteralement les quatre dernieres vignettes de 'win_before' (meme nombre de pixels dessines, une a une) : la transition ne saute pas. anchor releve sur l'ellipse d'ombre."
+        },
+        "attack": {
+          "sheet": "res://Sprites/Battle/iris_attack.png",
+          "columns": 3,
+          "rows": 4,
+          "frames": 3,
+          "fps": 6,
+          "loop": false,
+          "_comment": "Geste d'attaque par defaut, joue quand l'action ne nomme pas sa propre planche. Grille 3x4, cellule 105x98, 12 cases pleines ; l'animation n'en retient que les trois premieres, le coup de poing et sa lueur qui s'eteint. LA CELLULE EST BIEN PLUS HAUTE QUE LE DESSIN : elle est dimensionnee par les lignes 3 et 4, dont les etincelles du coup de pied descendent jusqu'au bord bas, et il reste 23 px de vide sous les pieds des trois premieres. D'ou un anchor explicite - laisse au centre-bas de la cellule, il faisait flotter Iris 18 px au-dessus du sol.",
+          "anchor": [
+            53,
+            80
+          ]
+        },
+        "approach": {
+          "sheet": "res://Sprites/Battle/iris_move.png",
+          "columns": 1,
+          "rows": 1,
+          "frames": 1,
+          "fps": 6,
+          "loop": false,
+          "anchor": [
+            33,
+            57
+          ],
+          "_comment": "Deplacement vers la cible. Une seule vignette : la planche ne porte qu'une pose de course. anchor releve sur l'ellipse d'ombre."
+        },
+        "move_back": {
+          "sheet": "res://Sprites/Battle/iris_move.png",
+          "columns": 1,
+          "rows": 1,
+          "frames": 1,
+          "fps": 6,
+          "anchor": [
+            33,
+            57
+          ],
+          "_comment": "Retour a l'emplacement apres l'assaut, meme planche que 'approach'."
         }
       },
       "ekos": [
@@ -218,7 +265,7 @@
       "basic_attack": {
         "power": 5,
         "damage_type": "injury",
-        "animation": "atk",
+        "animation": "attack",
         "sequence": [
           "circle",
           "circle"
@@ -249,7 +296,7 @@
       "basic_attack": {
         "power": 6,
         "damage_type": "direct",
-        "animation": "atk",
+        "animation": "idle",
         "sequence": [
           "right"
         ]

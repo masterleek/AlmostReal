@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://dxd25o27sk7sn"
-path="res://.godot/imported/iris_atk.png-54bdb4c47f716f7fb84e1eb05f724d7f.ctex"
+uid="uid://qh737jrc8prf"
+path="res://.godot/imported/iris_move.png-01d816781f6304baf3e663de79994cdb.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://Sprites/Battle/iris_atk.png"
-dest_files=["res://.godot/imported/iris_atk.png-54bdb4c47f716f7fb84e1eb05f724d7f.ctex"]
+source_file="res://Sprites/Battle/iris_move.png"
+dest_files=["res://.godot/imported/iris_move.png-01d816781f6304baf3e663de79994cdb.ctex"]
 
 [params]
 
