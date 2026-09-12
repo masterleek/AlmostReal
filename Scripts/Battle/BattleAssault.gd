@@ -96,6 +96,15 @@ const ANIM_ATTACK := "attack"
 ## propriétaire — le personnage, pas le geste qui l'a touché.
 const ANIM_HURT := "hurt"
 
+## Planche de REPOS, celle sur laquelle une unité retombe après chaque geste.
+##
+## Déclarée ici ALORS QUE BattleScene la déclare aussi : les deux fichiers la
+## jouent, et ni l'un ni l'autre ne peut lire les constantes de l'autre sans
+## créer un préchargement circulaire. Le vocabulaire d'états que l'éditeur lit
+## dans les .gd fusionne les deux listes et dédoublonne — c'est là, et pas dans
+## un troisième fichier, que les deux déclarations se rejoignent.
+const ANIM_IDLE := "idle"
+
 ## AGONIE puis MORT. `dying` se joue une fois, `dead` se tient. Sans `dead`, le
 ## corps s'efface en fondu comme avant ; sans `dying` non plus, rien ne change
 ## de ce que le combat faisait jusqu'ici.
@@ -144,10 +153,18 @@ var _home: Dictionary = {}
 var _feedback: Dictionary = {}
 ## Numéro du dernier coup encaissé par chaque unité (cf. _play_hurt) : il dit à
 ## une restauration de repos si elle est encore d'actualité.
+##
+## INDEXÉ PAR L'UNITÉ, comme _home et _feedback au-dessus — jamais par son `id`.
+## `BattleUnit.id` est l'identifiant du CATALOGUE : trois cactoons sur le
+## terrain sont trois unités qui portent toutes « cactoon ». Y indexer un état
+## par unité les confond, et ce n'est pas théorique : le premier cactoon tombé
+## marquait les trois comme enterrés, et les deux autres restaient debout à
+## l'écran une fois le combat gagné.
 var _hurt_ticket: Dictionary = {}
-## Unités déjà mises en terre. Le marqueur ne peut pas être l'opacité du sprite
-## comme avant : un personnage qui garde une planche de MORT reste visible, et
-## serait enterré à nouveau à chaque action suivante.
+## Unités déjà mises en terre — indexées par l'unité, cf. juste au-dessus. Le
+## marqueur ne peut pas être l'opacité du sprite comme avant : un personnage qui
+## garde une planche de MORT reste visible, et serait enterré à nouveau à chaque
+## action suivante.
 var _buried: Dictionary = {}
 
 func setup(
@@ -322,7 +339,7 @@ func _resolve(entry: Dictionary) -> void:
 		_cue(sounds, "return")
 		await _return_home(entry)
 	else:
-		_node_of(entry).play_sheet(BattleData.get_animation(unit.id, "idle"))
+		_node_of(entry).play_sheet(BattleData.get_animation(unit.id, ANIM_IDLE))
 	_rhythm.rest()
 	_banner.hide_action()
 	await _bury_the_dead()
@@ -557,18 +574,18 @@ func _play_hurt(unit: BattleUnit) -> void:
 	# Un second coup pendant le premier relance la planche ET invalide la
 	# restauration du premier : sans ce jeton, elle couperait la seconde
 	# douleur au milieu pour reposer un repos que personne n'a demandé.
-	var ticket := int(_hurt_ticket.get(unit.id, 0)) + 1
-	_hurt_ticket[unit.id] = ticket
+	var ticket := int(_hurt_ticket.get(unit, 0)) + 1
+	_hurt_ticket[unit] = ticket
 	sprite.play_sheet(sheet)
 	await _wait(UnitSprite.duration_of(sheet))
 	if not is_instance_valid(sprite):
 		return
-	if int(_hurt_ticket.get(unit.id, 0)) != ticket:
+	if int(_hurt_ticket.get(unit, 0)) != ticket:
 		return
 	# Tombée entre-temps : son corps appartient désormais à _bury_the_dead.
 	if not unit.is_alive():
 		return
-	sprite.play_sheet(BattleData.get_animation(unit.id, "idle"))
+	sprite.play_sheet(BattleData.get_animation(unit.id, ANIM_IDLE))
 
 ## Déclenche un son propre à l'unité (cf. BattleData.UNIT_SOUNDS).
 func _cue_unit(unit: BattleUnit, moment: String) -> void:
@@ -638,12 +655,12 @@ func _return_home(entry: Dictionary) -> void:
 		# Sans planche de retour, on repasse au repos DÈS LE DÉPART plutôt qu'à
 		# l'arrivée : le geste d'attaque ne boucle pas, l'unité resterait figée
 		# sur sa dernière image — bras tendu — pendant tout le trajet du retour.
-		sprite.play_sheet(BattleData.get_animation(unit.id, "idle"))
+		sprite.play_sheet(BattleData.get_animation(unit.id, ANIM_IDLE))
 	var tween := create_tween()
 	tween.tween_property(sprite, "position", _home[unit], duration) \
 		.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 	await _wait(duration)
-	sprite.play_sheet(BattleData.get_animation(unit.id, "idle"))
+	sprite.play_sheet(BattleData.get_animation(unit.id, ANIM_IDLE))
 
 ## Barycentre des pieds des cibles, arrondi. Vector2.ZERO quand il n'y a
 ## personne — aucune cible ne se tient à l'origine de l'écran.
@@ -704,9 +721,9 @@ func _bury_the_dead() -> void:
 	var fallen: Array[Dictionary] = []
 	for entry in _allies + _enemies:
 		var unit := _unit_of(entry)
-		if unit.is_alive() or _buried.has(unit.id):
+		if unit.is_alive() or _buried.has(unit):
 			continue
-		_buried[unit.id] = true
+		_buried[unit] = true
 		fallen.append(entry)
 	if fallen.is_empty():
 		return

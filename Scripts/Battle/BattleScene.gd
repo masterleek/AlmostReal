@@ -564,7 +564,7 @@ func _build_units() -> void:
 func _spawn_unit(
 	parent: Node2D, unit_id: String, feet: Vector2i, mirrored: bool
 ) -> AnimatedSprite2D:
-	var config: Dictionary = BattleData.get_animation(unit_id, "idle")
+	var config: Dictionary = BattleData.get_animation(unit_id, ANIM_IDLE)
 	if config.is_empty():
 		return null
 	var sprite: AnimatedSprite2D = UnitSprite.new()
