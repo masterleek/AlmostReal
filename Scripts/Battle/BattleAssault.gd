@@ -43,6 +43,13 @@ signal finished(outcome: int)
 ## Un coup vient de porter. L'assaut ne connaît pas la caméra : il annonce
 ## l'impact, la scène le traduit en secousse.
 signal impact
+## L'action vient de faire effet et demande son son (chemin `res://`). Même
+## partage que l'impact : l'assaut dit QUOI jouer, la scène possède les
+## lecteurs. Rien n'est émis pour une action sans `sound`.
+signal sound_cue(path: String)
+## Une séquence de rythme vient d'être jugée. L'assaut ne connaît pas la jauge de
+## synergie : il annonce les verdicts, la scène en fait ce qu'elle veut.
+signal rhythm_resolved(judgements: Array)
 ## Le terrain doit glisser vers le camp attaqué : +1 quand un allié agit, −1
 ## quand c'est un ennemi, 0 pour revenir au centre. Même partage que ci-dessus —
 ## l'assaut dit ce qui se passe, la scène décide de ce que ça déplace.
@@ -207,6 +214,9 @@ func _resolve(entry: Dictionary) -> void:
 	_banner.show_action(
 		_text_id_of(unit, action), ally_acts, String(_definition_of(unit, action).get("damage_type", ""))
 	)
+	# Relevés une fois pour toute l'action : `_cue()` en sert plusieurs moments.
+	var sounds := _sounds_of(unit, action)
+	_cue(sounds, "announce")
 
 	# LE RYTHME D'ABORD, ET L'UNITÉ NE BOUGE PAS ENCORE. Elle reste à son
 	# emplacement le temps de la séquence : le joueur a les yeux sur la barre, un
@@ -217,7 +227,7 @@ func _resolve(entry: Dictionary) -> void:
 	# tenir le temps de trois notes figerait le personnage bras levé. Le verdict
 	# restant affiché une demi-seconde, il se lit encore au moment de l'impact,
 	# comme sur la maquette.
-	var multiplier := await _run_rhythm(unit, action, ally_acts)
+	var multiplier := await _run_rhythm(unit, action, ally_acts, sounds)
 	effect["multiplier"] = multiplier
 
 	# Aller au contact, frapper, revenir. Une action qui SOIGNE ne se déplace
@@ -228,8 +238,10 @@ func _resolve(entry: Dictionary) -> void:
 		# sur les maquettes, la vignette où il est au contact est aussi celle où
 		# le décor a bougé.
 		field_shift.emit(1 if ally_acts else -1)
+		_cue(sounds, "approach")
 		await _approach(entry, targets)
 
+	_cue(sounds, "gesture")
 	await _play_gesture(entry, targets, gesture, offensive)
 
 	for target in targets:
@@ -240,12 +252,17 @@ func _resolve(entry: Dictionary) -> void:
 		if offensive:
 			_feedback[target].hit(target, before, bool(effect["injury"]))
 	changed.emit()
+	# Une seule fois pour l'action, pas une par cible : une attaque de groupe
+	# est UN geste, et trois exemplaires du même cri superposés ne feraient que
+	# saturer. Hors du `if offensive` : un soin a droit au sien.
+	_cue(sounds, "hit")
 	if offensive:
 		impact.emit()
 
 	await _finish_gesture(entry, gesture)
 	if offensive:
 		field_shift.emit(0)
+		_cue(sounds, "return")
 		await _return_home(entry)
 	else:
 		_node_of(entry).play_sheet(BattleData.get_animation(unit.id, "idle"))
@@ -259,10 +276,16 @@ func _resolve(entry: Dictionary) -> void:
 ## frappe, un bon timing AUGMENTE ce qu'elle inflige ; quand elle encaisse, il
 ## RÉDUIT ce qu'elle subit. La barre est la même, la table de conversion non
 ## (cf. BattleRules).
-func _run_rhythm(unit: BattleUnit, action: Dictionary, ally_acts: bool) -> float:
+func _run_rhythm(
+	unit: BattleUnit, action: Dictionary, ally_acts: bool, sounds: Array
+) -> float:
 	var sequence := _sequence_of(unit, action)
 	if sequence.is_empty():
 		return 1.0
+	# Le son du rythme est annoncé ICI et pas chez l'appelant : une action sans
+	# séquence sort à la ligne précédente, et son « rhythm » ne doit pas sonner
+	# sur une barre qui ne se joue jamais.
+	_cue(sounds, "rhythm")
 	# Le curseur dit QUI joue : pendant la séquence, le joueur a les yeux sur la
 	# barre, et l'unité n'a pas encore bougé.
 	_cursor.show_above(_sprite_of(unit))
@@ -270,6 +293,7 @@ func _run_rhythm(unit: BattleUnit, action: Dictionary, ally_acts: bool) -> float
 		sequence, RhythmBar.Side.ALLY if ally_acts else RhythmBar.Side.ENEMY
 	)
 	_cursor.hide_above()
+	rhythm_resolved.emit(judgements)
 	return (
 		BattleRules.rhythm_attack(judgements) if ally_acts
 		else BattleRules.rhythm_defence(judgements)
@@ -358,6 +382,24 @@ func _standing(camp: Array[Dictionary]) -> Array[BattleUnit]:
 ## C'est ce qui permet aux deux camps de partager UN SEUL catalogue d'Ekos : un
 ## soin déclaré « ally » soigne le camp de celui qui le lance, sans qu'il faille
 ## deux versions de chaque compétence.
+## MOMENTS DE L'ASSAUT auxquels un son peut s'accrocher (champ `at`). Ce sont
+## des points RÉELS de `_resolve`, pas une liste de souhaits : chacun est un
+## `_cue()` posé dans le déroulé ci-dessus.
+##
+## Deux d'entre eux sont CONDITIONNELS, et c'est assumé : « approach » et
+## « return » n'existent que pour une action offensive (un soin ne traverse pas
+## le terrain), « rhythm » que pour une action qui a une séquence. Un son
+## accroché à un moment que son action n'atteint pas ne se joue jamais.
+const SOUND_MOMENTS: PackedStringArray = [
+	"announce",  # la pastille s'affiche, avant tout le reste
+	"rhythm",    # la séquence de notes commence
+	"approach",  # l'attaquant s'élance vers sa cible
+	"gesture",   # le geste part
+	"hit",       # l'effet s'applique — le DÉFAUT
+	"return",    # l'attaquant repart vers son emplacement
+]
+const SOUND_DEFAULT_MOMENT := "hit"
+
 const OWN_CAMP_TARGETS: PackedStringArray = ["ally", "allies", "self"]
 
 ## Camp visé par un mode de ciblage, du point de vue de `entry`.
@@ -368,6 +410,48 @@ func _camp_for(entry: Dictionary, kind: String) -> Array[Dictionary]:
 
 ## Ce que l'action inflige ou rend : {offensive, power, heal, damage_type}.
 ## Le tableau de bord de l'action, lu une fois pour toutes ses cibles.
+## Sons de l'action, pris au même endroit que sa séquence et sa puissance : sur
+## l'Eko ou l'objet pour une compétence, dans `basic_attack` pour une attaque.
+## C'est ce qui permet de donner sa voix à un personnage sans écrire son nom
+## dans le code.
+##
+## Renvoie une liste normalisée d'entrées `{at: String, paths: PackedStringArray}`.
+## Le champ `sound` d'une entrée accepte UN chemin ou PLUSIEURS : plusieurs
+## chemins sont des variantes du même son (`noah_att1/att2/att3`), tirées au
+## hasard, pas des sons à jouer ensemble — pour ça, on met deux entrées.
+func _sounds_of(unit: BattleUnit, action: Dictionary) -> Array:
+	var sounds: Array = []
+	for raw: Variant in _definition_of(unit, action).get("sounds", []):
+		if typeof(raw) != TYPE_DICTIONARY:
+			push_warning("Entrée de son mal formée sur %s : %s" % [unit.id, str(raw)])
+			continue
+		var entry: Dictionary = raw
+		var moment := String(entry.get("at", SOUND_DEFAULT_MOMENT))
+		if not SOUND_MOMENTS.has(moment):
+			push_warning("Moment de son inconnu « %s » sur %s (cf. SOUND_MOMENTS)"
+				% [moment, unit.id])
+			continue
+		var paths := PackedStringArray()
+		var declared: Variant = entry.get("sound", "")
+		# Un seul chemin ou une liste : l'auteur écrit le cas simple sans
+		# crochets, l'éditeur web écrira des listes.
+		for path: Variant in (declared if typeof(declared) == TYPE_ARRAY else [declared]):
+			if String(path) != "":
+				paths.append(String(path))
+		if paths.is_empty():
+			continue
+		sounds.append({"at": moment, "paths": paths})
+	return sounds
+
+## Déclenche les sons accrochés à `moment`. Une entrée à plusieurs chemins tire
+## une variante au hasard.
+func _cue(sounds: Array, moment: String) -> void:
+	for entry: Dictionary in sounds:
+		if String(entry["at"]) != moment:
+			continue
+		var paths: PackedStringArray = entry["paths"]
+		sound_cue.emit(paths[randi() % paths.size()])
+
 func _effect_of(unit: BattleUnit, action: Dictionary) -> Dictionary:
 	var definition := _definition_of(unit, action)
 	var heal := int(definition.get("heal", 0))

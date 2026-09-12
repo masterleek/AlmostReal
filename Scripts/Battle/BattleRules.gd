@@ -57,6 +57,18 @@ enum Judgement { PERFECT, GREAT, GOOD, MISS }
 const ATTACK_MULTIPLIER: Array[float] = [1.5, 1.25, 1.1, 1.0]
 const DEFENCE_MULTIPLIER: Array[float] = [0.5, 0.7, 0.85, 1.0]
 
+## Ce qu'une note rapporte à la jauge de synergie, en fraction de niveau. Même
+## indexation que les tables ci-dessus.
+##
+## À 0,25 pour un Perfect, il faut quatre notes parfaites pour gagner un niveau,
+## et une douzaine de Good. RIEN N'EST RELEVÉ ICI : c'est un réglage de rythme de
+## progression, à sentir en jouant — la référence `synergy.jpg` ne montre que les
+## états de la jauge, pas ce qui la remplit.
+const SYNERGY_GAIN: Array[float] = [0.25, 0.15, 0.07, 0.0]
+
+static func synergy_gain(judgement: int) -> float:
+	return SYNERGY_GAIN[clampi(judgement, 0, SYNERGY_GAIN.size() - 1)]
+
 ## Multiplicateur d'une SÉQUENCE, à partir de ses verdicts note par note.
 ##
 ## Moyenne, et pas le meilleur ni le dernier : une séquence de quatre notes doit

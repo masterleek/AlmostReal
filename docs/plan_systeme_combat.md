@@ -62,6 +62,8 @@ Battle.tscn
         ├── PartyStatus   (Node2D)      ← blocs portrait/HP/AP + synergie
         ├── InputLegend   (Node2D)      ← « Cancel / Confirm »
         └── RhythmBar     (Node2D)      ← lot ultérieur, absent en préparation
+    (+ quatre AudioStreamPlayer montés en code : move / validation / error, et
+     le thème de combat — cf. §1.4)
 ```
 
 `Background` et `BackgroundDim` sont **hors** du `Stage` : la capture est une
@@ -90,6 +92,98 @@ Points d'implémentation qui ne sont pas évidents :
 (lancement direct de `Battle.tscn` en F6, ce qui sera le mode d'itération du
 Lot 1), la scène retombe sur un fond de secours uni. La scène est donc
 jouable seule *et* embarquable — pas de scaffolding de debug à retirer ensuite.
+
+### 1.4 Son
+
+**La musique.** `battle_theme1.mp3`, lancé par `_build_music()` à l'ouverture de l'écran, à
+**75 % du volume** (`volume_linear = 0.75`, et non un `volume_db` converti à la
+main). Deux points :
+
+1. **Le bouclage est une propriété de la ressource**, pas du lecteur : il est
+   forcé en code (`_music.stream.loop = true`), comme le fait déjà le thème du
+   worldmap dans `map_loader._ready()`.
+2. **Rien à faire côté worldmap.** `BattleLauncher` le passe en
+   `PROCESS_MODE_DISABLED`, ce qui suspend son `AudioStreamPlayer` : vérifié en
+   jeu, `playing` retombe à `false` et la position reste figée (0,33 s pendant
+   tout le combat), puis la lecture **reprend à cette position** quand
+   `close()` rend la main. Deux thèmes ne se superposent donc jamais, et la
+   sortie de combat n'a pas plus à restaurer la musique que le reste.
+
+**Les sons d'action.** Une action porte une LISTE de sons, chacun accroché à un
+moment du déroulé de l'assaut. Elle vit au même endroit que sa puissance et sa
+séquence : dans `basic_attack` pour une attaque, dans le catalogue pour un Eko
+ou un objet.
+
+```json
+"sounds": [
+  {"at": "rhythm", "sound": "res://Audio/Battle/noah_charge.wav"},
+  {"at": "hit",    "sound": ["res://.../noah_att1.wav", "res://.../noah_att2.wav"]}
+]
+```
+
+| Champ | Règle |
+|---|---|
+| `at` | le moment où le son part. `hit` par défaut |
+| `sound` | **un** chemin `res://`, ou **plusieurs** — plusieurs chemins sont des VARIANTES du même son (`noah_att1/att2/att3`), tirées au hasard. Pour jouer deux sons au même moment, on met **deux entrées** |
+
+Les six moments, qui sont des points réels de `BattleAssault._resolve` et non
+une liste de souhaits (`SOUND_MOMENTS`) :
+
+| `at` | Instant | Existe quand |
+|---|---|---|
+| `announce` | la pastille de l'action s'affiche | toujours |
+| `rhythm` | la séquence de notes commence | l'action a une `sequence` |
+| `approach` | l'attaquant s'élance vers sa cible | action offensive |
+| `gesture` | le geste part | toujours |
+| `hit` | l'effet s'applique — **le défaut** | toujours |
+| `return` | l'attaquant repart vers son emplacement | action offensive |
+
+Un son accroché à un moment que son action n'atteint pas ne se joue jamais :
+c'est assumé, mais c'est le piège du champ. Un `at` inconnu est **ignoré avec un
+avertissement**, comme un `kind` de comportement inconnu.
+
+**`announce` et `rhythm` tombent aujourd'hui dans la MÊME frame** (mesuré :
+t=7,14 pour les deux), parce que rien ne s'intercale entre l'affichage de la
+pastille et la première note. Les deux ancres restent distinctes — elles se
+sépareront dès que la pastille aura une animation d'entrée — mais il ne faut pas
+attendre d'écart entre elles en l'état.
+
+Trois décisions de découpage :
+
+1. **Le son est de la donnée, pas du code.** Donner sa voix à un personnage —
+   `noah_att1.wav` sur l'attaque de Noah — se fait dans `units.json`, jamais par
+   un `if unit.id == "noah"`. Même règle que pour `animation`, `sequence` et
+   `behaviour`, et c'est ce qui rend le champ éditable depuis la page
+   « Combat » du Lot 10.
+2. **Un déclenchement par ACTION, pas par cible.** Une attaque de groupe est un
+   seul geste : trois exemplaires du même cri superposés ne feraient que
+   saturer. Les `_cue()` sont donc hors de la boucle sur les cibles.
+3. **Les lecteurs restent à la scène.** `BattleAssault` émet `sound_cue(path)`,
+   il ne possède aucun `AudioStreamPlayer` — même partage que pour `impact` et
+   `field_shift`. La scène en tient **quatre** (`SFX_ACTION_VOICES`), distincts
+   des trois sons d'interface : deux sons accrochés au même moment partent dans
+   la même frame, et un lecteur unique n'en jouerait qu'un. Les quatre occupés,
+   le plus ancien est volé plutôt que de laisser tomber le son demandé. Les flux
+   sont mis en cache par chemin, un chemin absent mémorisé comme `null` pour
+   n'avertir qu'une fois.
+
+Vérifié en jeu, les six moments accrochés d'un coup sur l'attaque de Noah :
+
+```
+t=7.14  cue announce        t=10.04  cue hit
+t=7.14  cue rhythm          t=10.04  cue hit (2e entree)
+t=9.55  cue approach        t=10.18  cue return
+t=9.89  cue gesture
+--> jusqu'a 3 voix simultanees, moment inconnu ignore avec avertissement,
+    fichier absent signale une fois puis ignore
+```
+
+Le dossier `_assets/battle/_voices/` contient une trentaine de répliques
+(`noah_att1..3`, `noah_hit1..3`, et des phrases de victoire, de défaite, de
+soin). **Une seule est posée à ce jour**, sur `hit` : l'auteur n'a pas dit
+quelle réplique va sur quelle action ni sur quel moment. Le champ est prêt, le
+casting non — et c'est la page « Combat » du Lot 10 qui servira à le faire,
+plutôt que de remplir les JSON à la main (cf. §7 bis).
 
 ---
 
@@ -367,6 +461,7 @@ Menu de commandes (`CommandMenu`) — 9-slice de `command_off.png` / `command_on
 | Élément | Position / règle |
 |---|---|
 | `Background` | capture 1920×1080, échelle 1, hors `Stage` |
+| Musique | `battle_theme1.mp3` en boucle, `volume_linear = 0.75` (cf. §1.4) |
 | `BackgroundDim` | plein écran, noir, alpha à calibrer |
 | `PartyStatus` | en haut à droite : 2 blocs portrait/HP/AP + jauge de synergie à l'extrême droite (géométrie fine à relever pendant le Lot 1 — cf. §7, les portraits ne correspondent pas aux assets) |
 | `InputLegend` | `mini_btn_circle` + « Cancel » vers (333, 230), `mini_btn_cross` + « Confirm » vers (401, 223) |
@@ -398,7 +493,7 @@ passer devant.
 | 5 | Garde, fin de tour, enchaînement des alliés, boucle préparation complète | **fait** |
 | 6 | Phase d'assaut : ordre par agilité, exécution des actions, dégâts, morts | **fait** |
 | 7 | Barre de rythme : défilement des notes, fenêtres Perfect/Great/Good/Miss, bonus de dégâts | **fait** |
-| 8 | Jauge de synergie (remplissage, 4 niveaux) | |
+| 8 | Jauge de synergie (remplissage, 4 niveaux) | **fait**, sauf la compétence qu'elle débloque |
 | 9 | Victoire / défaite, transition worldmap ↔ combat, animations `win` / `dying` / `dead` | |
 | 10 | Page « Combat » de MapEditor : unités (stats, comportement ennemi, Ekos connus), Ekos, objets | |
 
@@ -1382,6 +1477,115 @@ touche a dx=  +6  ->  PERFECT
 
 ---
 
+## 5 nonies. Résultat du Lot 8 — la jauge de synergie
+
+### Ce qui la remplit
+
+**La qualité du rythme**, décidé par l'auteur : un Perfect vaut 0,25 de niveau,
+un Great 0,15, un Good 0,07, un Miss rien. Il faut donc quatre notes parfaites
+pour gagner un niveau, une douzaine de Good. La synergie récompense ainsi la
+maîtrise de la mécanique centrale du jeu, et se construit **autant en attaque
+qu'en défense** — la barre tourne dans les deux sens.
+
+Chaque note compte séparément : une séquence de quatre notes vaut quatre fois
+une note seule, ce qui récompense les Ekos longs. Les valeurs elles-mêmes ne sont
+PAS relevées — `synergy.jpg` ne montre que les états de la jauge, pas ce qui la
+remplit. C'est un réglage de rythme de progression, à sentir en jouant.
+
+La charge appartient à l'ÉQUIPE, pas à une unité : c'est ce qui la distingue des
+PV et des PA, et c'est le sens du mot. D'où `SynergyMeter`, à part de
+`BattleUnit`.
+
+### Les couleurs, relevées sur `synergy.jpg`
+
+La spirale change de teinte avec le niveau. L'asset `synergie_full` a été recalé
+sur la troisième vignette — celle qui porte « 1 » — et les extrémités du dégradé
+lues aux mêmes pixels sur les autres :
+
+| niveau | dégradé de la spirale | liseré du chiffre |
+|---|---|---|
+| 0 | #FD761C → #EFFE00 | #EEF801 |
+| 1 | #FD761C → #EFFE00 | #EEF801 |
+| 2 | #FF321D → #FFB301 | #F8D070 |
+| 3 | #CE2CFB → #FE8EE0 | #F8B8E8 |
+
+Les niveaux 0 et 1 partagent le dégradé de l'asset : c'est bien ce que montre la
+référence, où la vignette partielle et la vignette « 1 » sont du même orangé.
+
+La recoloration garde l'ALPHA de chaque pixel — donc tout l'anticrénelage — et ne
+reporte que la teinte, d'après la position du pixel dans le dégradé d'origine.
+Celle-ci se lit sur le canal VERT, seul à croître franchement et sans ambiguïté
+d'un bout à l'autre de l'asset (0x76 → 0xFE).
+
+**MAX_LEVEL passe de 4 à 3** : la référence montre une pastille qui va de « 0 »
+à « 3 », soit bien quatre niveaux.
+
+**La plaque du chiffre** (`round_synergie`) était listée depuis le Lot 1 sans
+servir : la référence montre le chiffre posé sur un fond, pas flottant sur la
+spirale. Elle est maintenant affichée.
+
+### Le gain s'anime comme la jauge de PV
+
+Même grammaire que l'encaissement d'un coup : **la part gagnée s'allume d'abord
+en BLANC**, puis la couleur du niveau la recouvre. Là-bas l'aperçu montre ce
+qu'on va perdre, ici ce qu'on vient de gagner — dans les deux cas c'est la part
+de jauge en jeu qui se signale avant de se résoudre. Les temps sont repris de
+`HpBar` (0,18 s d'aperçu, 0,35 s de montée) : c'est la même animation, elle doit
+avoir le même tempo d'un élément à l'autre.
+
+Un gain qui fait **monter d'un niveau** se joue en deux temps : la spirale finit
+de se remplir dans la couleur du niveau qu'elle quitte, puis repart de zéro dans
+celle du nouveau. C'est le seul découpage qui rende la couleur lisible — la faire
+changer en cours de montée effacerait l'information.
+
+```
+gain simple 0,20 -> 0,75
+  t=0.05  apercu 0.625   couleur 0.167   le blanc devance
+  t=0.35  apercu 0.625   couleur 0.391
+  t=0.60  apercu 0.625   couleur 0.625   rattrape
+
+passage de niveau 0,80 -> niveau 1 a 0,30
+  t=0.05  apercu 0.833   couleur 0.667   niveau 0
+  t=0.35  apercu 0.833   couleur 0.750   niveau 0
+  t=0.60  apercu 0.250   couleur 0.055   niveau 1, la spirale repart
+```
+
+Deux pièges rencontrés là-dessus, tous deux invisibles à la lecture du code :
+
+- **L'aperçu doit être posé AVANT l'attente**, pas dans le premier pas de la
+  file : sinon il apparaît en même temps que la couleur part, et le blanc ne se
+  voit jamais seul.
+- **`tween_method` fige ses bornes à la CONSTRUCTION.** Lire `_shown` dans le
+  dernier pas donnait l'ancienne charge, pas zéro : après un passage de niveau la
+  spirale redescendait au lieu de monter. Il faut suivre la valeur de départ
+  d'un pas à l'autre dans une variable locale.
+
+### Ce qui reste à l'auteur
+
+- **La compétence spéciale** n'est toujours pas définie. Le niveau est exposé
+  (`SynergyMeter.level`, `is_ready()`) pour qu'elle s'y branche sans que rien
+  d'autre bouge, et `spend()` est déjà écrit — l'auteur a tranché ce point-là :
+  l'utiliser VIDE la jauge entièrement, ce qui met le joueur devant un vrai
+  arbitrage entre frapper au niveau 1 ou attendre le niveau 3. Rien ne l'appelle
+  encore.
+- **Le liseré du chiffre** est approché : `synergy.jpg` étant un JPEG, il ne
+  permet pas de séparer proprement le corps du chiffre de son liseré. Les trois
+  teintes ci-dessus sont les couleurs claires dominantes de chaque pastille.
+
+### Vérifié en jeu
+
+Remplissage réel par le rythme, toutes notes jouées en Perfect :
+
+```
+ 0.01  niveau 0, 0.00
+ 2.37  niveau 0, 0.50    Iris, 2 notes
+ 6.17  niveau 1, 0.00    Noah, 2 notes -> le niveau monte
+ 9.66  niveau 1, 0.25    un cactoon, 1 note
+12.71  niveau 1, 0.50    l autre cactoon
+```
+
+---
+
 ## 6. Vérification (Lot 1)
 
 Conforme au workflow de `CLAUDE.md` :
@@ -1529,8 +1733,29 @@ Ce qu'elle doit couvrir :
   liste des Ekos connus, et pour un ennemi le bloc `behaviour` (`kind`, `focus`,
   `guard_below`, `eko_chance`) décrit au §5 septies.
 - **Ekos** — coût en PA, mode de ciblage, puissance ou soin, `damage_type`,
-  `type` d'icône, séquence de rythme (Lot 7).
+  `type` d'icône, séquence de rythme (Lot 7), et les **sons** (ci-dessous).
 - **Objets** — mêmes champs, sans coût en PA.
+
+**Les sons d'une action** (`sounds`, cf. §1.4) sont le morceau le moins trivial
+de cette page, parce que c'est une liste d'entrées et pas un champ simple. Ce
+qu'il faut :
+
+- une **liste répétable** : ajouter / retirer / réordonner des entrées ;
+- par entrée, `at` en **liste déroulante** — les six moments sont un vocabulaire
+  fermé (`SOUND_MOMENTS`), jamais une saisie libre : une faute de frappe donne
+  un son qui ne part jamais, et l'avertissement runtime n'arrive que le jour où
+  quelqu'un lance ce combat ;
+- par entrée, **un ou plusieurs fichiers**. Un chemin `res://` se saisit mal à
+  la main : il faut lister ce que contient `Audio/Battle/`, comme la page
+  « Tuiles » liste déjà son atlas. Plusieurs fichiers sur une entrée = des
+  variantes tirées au hasard, à présenter comme telles et non comme une
+  seconde liste de sons ;
+- **signaler les moments hors d'atteinte** : un `approach` ou un `return` sur
+  une action de soin, un `rhythm` sur une action sans séquence. L'éditeur a
+  toute l'information pour le dire, le moteur se contente de ne rien jouer.
+
+Cette page est aussi l'endroit où poser le reste de `_assets/battle/_voices/` —
+une trentaine de répliques dont seule `noah_att1` est aujourd'hui branchée.
 
 Côté serveur, rien de neuf à inventer : `metaRoutes` sert déjà ce genre de
 fichier pour `tiles` et `props`, il suffit de l'appeler trois fois de plus.

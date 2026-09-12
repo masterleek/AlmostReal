@@ -30,6 +30,7 @@ const DescriptionPanel = preload("res://Scripts/Battle/UI/DescriptionPanel.gd")
 const BattleUnit = preload("res://Scripts/Battle/BattleUnit.gd")
 const BattleAssault = preload("res://Scripts/Battle/BattleAssault.gd")
 const RhythmBar = preload("res://Scripts/Battle/UI/RhythmBar.gd")
+const SynergyMeter = preload("res://Scripts/Battle/SynergyMeter.gd")
 const ActionBanner = preload("res://Scripts/Battle/UI/ActionBanner.gd")
 const BattleData = preload("res://Scripts/Battle/BattleData.gd")
 const BattleText = preload("res://Scripts/Battle/UI/BattleText.gd")
@@ -44,6 +45,11 @@ const MINI_CROSS := preload("res://UI/Battle/mini_btn_cross.svg")
 const SFX_MOVE := preload("res://Audio/move.wav")
 const SFX_CONFIRM := preload("res://Audio/validation.wav")
 const SFX_CANCEL := preload("res://Audio/error.wav")
+
+const MUSIC_THEME := preload("res://Audio/battle_theme1.mp3")
+## 75 % du volume nominal. `volume_linear` et pas `volume_db` : la consigne est
+## une proportion, la convertir en −2,5 dB à la main la rendrait illisible.
+const MUSIC_VOLUME := 0.75
 
 const DESIGN_SIZE := Vector2i(480, 270)
 const STAGE_SCALE := 4
@@ -292,6 +298,9 @@ var _assault: BattleAssault
 var _effects: Node2D
 var _rhythm: RhythmBar
 var _banner: ActionBanner
+## Charge de synergie de l'équipe, et son affichage.
+var _synergy := SynergyMeter.new()
+var _synergy_gauge: SynergyGauge
 ## Terrain déplaçable : décor, combattants et effets (cf. _build_field).
 var _field: Node2D
 var _field_tween: Tween
@@ -334,6 +343,19 @@ var _pending_background: Texture2D
 var _sfx_move: AudioStreamPlayer
 var _sfx_confirm: AudioStreamPlayer
 var _sfx_cancel: AudioStreamPlayer
+## Lecteurs des sons portés par les actions (cf. _play_action_sound). Séparés
+## des trois ci-dessus parce que leur flux change à chaque action : le partager
+## couperait le son d'interface en cours. Il y en a PLUSIEURS parce qu'une
+## action peut accrocher deux sons au même moment (un cri et un impact, par
+## exemple) — un lecteur unique jouerait le second par-dessus le premier, donc
+## un seul des deux.
+const SFX_ACTION_VOICES := 4
+var _sfx_action: Array[AudioStreamPlayer] = []
+## Flux déjà chargés, par chemin. `load()` à chaque coup relirait le disque en
+## plein assaut ; un échec est mémorisé sous forme de `null` pour que le
+## fichier manquant ne soit signalé qu'une fois.
+var _sounds: Dictionary = {}
+var _music: AudioStreamPlayer
 
 ## Point d'entrée depuis le worldmap. Appeler AVANT d'ajouter la scène à
 ## l'arbre : _ready() monte l'écran avec ce qui a été fourni ici, ou avec la
@@ -361,6 +383,7 @@ func _ready() -> void:
 	_build_assault()
 	_build_targeting()
 	_build_sfx()
+	_build_music()
 	_build_hud()
 
 func _setup_background() -> void:
@@ -505,6 +528,8 @@ func _build_assault() -> void:
 	_assault.finished.connect(_on_assault_finished)
 	_assault.impact.connect(_shake)
 	_assault.field_shift.connect(_shift_field)
+	_assault.rhythm_resolved.connect(_gain_synergy)
+	_assault.sound_cue.connect(_play_action_sound)
 
 ## Secousse d'impact : une oscillation amortie autour de la position de repos du
 ## Stage. Les deux axes ont des fréquences différentes (l'un en sinus, l'autre en
@@ -526,6 +551,18 @@ func _shake() -> void:
 		0.0, 1.0, SHAKE_DURATION,
 	)
 	_shake_tween.tween_callback(func() -> void: stage.position = base)
+
+## La qualité du rythme alimente la synergie de l'équipe (cf. SynergyMeter). Le
+## gain est ANIMÉ — aperçu blanc puis remplissage — contrairement au réglage
+## direct de `_refresh_synergy`, qui sert au montage.
+func _gain_synergy(judgements: Array) -> void:
+	_synergy.add(judgements)
+	if _synergy_gauge != null:
+		_synergy_gauge.gain_to(_synergy.level, _synergy.progress)
+
+func _refresh_synergy() -> void:
+	if _synergy_gauge != null:
+		_synergy_gauge.set_charge(_synergy.level, _synergy.progress)
 
 ## Fait glisser le terrain vers le camp attaqué. `direction` vaut +1 quand un
 ## allié agit (le terrain part à droite, la caméra se tourne vers les ennemis),
@@ -598,11 +635,10 @@ func _build_hud() -> void:
 		# le mockup. C'est la boucle de préparation (Lot 5) qui pilotera ça.
 		_status_panels.append(panel)
 
-	var synergy: Node2D = SynergyGauge.new()
-	synergy.position = SYNERGY_POS
-	hud.add_child(synergy)
-	# Charge de présentation, alignée sur le mockup (Lot 8 pilotera la vraie).
-	synergy.set_charge(0, 0.72)
+	_synergy_gauge = SynergyGauge.new()
+	_synergy_gauge.position = SYNERGY_POS
+	hud.add_child(_synergy_gauge)
+	_refresh_synergy()
 
 	var synergy_label: RichTextLabel = BattleText.make(
 		"SYN", SYNERGY_LABEL_SIZE, SYNERGY_LABEL_COLOR
@@ -706,12 +742,57 @@ func _refresh_allies() -> void:
 ## Sons repris tels quels du worldmap plutôt que dupliqués : c'est le même
 ## vocabulaire sonore d'un écran à l'autre (déplacement, validation, action
 ## impossible), cf. WorldmapCursor.move_sfx et Hero.validation_sfx/error_sfx.
+## Le quatrième lecteur, lui, part sans flux : le sien lui vient de l'action.
 func _build_sfx() -> void:
-	_sfx_move = _add_sfx(SFX_MOVE)
-	_sfx_confirm = _add_sfx(SFX_CONFIRM)
-	_sfx_cancel = _add_sfx(SFX_CANCEL)
+	_sfx_move = _add_audio(SFX_MOVE)
+	_sfx_confirm = _add_audio(SFX_CONFIRM)
+	_sfx_cancel = _add_audio(SFX_CANCEL)
+	for i in SFX_ACTION_VOICES:
+		_sfx_action.append(_add_audio())
 
-func _add_sfx(stream: AudioStream) -> AudioStreamPlayer:
+## Joue le son qu'une action porte dans sa définition (cf. BattleAssault.
+## _sound_of). La scène ne sait pas de QUELLE action il s'agit — c'est voulu :
+## donner sa voix à un personnage se fait dans `units.json`, pas ici.
+func _play_action_sound(path: String) -> void:
+	if not _sounds.has(path):
+		# `exists` d'abord : `load()` sur un chemin absent hurle dans la console
+		# à CHAQUE coup, alors que le fichier manquant est une faute de frappe
+		# dans le JSON, à signaler une fois.
+		_sounds[path] = ResourceLoader.load(path) if ResourceLoader.exists(path) else null
+		if _sounds[path] == null:
+			push_warning("Son d'action introuvable : %s" % path)
+	var stream: AudioStream = _sounds[path]
+	if stream == null:
+		return
+	# Le lecteur est pris UNE fois : rappeler `_free_voice()` pour le `play()`
+	# rendrait un autre lecteur dès que celui-ci serait occupé.
+	var voice := _free_voice()
+	voice.stream = stream
+	voice.play()
+
+## Un lecteur libre, ou le premier de la liste si les quatre sont occupés. Voler
+## un son en cours vaut mieux que de laisser tomber celui qu'on vient de
+## demander : l'action que le joueur regarde est celle qui doit s'entendre.
+func _free_voice() -> AudioStreamPlayer:
+	for voice in _sfx_action:
+		if not voice.playing:
+			return voice
+	return _sfx_action[0]
+
+## Le thème de combat, lancé dès l'ouverture de l'écran. Rien à faire du côté
+## du worldmap : `BattleLauncher` le passe en `PROCESS_MODE_DISABLED`, ce qui
+## suspend son `AudioStreamPlayer` (vérifié en jeu : `playing` retombe à false
+## et la position reste figée) et le reprend là où il en était à la sortie.
+func _build_music() -> void:
+	_music = _add_audio(MUSIC_THEME)
+	# Le bouclage est une propriété de la RESSOURCE, pas du lecteur : on le
+	# force ici plutôt que de dépendre du réglage d'import, comme le fait déjà
+	# le thème du worldmap (cf. map_loader._ready).
+	_music.stream.loop = true
+	_music.volume_linear = MUSIC_VOLUME
+	_music.play()
+
+func _add_audio(stream: AudioStream = null) -> AudioStreamPlayer:
 	var player := AudioStreamPlayer.new()
 	player.stream = stream
 	add_child(player)

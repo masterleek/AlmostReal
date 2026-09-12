@@ -179,6 +179,41 @@ pas partir en guerre contre des choix déjà faits et documentés dans ce repo :
   pas conçu.
 - `BattleLauncher` masque le HUD **avant** de capturer le fond, puis le décor
   **après** : masquer tout avant la capture ne donne qu'une image vide.
+- **`PROCESS_MODE_DISABLED` suspend aussi un `AudioStreamPlayer`**, alors que
+  la lecture audio ne passe pas par `_process`. Mesuré : le thème du worldmap
+  voit `playing` retomber à `false` et sa position se figer dès l'ouverture du
+  combat, puis la lecture **reprend à cette position** quand `close()` rend la
+  main. Rien à couper ni à relancer à la main pour poser une musique de
+  combat — et deux thèmes ne peuvent pas se superposer.
+- **Le bouclage d'un flux audio est une propriété de la RESSOURCE, pas du
+  lecteur** : `player.stream.loop = true`, et non un réglage sur le
+  `AudioStreamPlayer`. Vaut pour le thème du worldmap comme pour celui du
+  combat. Conséquence : c'est la ressource partagée qu'on modifie, deux
+  lecteurs sur le même fichier ne peuvent pas boucler différemment.
+- **Les sons d'une action vivent dans le JSON de l'action, pas dans le code.**
+  `sounds` se lit au même endroit que `power`, `animation` et `sequence` :
+  `basic_attack` pour une attaque, le catalogue pour un Eko ou un objet. Un
+  `if unit.id == "noah"` dans `BattleAssault` reviendrait à écrire le casting
+  dans le moteur, et fermerait la porte à l'édition depuis MapEditor (Lot 10).
+  Chaque entrée porte son moment (`at`, cf. `SOUND_MOMENTS`) ; plusieurs
+  chemins sur une entrée sont des VARIANTES tirées au hasard, pas des sons
+  joués ensemble.
+- **Un son d'action s'émet UNE fois par action, pas une par cible** : une
+  attaque de groupe est un seul geste, et trois copies du même cri lancées dans
+  la même frame se superposent en bouillie.
+- **Un « moment » nommé dans de la donnée doit être un point RÉEL du code**, et
+  la liste doit être fermée et vérifiée : un `at` inventé est ignoré avec un
+  avertissement plutôt que de faire un son qui ne part jamais sans rien dire.
+  Corollaire mesuré : deux ancres voisines peuvent tomber dans la même frame
+  (`announce` et `rhythm` aujourd'hui) — les garder distinctes est juste, mais
+  il faut le DIRE, sinon on croit à un bug de déclenchement.
+- **Un lecteur audio unique ne joue qu'un son par frame.** Deux sons demandés
+  dans la même frame, le second écrase le premier — silencieusement. D'où le
+  petit pool de lecteurs (`SFX_ACTION_VOICES`) dès qu'une action peut accrocher
+  plusieurs sons au même moment.
+- **`volume_linear` existe depuis Godot 4.4** : une consigne exprimée en
+  pourcentage s'écrit `volume_linear = 0.75`, pas un `volume_db = -2.499`
+  converti à la main et illisible six mois plus tard.
 - **Le texte de combat est suréchantillonné, pas agrandi** (`BattleText.SUPERSAMPLE`) :
   les glyphes sont rasterisés ×4 puis le nœud est contre-échelonné d'autant.
   L'échelle cumulée vaut 1, donc la police sort nette à la résolution de
@@ -511,6 +546,14 @@ pas partir en guerre contre des choix déjà faits et documentés dans ce repo :
   noir d'un côté. Remède : l'agrandir du décalage maximal (ici 12 %) et le
   recentrer — invisible sur une photo floutée sous un voile, et sans quoi il
   faudrait renoncer au mouvement.
+- **`tween_method` fige ses bornes à la CONSTRUCTION du tween, pas à son
+  exécution.** Une file de plusieurs montées ne peut donc pas lire l'état courant
+  pour son point de départ : il faut le suivre dans une variable locale au moment
+  où on bâtit la file. Symptôme rencontré : après un passage de niveau, la jauge
+  de synergie redescendait au lieu de repartir de zéro.
+- **Un aperçu qui précède une animation se pose AVANT l'attente**, jamais dans le
+  premier pas de la file : sinon il apparaît en même temps que ce qu'il devait
+  annoncer, et ne se voit jamais seul.
 - **Une entrée qui « ne fait rien » est un bug, même quand c'est délibéré.**
   La barre de rythme ignorait les touches pressées avant que la note n'entre
   dans sa fenêtre, au nom d'une règle défendable — ne pas consommer une note qui
