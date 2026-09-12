@@ -180,10 +180,54 @@ async function refreshModalList() {
   return renderMapBrowser(modalMapList, modalHandlers);
 }
 
-menuMapsBtn.onclick = openModal;
-menuSystemsBtn.onclick = openSystemsManager;
-menuTextsBtn.onclick = () => openTextsManager({});
-menuBattleBtn.onclick = openBattleManager;
+// L'éditeur a maintenant DEUX plans de travail, et pas un plan de travail plus
+// des fenêtres : la page « Combat » REMPLACE le canevas au lieu de se poser
+// dessus. Elle se parcourt longuement (trois catalogues, des formulaires
+// imbriqués), ce qu'une popup rend pénible — elle vole le défilement et n'a pas
+// la largeur. Les autres entrées du menu, elles, restent des fenêtres au-dessus
+// de la carte : elles se consultent en un coup d'œil, et se rouvrent donc en
+// revenant d'abord au plan de travail.
+const layoutEl = document.getElementById("layout");
+const battlePageEl = document.getElementById("battle-page");
+const battleBackBtn = document.getElementById("battle-back");
+
+function showPage(name) {
+  const battle = name === "battle";
+  layoutEl.classList.toggle("hidden", battle);
+  tabStripEl.classList.toggle("hidden", battle);
+  battlePageEl.classList.toggle("hidden", !battle);
+  menuBattleBtn.classList.toggle("selected", battle);
+}
+
+function onMapPage(action) {
+  return () => {
+    showPage("map");
+    action();
+  };
+}
+
+menuMapsBtn.onclick = onMapPage(openModal);
+menuSystemsBtn.onclick = onMapPage(openSystemsManager);
+menuTextsBtn.onclick = onMapPage(() => openTextsManager({}));
+menuBattleBtn.onclick = async () => {
+  // La page n'est montrée qu'une fois chargée : trois catalogues, les textes,
+  // la liste des sons et le vocabulaire arrivent ensemble, et une page affichée
+  // avant eux clignoterait vide.
+  //
+  // ET UN ÉCHEC SE DIT. Sans ce `catch`, la promesse du gestionnaire partait en
+  // erreur dans le vide : le clic ne produisait RIEN, pas même un message — le
+  // pire des symptômes, puisqu'il ne donne aucune prise pour chercher.
+  setStatus("Chargement des catalogues de combat…");
+  try {
+    await openBattleManager();
+  } catch (err) {
+    setStatus(`Combat : chargement impossible (${err.message}) — serveur à relancer ?`);
+    return;
+  }
+  setStatus("");
+  showPage("battle");
+};
+battleBackBtn.onclick = () => showPage("map");
 modalClose.onclick = closeModal;
 modalOverlay.onclick = (evt) => {
   if (evt.target === modalOverlay) closeModal();

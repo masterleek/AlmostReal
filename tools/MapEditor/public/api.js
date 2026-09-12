@@ -117,6 +117,38 @@ export async function getBattleVocabulary() {
   return res.json();
 }
 
+// Libellés d'affichage des moments de son. Côté OUTIL : le moteur ne connaît
+// que les clés, renommer ne touche ni au jeu ni aux catalogues de Battle/.
+//
+// DÉGRADE au lieu d'échouer. Ces libellés ne sont que de la présentation — sans
+// eux la page affiche les clés, ce qui reste utilisable. Une route absente
+// (serveur pas encore relancé après une mise à jour) rend une page d'erreur
+// HTML, dont `res.json()` lève : sans ce repli, une simple question de
+// présentation empêchait la page entière de s'ouvrir.
+// `stale` dit que le serveur ne connaît PAS cette route — donc qu'il tourne sur
+// une version antérieure de server.js. Les routes de cette livraison
+// (`moment-labels` et le service de `/audio`) sont arrivées ensemble : ce seul
+// signal suffit à savoir que l'écoute ne marchera pas non plus, sans aller le
+// vérifier par une seconde requête.
+export async function getBattleMomentLabels() {
+  const res = await fetch("/api/battle/moment-labels");
+  if (!res.ok) return { labels: {}, stale: true };
+  try {
+    return await res.json();
+  } catch {
+    return { labels: {}, stale: true };
+  }
+}
+
+export async function saveBattleMomentLabels(data) {
+  const res = await fetch("/api/battle/moment-labels", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  return res.json();
+}
+
 export async function playGame(mapId) {
   const res = await fetch("/api/play", {
     method: "POST",

@@ -433,42 +433,20 @@ func _camp_for(entry: Dictionary, kind: String) -> Array[Dictionary]:
 ## C'est ce qui permet de donner sa voix à un personnage sans écrire son nom
 ## dans le code.
 ##
-## Renvoie une liste normalisée d'entrées `{at: String, paths: PackedStringArray}`.
-## Le champ `sound` d'une entrée accepte UN chemin ou PLUSIEURS : plusieurs
-## chemins sont des variantes du même son (`noah_att1/att2/att3`), tirées au
-## hasard, pas des sons à jouer ensemble — pour ça, on met deux entrées.
+## Les sons de l'ACTION, lus au même endroit que sa puissance et sa séquence.
+## La normalisation est commune aux deux familles de sons du combat, elle vit
+## donc dans BattleData ; ici on ne fournit que le vocabulaire qui s'applique.
 func _sounds_of(unit: BattleUnit, action: Dictionary) -> Array:
-	var sounds: Array = []
-	for raw: Variant in _definition_of(unit, action).get("sounds", []):
-		if typeof(raw) != TYPE_DICTIONARY:
-			push_warning("Entrée de son mal formée sur %s : %s" % [unit.id, str(raw)])
-			continue
-		var entry: Dictionary = raw
-		var moment := String(entry.get("at", SOUND_DEFAULT_MOMENT))
-		if not SOUND_MOMENTS.has(moment):
-			push_warning("Moment de son inconnu « %s » sur %s (cf. SOUND_MOMENTS)"
-				% [moment, unit.id])
-			continue
-		var paths := PackedStringArray()
-		var declared: Variant = entry.get("sound", "")
-		# Un seul chemin ou une liste : l'auteur écrit le cas simple sans
-		# crochets, l'éditeur web écrira des listes.
-		for path: Variant in (declared if typeof(declared) == TYPE_ARRAY else [declared]):
-			if String(path) != "":
-				paths.append(String(path))
-		if paths.is_empty():
-			continue
-		sounds.append({"at": moment, "paths": paths})
-	return sounds
+	return BattleData.sounds_of(
+		_definition_of(unit, action), SOUND_MOMENTS, unit.id, SOUND_DEFAULT_MOMENT
+	)
 
 ## Déclenche les sons accrochés à `moment`. Une entrée à plusieurs chemins tire
 ## une variante au hasard.
 func _cue(sounds: Array, moment: String) -> void:
-	for entry: Dictionary in sounds:
-		if String(entry["at"]) != moment:
-			continue
-		var paths: PackedStringArray = entry["paths"]
-		sound_cue.emit(paths[randi() % paths.size()])
+	var path := BattleData.pick(sounds, moment)
+	if path != "":
+		sound_cue.emit(path)
 
 func _effect_of(unit: BattleUnit, action: Dictionary) -> Dictionary:
 	var definition := _definition_of(unit, action)
@@ -507,6 +485,21 @@ func _apply(actor: BattleUnit, target: BattleUnit, effect: Dictionary) -> void:
 	else:
 		target.take_direct_damage(amount)
 		_pop_number(anchor, amount, DamageNumber.Kind.DIRECT)
+	# La voix du BLESSÉ, donc lue sur la fiche de la CIBLE et pas sur l'action —
+	# c'est elle qui crie. Une seule par unité touchée : contrairement aux sons
+	# d'action, qui partent une fois pour tout le geste, celui-ci décrit ce qui
+	# arrive à ce personnage-là.
+	#
+	# Rien si le coup est encaissé à zéro (garde, défense supérieure) : il ne
+	# s'est rien passé qu'on puisse crier.
+	if amount > 0:
+		_cue_unit(target, "hurt")
+
+## Déclenche un son propre à l'unité (cf. BattleData.UNIT_SOUNDS).
+func _cue_unit(unit: BattleUnit, moment: String) -> void:
+	var path := BattleData.pick(BattleData.unit_sounds(unit.id), moment)
+	if path != "":
+		sound_cue.emit(path)
 
 ## Le nombre est instancié ICI et non par DamageNumber : un script sans
 ## `class_name` ne peut pas se référencer lui-même dans une fonction statique,

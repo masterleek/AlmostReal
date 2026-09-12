@@ -1,0 +1,17 @@
+{
+  "_comment": "Libellés d'AFFICHAGE des moments de son, pour la page « Combat » du MapEditor. Le moteur, lui, ne connaît que les clés (cf. SOUND_MOMENTS dans Scripts/Battle/BattleAssault.gd) : renommer ici ne change rien au jeu ni aux catalogues de Battle/. Une clé absente s'affiche telle quelle, et supprimer ce fichier ne casse rien. Les explications affichées en infobulle, elles, ne sont PAS ici : elles sont lues dans les commentaires de SOUND_MOMENTS, pour qu'un moment ajouté au moteur arrive avec la sienne.",
+  "labels": {
+    "announce": "Annonce",
+    "rhythm": "Rythme",
+    "approach": "Approche",
+    "gesture": "Geste",
+    "hit": "Impact",
+    "return": "Retour",
+    "turn": "Début de tour",
+    "menu_attack": "Choix : Attack",
+    "menu_eko": "Choix : Eko",
+    "menu_items": "Choix : Items",
+    "menu_guard": "Choix : Guard",
+    "hurt": "Encaisse"
+  }
+}

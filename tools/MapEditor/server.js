@@ -22,6 +22,13 @@ const BATTLE_DIR = path.join(PROJECT_ROOT, "Battle");
 const AUDIO_DIR = path.join(PROJECT_ROOT, "Audio");
 const BATTLE_ASSAULT_PATH = path.join(SCRIPTS_DIR, "Battle", "BattleAssault.gd");
 const RHYTHM_BAR_PATH = path.join(SCRIPTS_DIR, "Battle", "UI", "RhythmBar.gd");
+const BATTLE_DATA_PATH = path.join(SCRIPTS_DIR, "Battle", "BattleData.gd");
+// Libellés que l'auteur donne aux moments de son. Côté OUTIL et pas côté jeu :
+// le moteur ne connaît que les clés (`hit`, `gesture`…), qui sont son
+// vocabulaire ; renommer ici ne change que ce qui s'affiche dans l'éditeur.
+// Une clé absente retombe sur elle-même, donc supprimer ce fichier ne casse
+// rien — il ne porte que de la présentation.
+const BATTLE_LABELS_PATH = path.join(__dirname, "battle_moment_labels.json");
 
 const app = express();
 app.use(express.json({ limit: "5mb" }));
@@ -29,6 +36,10 @@ app.use(express.static(path.join(__dirname, "public")));
 app.use("/sprites", express.static(SPRITES_DIR));
 app.use("/localization-previews", express.static(PREVIEWS_DIR));
 app.use("/fonts", express.static(FONTS_DIR));
+// Les sons servis tels quels, pour que la page « Combat » puisse faire écouter
+// ce qu'on est en train de choisir. Un chemin `res://Audio/x.wav` se lit donc
+// aussi en `/audio/x.wav`.
+app.use("/audio", express.static(AUDIO_DIR));
 
 function isValidId(id) {
   return /^[a-zA-Z0-9_-]+$/.test(id);
@@ -176,6 +187,7 @@ metaRoutes("/api/texts", TEXTS_PATH, {
 metaRoutes("/api/battle/units", path.join(BATTLE_DIR, "units.json"), { units: {} });
 metaRoutes("/api/battle/ekos", path.join(BATTLE_DIR, "ekos.json"), { ekos: {} });
 metaRoutes("/api/battle/items", path.join(BATTLE_DIR, "items.json"), { items: {} });
+metaRoutes("/api/battle/moment-labels", BATTLE_LABELS_PATH, { labels: {} });
 
 // Fichiers audio disponibles, pour que le choix d'un son d'action soit une
 // LISTE et pas un chemin `res://` tapé à la main — une faute de frappe y donne
@@ -213,6 +225,23 @@ function parseGdStringArray(content, name) {
   return values.length ? values : null;
 }
 
+// Commentaire de fin de ligne de chaque entrée d'un `const … = [...]`, rendu
+// sous la forme { valeur: commentaire }. C'est la MÊME déclaration qui donne la
+// liste et ses explications : le jour où quelqu'un ajoute un moment au moteur,
+// son infobulle arrive avec lui, sans qu'un texte de l'éditeur ait à suivre.
+function parseGdStringArrayNotes(content, name) {
+  const match = content.match(
+    new RegExp(String.raw`const\s+${name}[^=]*=\s*\[([\s\S]*?)\]`)
+  );
+  if (!match) return null;
+  const notes = {};
+  for (const ligne of match[1].split("\n")) {
+    const entry = ligne.match(/"([^"]+)"\s*,?\s*#\s*(.+?)\s*$/);
+    if (entry) notes[entry[1]] = entry[2];
+  }
+  return Object.keys(notes).length ? notes : null;
+}
+
 function parseGdDictionaryKeys(content, name) {
   const match = content.match(
     new RegExp(String.raw`const\s+${name}[^=]*=\s*\{([\s\S]*?)\n\}`)
@@ -231,9 +260,10 @@ async function readGd(filePath) {
 }
 
 app.get("/api/battle/vocabulary", async (req, res) => {
-  const [assault, rhythm] = await Promise.all([
+  const [assault, rhythm, battleData] = await Promise.all([
     readGd(BATTLE_ASSAULT_PATH),
     readGd(RHYTHM_BAR_PATH),
+    readGd(BATTLE_DATA_PATH),
   ]);
   // Un repli est prévu pour chaque liste lue dans le code : si un refactor
   // renomme la constante, la page continue de fonctionner sur la dernière
@@ -241,14 +271,50 @@ app.get("/api/battle/vocabulary", async (req, res) => {
   // éditeur qui tombe en panne muette serait pire que la divergence qu'on
   // cherche à éviter.
   const moments = parseGdStringArray(assault, "SOUND_MOMENTS");
+  const momentNotes = parseGdStringArrayNotes(assault, "SOUND_MOMENTS");
   const notes = parseGdDictionaryKeys(rhythm, "NOTE_ACTIONS");
+  // Deux familles de sons, deux vocabulaires. Ceux d'une ACTION se déclenchent
+  // aux six points du geste de celui qui frappe ; ceux d'une UNITÉ lui
+  // appartiennent (elle encaisse, elle prend la main, elle choisit une
+  // commande) et n'ont pas tous un geste derrière eux. Les mélanger ferait
+  // proposer partout des moments que l'entrée ne peut pas atteindre.
+  const unitMoments = parseGdStringArray(battleData, "UNIT_SOUNDS");
+  const unitMomentNotes = parseGdStringArrayNotes(battleData, "UNIT_SOUNDS");
   res.json({
     moments: moments || ["announce", "rhythm", "approach", "gesture", "hit", "return"],
+    // Repli volontairement PLUS PAUVRE que les commentaires du .gd : il dit
+    // l'essentiel sans prétendre être à jour. Une copie détaillée finirait par
+    // contredire le code, ce qui est exactement ce qu'on évite en le lisant.
+    moment_notes: momentNotes || {
+      announce: "la pastille de l'action s'affiche",
+      rhythm: "la séquence de notes commence",
+      approach: "l'attaquant s'élance vers sa cible",
+      gesture: "le geste part",
+      hit: "l'effet s'applique",
+      return: "l'attaquant repart vers son emplacement",
+    },
+    unit_moments: unitMoments || [
+      "turn", "menu_attack", "menu_eko", "menu_items", "menu_guard", "hurt",
+    ],
+    unit_moment_notes: unitMomentNotes || {
+      turn: "l'unité prend la main",
+      menu_attack: "elle retient « Attack »",
+      menu_eko: "elle ouvre sa liste d'Ekos",
+      menu_items: "elle ouvre le sac",
+      menu_guard: "elle se met en garde",
+      hurt: "elle encaisse des dégâts",
+    },
     notes: notes || ["cross", "circle", "square", "triangle", "up", "down", "left", "right"],
     targets: ["enemy", "enemies", "ally", "allies", "self"],
     damage_types: ["direct", "injury"],
     behaviours: ["random", "aggressive", "defensive", "focused"],
-    parsed: { moments: Boolean(moments), notes: Boolean(notes) },
+    parsed: {
+      moments: Boolean(moments),
+      moment_notes: Boolean(momentNotes),
+      unit_moments: Boolean(unitMoments),
+      unit_moment_notes: Boolean(unitMomentNotes),
+      notes: Boolean(notes),
+    },
   });
 });
 

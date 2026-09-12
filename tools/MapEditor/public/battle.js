@@ -3,6 +3,8 @@ import {
   saveBattleCatalog,
   getBattleSounds,
   getBattleVocabulary,
+  getBattleMomentLabels,
+  saveBattleMomentLabels,
   getTexts,
 } from "./api.js";
 
@@ -19,8 +21,6 @@ import {
 // seule, résolus depuis le catalogue de textes — ouvrir une deuxième porte
 // d'écriture sur le même texte serait le meilleur moyen de les désynchroniser.
 
-const overlay = document.getElementById("battle-modal-overlay");
-const closeBtn = document.getElementById("battle-modal-close");
 const listEl = document.getElementById("battle-list");
 const addBtn = document.getElementById("battle-add-btn");
 const hintEl = document.getElementById("battle-hint");
@@ -34,13 +34,23 @@ const SECTIONS = {
   items: { container: "items", textPrefix: "item", singular: "objet" },
 };
 
+// La section « Sons » n'est pas un catalogue : elle n'a ni conteneur, ni ids
+// Localization, ni bouton « Ajouter » — la liste des moments appartient au
+// moteur. Elle vit donc à part de SECTIONS plutôt que d'y entrer avec des
+// champs vides à tester partout.
+const SOUNDS_SECTION = "sounds";
+
 const ID_PATTERN = /^[a-z0-9_]+$/;
 
 let catalogs = { units: null, ekos: null, items: null };
 let texts = { texts: [], default_language: "en" };
 let sounds = [];
+let momentLabels = { labels: {} };
 let vocabulary = {
   moments: [],
+  moment_notes: {},
+  unit_moments: [],
+  unit_moment_notes: {},
   notes: [],
   targets: [],
   damage_types: [],
@@ -107,21 +117,106 @@ function numberInput(value, onCommit, { min = null, step = 1 } = {}) {
 // objet, une planche sur un Eko) doit pouvoir être remis à « rien », sinon la
 // première ouverture de la page écrit une valeur dans chaque entrée du
 // catalogue et le fichier gonfle de champs que personne n'a demandés.
-function selectInput(values, current, onCommit, { empty = null } = {}) {
+//
+// `labelOf` et `titleOf` séparent la VALEUR de ce qui s'affiche : les moments de
+// son s'écrivent `hit` dans le JSON — c'est le vocabulaire du moteur — mais
+// l'auteur les a renommés pour lui, et chacun porte l'explication de ce qui le
+// déclenche. La valeur écrite ne change jamais, quel que soit l'habillage.
+function selectInput(
+  values, current, onCommit,
+  { empty = null, labelOf = null, titleOf = null, groups = null } = {}
+) {
   const select = el("select", "battle-input");
   if (empty !== null) {
     const option = el("option", null, empty);
     option.value = "";
     select.appendChild(option);
   }
-  for (const value of values) {
-    const option = el("option", null, value);
+  const addOption = (parent, value) => {
+    const option = el("option", null, labelOf ? labelOf(value) : value);
     option.value = value;
-    select.appendChild(option);
+    if (titleOf) option.title = titleOf(value) || "";
+    parent.appendChild(option);
+  };
+  // `groups` range les entrées sous des intertitres. Une liste qui mélange deux
+  // familles doit dire laquelle est laquelle : les libellés seuls
+  // (« Impact », « Encaisse ») ne disent pas lequel s'applique à quoi.
+  if (groups) {
+    for (const group of groups) {
+      const holder = document.createElement("optgroup");
+      holder.label = group.label;
+      for (const value of group.values) addOption(holder, value);
+      select.appendChild(holder);
+    }
+  } else {
+    for (const value of values) addOption(select, value);
   }
   select.value = current ?? "";
-  select.onchange = () => onCommit(select.value);
+  // L'infobulle du `select` suit la sélection : une infobulle posée sur les
+  // `option` seules ne se voit que liste dépliée, c'est-à-dire jamais quand on
+  // relit une fiche.
+  const syncTitle = () => {
+    if (titleOf) select.title = titleOf(select.value) || "";
+  };
+  syncTitle();
+  select.onchange = () => {
+    syncTitle();
+    onCommit(select.value);
+  };
   return select;
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+//  Moments de son
+// ──────────────────────────────────────────────────────────────────────────
+
+// Le moteur ne connaît que les CLÉS (`hit`, `gesture`…) : ce sont elles qui
+// s'écrivent dans les catalogues. Les libellés ne servent qu'ici, et une clé
+// sans libellé s'affiche telle quelle — supprimer le fichier de libellés ne
+// rend donc pas la page inutilisable.
+function momentLabel(key) {
+  return momentLabels.labels?.[key] || key;
+}
+
+// L'explication, elle, vient des commentaires de SOUND_MOMENTS dans
+// BattleAssault.gd : elle décrit un point RÉEL du déroulé de l'assaut, et
+// doit donc suivre le code, pas les renommages de l'auteur.
+function momentNote(key) {
+  const note = vocabulary.moment_notes?.[key] ?? vocabulary.unit_moment_notes?.[key];
+  return note ? `${key} — ${note}` : key;
+}
+
+// Un chemin `res://Audio/x.wav` se sert en `/audio/x.wav` (cf. server.js).
+function audioUrl(path) {
+  return path.startsWith("res://Audio/") ? "/audio/" + path.slice("res://Audio/".length) : null;
+}
+
+// UN SEUL lecteur pour toute la page : deux boutons pressés coup sur coup
+// doivent s'interrompre, pas se superposer — on écoute pour comparer.
+let preview = null;
+
+function playButton(getPath) {
+  const button = el("button", "battle-play", "▶");
+  button.type = "button";
+  button.title = "Écouter";
+  button.onclick = () => {
+    const url = audioUrl(getPath() || "");
+    if (!url) return;
+    if (preview) preview.pause();
+    preview = new Audio(url);
+    // Un échec se DIT, sur le bouton lui-même : sans ça un clic sur un fichier
+    // absent — ou sur un serveur pas encore relancé, qui ne sert pas encore
+    // /audio — ne produit rien du tout, et rien du tout ne donne aucune prise
+    // pour chercher.
+    preview.onerror = () => {
+      button.classList.add("battle-play-failed");
+      button.title = "Lecture impossible : fichier absent, ou serveur à relancer";
+    };
+    button.classList.remove("battle-play-failed");
+    button.title = "Écouter";
+    preview.play().catch(() => {});
+  };
+  return button;
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -193,6 +288,10 @@ function unreachableMoments(action) {
   return unreachable;
 }
 
+function soundLabel(path) {
+  return path.split("/").pop() || path;
+}
+
 function soundPaths(entry) {
   if (Array.isArray(entry.sound)) return entry.sound;
   return entry.sound ? [entry.sound] : [];
@@ -206,90 +305,149 @@ function setSoundPaths(entry, paths) {
   entry.sound = kept.length === 1 ? kept[0] : kept;
 }
 
-function soundsEditor(action, onChanged) {
+// `families` décrit les listes dans lesquelles un son peut vivre. Il y en a
+// DEUX sur une unité — le geste de son attaque de base, et sa voix propre — et
+// une seule sur un Eko ou un objet.
+//
+// L'AFFICHAGE est fusionné, le RANGEMENT non. Pour l'auteur, une unité « a des
+// sons » et le moment choisi suffit à dire de quoi il s'agit : une seule liste,
+// un seul menu déroulant. Mais le moteur, lui, cherche la voix du blessé sur la
+// fiche de l'unité et les sons du geste sur la définition de l'action ; une
+// entrée rangée du mauvais côté serait écartée avec un avertissement. Changer
+// le moment d'une entrée la DÉPLACE donc d'une liste à l'autre, sans que
+// l'auteur ait à savoir qu'il y en a deux.
+// La famille des sons portés par une ACTION (attaque de base, Eko, objet).
+function actionFamily(action) {
+  return {
+    owner: action,
+    moments: vocabulary.moments,
+    label: "Pendant le geste",
+    fallback: "hit",
+    unreachable: unreachableMoments(action),
+  };
+}
+
+// Celle des sons portés par l'UNITÉ, qui ne dépendent d'aucun geste.
+function unitFamily(unit) {
+  return {
+    owner: unit,
+    moments: vocabulary.unit_moments,
+    label: "Voix du personnage",
+    fallback: vocabulary.unit_moments[0],
+  };
+}
+
+function soundsEditor(families, onChanged) {
   const wrap = el("div", "battle-sounds");
-  const list = action.sounds || [];
-  const unreachable = unreachableMoments(action);
+  const groups = families.length > 1
+    ? families.map((f) => ({ label: f.label, values: f.moments }))
+    : null;
+  const allMoments = families.flatMap((f) => f.moments);
+  const familyOf = (moment) =>
+    families.find((f) => f.moments.includes(moment)) || families[0];
 
-  list.forEach((entry, index) => {
-    const row = el("div", "battle-sound-row");
-
-    row.appendChild(
-      selectInput(vocabulary.moments, entry.at || "hit", (value) => {
-        entry.at = value;
-        onChanged();
-      })
-    );
-
-    // Plusieurs fichiers sur une entrée = des VARIANTES tirées au hasard, pas
-    // deux sons joués ensemble. Le libellé le dit, parce que la distinction ne
-    // se devine pas d'une liste.
-    const files = el("div", "battle-sound-files");
-    const paths = soundPaths(entry);
-    paths.forEach((path, fileIndex) => {
-      const line = el("div", "battle-sound-file");
-      line.appendChild(
-        selectInput(sounds, path, (value) => {
-          const next = soundPaths(entry);
-          next[fileIndex] = value;
-          setSoundPaths(entry, next);
-          onChanged();
-        })
-      );
-      const remove = el("button", "battle-chip-remove", "×");
-      remove.type = "button";
-      remove.title = "Retirer ce fichier";
-      remove.onclick = () => {
-        const next = soundPaths(entry);
-        next.splice(fileIndex, 1);
-        setSoundPaths(entry, next);
-        onChanged();
-      };
-      line.appendChild(remove);
-      files.appendChild(line);
+  for (const family of families) {
+    const list = family.owner.sounds || [];
+    list.forEach((entry, index) => {
+      wrap.appendChild(soundRow(family, entry, index, families, {
+        groups, allMoments, familyOf, onChanged,
+      }));
+      const moment = entry.at || family.fallback;
+      if (family.unreachable?.has(moment)) {
+        wrap.appendChild(
+          el(
+            "span",
+            "battle-warning",
+            `« ${momentLabel(moment)} » n'existe pas pour cette action : elle ne l'atteint jamais, le son ne se jouera pas.`
+          )
+        );
+      }
     });
-
-    const addFile = el("button", "battle-chip-add", "+ variante");
-    addFile.type = "button";
-    addFile.title = "Une variante de plus : le moteur en tire une au hasard à chaque fois";
-    addFile.onclick = () => {
-      setSoundPaths(entry, [...soundPaths(entry), sounds[0] || ""]);
-      onChanged();
-    };
-    files.appendChild(addFile);
-    row.appendChild(files);
-
-    const remove = el("button", "modal-map-delete", "🗑");
-    remove.type = "button";
-    remove.title = "Retirer ce son";
-    remove.onclick = () => {
-      action.sounds.splice(index, 1);
-      onChanged();
-    };
-    row.appendChild(remove);
-
-    wrap.appendChild(row);
-
-    if (unreachable.has(entry.at || "hit")) {
-      wrap.appendChild(
-        el(
-          "span",
-          "battle-warning",
-          `« ${entry.at} » n'existe pas pour cette action : elle ne l'atteint jamais, le son ne se jouera pas.`
-        )
-      );
-    }
-  });
+  }
 
   const add = el("button", "battle-chip-add", "+ son");
   add.type = "button";
   add.onclick = () => {
-    if (!action.sounds) action.sounds = [];
-    action.sounds.push({ at: "hit", sound: sounds[0] || "" });
+    const family = families[0];
+    if (!family.owner.sounds) family.owner.sounds = [];
+    family.owner.sounds.push({ at: family.fallback, sound: sounds[0] || "" });
     onChanged();
   };
   wrap.appendChild(add);
   return wrap;
+}
+
+function soundRow(family, entry, index, families, ctx) {
+  const { groups, allMoments, familyOf, onChanged } = ctx;
+  const row = el("div", "battle-sound-row");
+
+  row.appendChild(
+    selectInput(allMoments, entry.at || family.fallback, (value) => {
+      const cible = familyOf(value);
+      entry.at = value;
+      if (cible !== family) {
+        family.owner.sounds.splice(index, 1);
+        if (!cible.owner.sounds) cible.owner.sounds = [];
+        cible.owner.sounds.push(entry);
+        // La liste vidée disparaît du JSON : un `"sounds": []` traînant ferait
+        // gonfler le catalogue d'un champ que personne n'a demandé.
+        if (family.owner.sounds.length === 0) delete family.owner.sounds;
+      }
+      onChanged();
+    }, { labelOf: momentLabel, titleOf: momentNote, groups })
+  );
+
+  // Plusieurs fichiers sur une entrée = des VARIANTES tirées au hasard, pas
+  // deux sons joués ensemble. Le libellé le dit, parce que la distinction ne
+  // se devine pas d'une liste.
+  const files = el("div", "battle-sound-files");
+  const paths = soundPaths(entry);
+  paths.forEach((path, fileIndex) => {
+    const line = el("div", "battle-sound-file");
+    const picker = selectInput(sounds, path, (value) => {
+      const next = soundPaths(entry);
+      next[fileIndex] = value;
+      setSoundPaths(entry, next);
+      onChanged();
+    }, { labelOf: soundLabel });
+    line.appendChild(picker);
+    // Le bouton lit la valeur COURANTE du menu, pas celle capturée au montage :
+    // changer de fichier puis écouter doit faire entendre le nouveau, et le
+    // redessin de la liste n'arrive qu'après la sauvegarde.
+    line.appendChild(playButton(() => picker.value));
+    const remove = el("button", "battle-chip-remove", "×");
+    remove.type = "button";
+    remove.title = "Retirer ce fichier";
+    remove.onclick = () => {
+      const next = soundPaths(entry);
+      next.splice(fileIndex, 1);
+      setSoundPaths(entry, next);
+      onChanged();
+    };
+    line.appendChild(remove);
+    files.appendChild(line);
+  });
+
+  const addFile = el("button", "battle-chip-add", "+ variante");
+  addFile.type = "button";
+  addFile.title = "Une variante de plus : le moteur en tire une au hasard à chaque fois";
+  addFile.onclick = () => {
+    setSoundPaths(entry, [...soundPaths(entry), sounds[0] || ""]);
+    onChanged();
+  };
+  files.appendChild(addFile);
+  row.appendChild(files);
+
+  const remove = el("button", "modal-map-delete", "🗑");
+  remove.type = "button";
+  remove.title = "Retirer ce son";
+  remove.onclick = () => {
+    family.owner.sounds.splice(index, 1);
+    if (family.owner.sounds.length === 0) delete family.owner.sounds;
+    onChanged();
+  };
+  row.appendChild(remove);
+  return row;
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -384,14 +542,19 @@ function actionFields(action, fields, animations, onChanged) {
   return grid;
 }
 
-function actionBlock(title, action, fields, animations, onChanged) {
+// `sounds = false` sur l'attaque de base d'une unité : ses sons rejoignent la
+// liste unique de l'unité, avec la voix du personnage. Un Eko ou un objet, lui,
+// n'a qu'une famille et garde ses sons dans son propre bloc.
+function actionBlock(title, action, fields, animations, onChanged, { sounds = true } = {}) {
   const block = el("div", "battle-block");
   block.appendChild(el("h4", "battle-block-title", title));
   block.appendChild(actionFields(action, fields, animations, onChanged));
   block.appendChild(el("span", "battle-sub-label", "Séquence de rythme"));
   block.appendChild(sequenceEditor(action, onChanged));
-  block.appendChild(el("span", "battle-sub-label", "Sons"));
-  block.appendChild(soundsEditor(action, onChanged));
+  if (sounds) {
+    block.appendChild(el("span", "battle-sub-label", "Sons"));
+    block.appendChild(soundsEditor([actionFamily(action)], onChanged));
+  }
   return block;
 }
 
@@ -495,7 +658,18 @@ function renderUnit(id, unit, refresh) {
 
   if (!unit.basic_attack) unit.basic_attack = {};
   row.appendChild(
-    actionBlock("Attaque de base", unit.basic_attack, ["heal"], sheets, refresh)
+    actionBlock("Attaque de base", unit.basic_attack, ["heal"], sheets, refresh, {
+      sounds: false,
+    })
+  );
+
+  // UNE SEULE liste pour tous les sons du personnage : ceux de son geste
+  // d'attaque et ceux qui lui appartiennent en propre. Elle est posée au niveau
+  // de l'unité et non dans le bloc « Attaque de base », qui n'en porte que la
+  // moitié — c'est le moment choisi, et lui seul, qui dit de quoi il s'agit.
+  row.appendChild(el("span", "battle-sub-label", "Sons"));
+  row.appendChild(
+    soundsEditor([actionFamily(unit.basic_attack), unitFamily(unit)], refresh)
   );
 
   // Ekos connus : des cases à cocher sur le catalogue réel, jamais une saisie
@@ -621,11 +795,114 @@ const HINTS = {
     "Statistiques, attaque de base, Ekos connus et — pour un ennemi — son comportement. Les planches d'animation sont en lecture seule.",
   ekos: "Compétences, partagées par les deux camps : un mode de ciblage se lit relativement à celui qui lance.",
   items: "Mêmes champs que les Ekos, sans coût en PA.",
+  sounds:
+    "Les moments où un son peut partir, en deux familles : ceux du geste d'une action, et ceux qui appartiennent au personnage. Leur LISTE appartient au moteur — on ne peut ni en ajouter ni en retirer d'ici — mais leur nom d'affichage est libre : il ne sert que dans cet éditeur, les catalogues continuent d'écrire la clé.",
 };
+
+// ──────────────────────────────────────────────────────────────────────────
+//  Section « Sons »
+// ──────────────────────────────────────────────────────────────────────────
+
+function renderSounds() {
+  if (!vocabulary.parsed?.moment_notes || !vocabulary.parsed?.unit_moment_notes) {
+    listEl.appendChild(
+      el(
+        "p",
+        "battle-warning",
+        "Certaines explications n'ont pas pu être lues dans le code : ce sont des valeurs de repli, qui peuvent être en retard."
+      )
+    );
+  }
+
+  listEl.appendChild(el("h3", "battle-subtitle", "Moments d'une action"));
+  listEl.appendChild(
+    el("p", "hint", "Les six points du geste de celui qui agit, pendant l'assaut. Ils se règlent sur l'attaque de base d'une unité, sur un Eko ou sur un objet.")
+  );
+  listEl.appendChild(momentTable(vocabulary.moments));
+
+  listEl.appendChild(el("h3", "battle-subtitle", "Voix d'un personnage"));
+  listEl.appendChild(
+    el("p", "hint", "Des moments qui appartiennent à l'unité, pas à son geste : ils se règlent sur la fiche de l'unité, dans « Voix du personnage ».")
+  );
+  listEl.appendChild(momentTable(vocabulary.unit_moments));
+
+  renderSoundLibrary();
+}
+
+function momentTable(keys) {
+  const table = el("div", "battle-moments");
+  for (const key of keys) {
+    const row = el("div", "battle-moment-row");
+    row.appendChild(el("code", "battle-moment-key", key));
+
+    const input = el("input", "battle-input");
+    input.type = "text";
+    input.value = momentLabel(key);
+    input.placeholder = key;
+    input.onchange = async () => {
+      const value = input.value.trim();
+      // Un libellé vidé RETIRE la clé au lieu d'écrire une chaîne vide : le
+      // moment reprend alors son nom de code, ce qui est un état utile (et
+      // lisible dans le fichier), là qu'une chaîne vide donnerait une liste
+      // déroulante avec des entrées sans nom.
+      if (value && value !== key) momentLabels.labels[key] = value;
+      else delete momentLabels.labels[key];
+      await saveBattleMomentLabels(momentLabels);
+      renderList();
+    };
+    row.appendChild(input);
+
+    row.appendChild(
+      el(
+        "span",
+        "battle-moment-note",
+        vocabulary.moment_notes?.[key] || vocabulary.unit_moment_notes?.[key] || "—"
+      )
+    );
+    table.appendChild(row);
+  }
+  return table;
+}
+
+function renderSoundLibrary() {
+  listEl.appendChild(el("h3", "battle-subtitle", "Fichiers disponibles"));
+  listEl.appendChild(
+    el("p", "hint", `${sounds.length} fichiers sous Audio/. Le bouton les joue tels quels, sans le mixage du jeu (ni volume de musique, ni atténuation).`)
+  );
+  const files = el("div", "battle-sound-library");
+  for (const path of sounds) {
+    const row = el("div", "battle-sound-file");
+    row.appendChild(playButton(() => path));
+    const name = el("span", "battle-sound-path", path.slice("res://Audio/".length));
+    name.title = path;
+    row.appendChild(name);
+    files.appendChild(row);
+  }
+  listEl.appendChild(files);
+}
+
+// Le serveur du MapEditor ne se recharge pas tout seul, et il sert `public/`
+// DEPUIS LE DISQUE : après une mise à jour, le navigateur a déjà le nouveau
+// code client alors que les routes, elles, datent du démarrage. Le symptôme est
+// alors incompréhensible — des boutons qui ne font rien — d'où cette bannière,
+// qui nomme la cause et le geste plutôt que de laisser chercher.
+function staleServerBanner() {
+  const banner = el(
+    "p",
+    "battle-warning",
+    "Ce serveur MapEditor tourne sur une version antérieure : il ne sert ni les sons (le bouton ▶ restera sans effet) ni les explications des moments. Relance-le — « npm start » dans tools/MapEditor — puis recharge cette page."
+  );
+  return banner;
+}
 
 function renderList() {
   listEl.innerHTML = "";
   hintEl.textContent = HINTS[activeSection];
+  if (momentLabels.stale) listEl.appendChild(staleServerBanner());
+  // Le bouton n'a pas de sens sur « Sons » : la liste des moments est celle du
+  // moteur, et les fichiers s'ajoutent en les posant dans Audio/.
+  addBtn.classList.toggle("hidden", activeSection === SOUNDS_SECTION);
+  if (activeSection === SOUNDS_SECTION) return renderSounds();
 
   const entries = entriesOf(activeSection);
   const ids = Object.keys(entries);
@@ -689,18 +966,11 @@ for (const tab of tabsEl.querySelectorAll(".battle-tab")) {
     tabsEl.querySelectorAll(".battle-tab").forEach((t) => t.classList.remove("selected"));
     tab.classList.add("selected");
     activeSection = tab.dataset.section;
-    addBtn.textContent = `+ Ajouter ${SECTIONS[activeSection].singular === "unité" ? "une unité" : "un " + SECTIONS[activeSection].singular}`;
+    if (SECTIONS[activeSection]) {
+      addBtn.textContent = `+ Ajouter ${SECTIONS[activeSection].singular === "unité" ? "une unité" : "un " + SECTIONS[activeSection].singular}`;
+    }
     renderList();
   };
-}
-
-closeBtn.onclick = closeManager;
-overlay.onclick = (evt) => {
-  if (evt.target === overlay) closeManager();
-};
-
-function closeManager() {
-  overlay.classList.add("hidden");
 }
 
 export async function openBattleManager() {
@@ -708,18 +978,21 @@ export async function openBattleManager() {
   // visible : ils se citent l'un l'autre (les Ekos connus d'une unité, la cible
   // d'un `focus`, les planches disponibles pour une action), et une section
   // rendue sans les autres afficherait des listes déroulantes vides.
-  const [units, ekos, items, catalogTexts, soundList, vocab] = await Promise.all([
+  const [units, ekos, items, catalogTexts, soundList, vocab, labels] = await Promise.all([
     getBattleCatalog("units"),
     getBattleCatalog("ekos"),
     getBattleCatalog("items"),
     getTexts(),
     getBattleSounds(),
     getBattleVocabulary(),
+    getBattleMomentLabels(),
   ]);
   catalogs = { units, ekos, items };
   texts = catalogTexts;
   sounds = soundList;
   vocabulary = vocab;
+  momentLabels = labels;
+  if (!momentLabels.labels) momentLabels.labels = {};
 
   activeSection = "units";
   tabsEl
@@ -727,5 +1000,4 @@ export async function openBattleManager() {
     .forEach((t) => t.classList.toggle("selected", t.dataset.section === "units"));
   addBtn.textContent = "+ Ajouter une unité";
   renderList();
-  overlay.classList.remove("hidden");
 }

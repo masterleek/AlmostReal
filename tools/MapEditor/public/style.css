@@ -440,7 +440,6 @@ button:hover { border-color: var(--accent); }
 #modal-new-map-btn { width: 100%; }
 
 /* Modal Gestion des tuiles / props */
-#battle-modal-overlay,
 #tiles-modal-overlay,
 #atlas-picker-overlay,
 #props-modal-overlay,
@@ -458,7 +457,6 @@ button:hover { border-color: var(--accent); }
 #atlas-picker-overlay,
 #rect-picker-overlay { z-index: 110; }
 
-#battle-modal-overlay.hidden,
 #tiles-modal-overlay.hidden,
 #atlas-picker-overlay.hidden,
 #props-modal-overlay.hidden,
@@ -952,10 +950,92 @@ button:hover { border-color: var(--accent); }
 }
 
 /* ---------- Page « Combat » : les trois catalogues de Battle/ ---------- */
-/* Plus large que les autres modales : une action porte une dizaine de champs,
-   plus sa séquence et ses sons, et les empiler dans 480 px les rendrait
-   illisibles. */
-#battle-modal { width: 820px; max-width: 92vw; }
+/* Une VRAIE page, pas une fenêtre : elle remplace le plan de travail (#layout
+   et sa barre d'onglets sont masqués). Une action porte une dizaine de champs
+   plus sa séquence et ses sons, et ça se parcourt longuement — une modale y
+   vole le défilement de la page et n'a jamais la largeur qu'il faut. */
+#battle-page {
+  height: calc(100vh - 49px);
+  padding: 16px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-sizing: border-box;
+}
+
+#battle-page.hidden,
+#layout.hidden,
+#tab-strip.hidden,
+#battle-add-btn.hidden { display: none; }
+
+#battle-page-header { display: flex; align-items: center; gap: 12px; }
+#battle-page-header h2 { font-size: 15px; margin: 0; }
+
+.text-btn {
+  background: none;
+  border: 1px solid var(--border);
+  color: #9aa0ab;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.text-btn:hover { color: var(--text); border-color: var(--accent); }
+.menu-item.selected { background: var(--panel); border-color: var(--accent); }
+
+/* Le contenu se centre sans s'étaler : au-delà, un formulaire à deux colonnes
+   oblige l'œil à traverser tout l'écran entre le libellé et son champ. */
+#battle-hint,
+#battle-section-tabs,
+#battle-list,
+#battle-add-btn { width: 100%; max-width: 980px; }
+
+/* ---------- Section « Sons » ---------- */
+
+.battle-moments { display: flex; flex-direction: column; gap: 4px; }
+
+.battle-moment-row {
+  display: grid;
+  grid-template-columns: 110px 180px 1fr;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+}
+
+/* La clé reste VISIBLE à côté du nom choisi : c'est elle qui s'écrit dans les
+   catalogues, et la voir évite de chercher « Impact » dans un JSON. */
+.battle-moment-key { font-family: monospace; font-size: 12px; color: #9aa0ab; }
+.battle-moment-note { font-size: 12px; color: #9aa0ab; }
+
+.battle-subtitle { font-size: 13px; margin: 12px 0 0; }
+
+.battle-sound-library {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 2px 12px;
+}
+
+.battle-sound-path { font-family: monospace; font-size: 12px; color: #9aa0ab; }
+
+.battle-play {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 1;
+  padding: 4px 7px;
+  flex: none;
+}
+
+.battle-play:hover { border-color: var(--accent); }
+/* Même rouge pâle que .battle-warning : c'est la couleur « ça ne va pas » de la page. */
+.battle-play-failed { border-color: #ffb4a2; color: #ffb4a2; }
 
 #battle-section-tabs { display: flex; gap: 4px; }
 

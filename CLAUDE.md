@@ -762,6 +762,42 @@ pas partir en guerre contre des choix déjà faits et documentés dans ce repo :
   existe. Repartir de `set_bus_count(1)` + retrait des effets du Master avant de
   reconstruire. Symptôme : deux compresseurs en série, le fichier .tres les
   montre tous les deux.
+- **Deux familles de sons, deux vocabulaires.** Ceux d'une ACTION se lisent sur
+  sa définition (`basic_attack`, un Eko, un objet) et tombent aux six points du
+  geste de celui qui frappe (`SOUND_MOMENTS`, BattleAssault). Ceux d'une UNITÉ
+  se lisent sur sa fiche et lui appartiennent (`UNIT_SOUNDS`, BattleData : elle
+  encaisse, elle prend la main, elle choisit une commande) — certains n'ont
+  aucun geste derrière eux. Les fondre en une seule liste ferait proposer
+  partout des moments que l'entrée ne peut pas atteindre, et ferait chercher la
+  voix du blessé dans la fiche de celui qui frappe. La NORMALISATION, elle, est
+  commune (`BattleData.sounds_of`) : seul le vocabulaire change.
+- **Factoriser une lecture de donnée : attention au DÉFAUT, pas seulement à la
+  forme.** En remontant le parseur de sons dans BattleData, déduire le moment
+  par défaut de `allowed[0]` a silencieusement changé celui des actions de
+  `hit` (5e de la liste) à `announce`. Une entrée sans `at` aurait alors joué
+  au mauvais moment, sans erreur. Le défaut se passe en paramètre explicite.
+- **Un son posé juste avant une transition de tour arrive après elle.**
+  `_queue_action` (garde) enchaîne sur le tour de l'allié suivant : lire
+  `_active_unit()` après le dispatch désigne déjà l'allié d'APRÈS, et la voix de
+  la garde passe derrière celle du tour. Relever l'acteur avant, et jouer avant
+  l'appel qui fait avancer le tour.
+- **Un déclencheur « à l'ouverture du menu » se répète.** Le menu racine se
+  rouvre aussi sans que le tour change (retour d'une sous-liste, nouvelle
+  manche) : la réplique de début de tour se posait donc plusieurs fois. Le
+  garde-fou est un « dernier allié annoncé », pas un drapeau par appelant — il
+  couvre les trois entrées sans qu'aucune ait à savoir dans quel cas elle est.
+- **Vérifier un son déclenché : numéroter les images.** Une boucle qui guette un
+  changement de PV le voit une image APRÈS l'émission du son, ce qui fait lire
+  « voix de Noah » juste sous « Iris perd des PV » et croire à une erreur de
+  cible. Horodater les deux en numéro d'image lève l'ambiguïté d'un coup.
+- **Le MapEditor sert `public/` DEPUIS LE DISQUE, mais ses routes datent du
+  démarrage.** Après une livraison qui ajoute une route, le navigateur a déjà le
+  nouveau code client alors que le serveur, lui, répond 404 — et le symptôme est
+  muet : des boutons qui ne font rien. Deux remèdes, tous deux nécessaires : ce
+  qui n'est que de la présentation DÉGRADE au lieu de bloquer, et la page
+  DÉTECTE la dérive (une route de la livraison absente) pour l'annoncer avec le
+  geste à faire. Un `async` de gestionnaire d'événement sans `catch` transforme
+  n'importe quelle erreur de chargement en clic sans effet.
 - **Reconstruire une liste de nœuds : `remove_child()` AVANT `queue_free()`.**
   La libération est différée à la fin de la frame, donc les anciens nœuds
   restent enfants — et donc affichés par-dessus les nouveaux — le temps d'une

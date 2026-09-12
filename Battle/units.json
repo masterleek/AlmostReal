@@ -1,5 +1,5 @@
 {
-  "_comment": "Catalogue des unités de combat. Lu au runtime par Scripts/Battle/BattleData.gd, sur le modèle de Sprites/tile_meta.json : la donnée vit en JSON pour être éditable depuis MapEditor plus tard, sans recompiler ni toucher aux scènes. Aucun libellé ici — les noms passent par Localization (id 'unit.<id>.name'). L'animation 'move_back' (retour a l'emplacement apres une attaque) est FACULTATIVE : sans elle l'unite revient sur sa planche de repos. Aucun personnage n'en a aujourd'hui — le fichier livre sous ce nom etait un export errone (cf. docs/plan_systeme_combat.md). Le bloc 'behaviour' ne concerne que les ennemis : il dit comment ils choisissent leur action, faute de phase de preparation. Le tableau 'ekos' liste les compétences connues, définies dans ekos.json. 'basic_attack' decrit la commande Attack de l'unite (puissance, type de degats, et 'animation' = le nom de la planche a jouer dans son bloc 'animations'). Sa nature de degats est fixee par l'auteur : Noah frappe DIRECT, Iris inflige des BLESSURES. 'sounds' est la liste des sons de l'action. Chaque entree : 'at' = le moment de l'assaut ou le son part (announce | rhythm | approach | gesture | hit | return ; 'hit' par defaut, cf. SOUND_MOMENTS dans Scripts/Battle/BattleAssault.gd), et 'sound' = UN chemin res:// ou PLUSIEURS. Plusieurs chemins sont des VARIANTES du meme son (noah_att1/att2/att3), tirees au hasard ; pour jouer deux sons au meme moment, mettre deux entrees. 'approach' et 'return' n'existent que pour une action offensive, 'rhythm' que pour une action qui a une 'sequence' : un son accroche a un moment que l'action n'atteint pas ne se joue jamais. Les sons vivent sur l'action, pas dans le code, pour qu'un Eko ou un objet puisse avoir les siens. 'sequence' est la suite de notes de la barre de rythme (cf. Scripts/Battle/UI/RhythmBar.gd) : cross | circle | square | triangle | up | down | left | right. PROVISOIRE comme le reste de l'equilibrage. ; ses valeurs sont PROVISOIRES, l'auteur n'a pas chiffre l'equilibrage. Chaque animation peut restreindre la planche à un extrait ('first_frame') et déclarer son 'anchor' — le point de la cellule qui se pose sur l'emplacement au sol, relevé sur l'ellipse d'ombre pour que le personnage ne saute pas en changeant de planche (cf. Scripts/Battle/Stage/UnitSprite.gd).",
+  "_comment": "Catalogue des unités de combat. Lu au runtime par Scripts/Battle/BattleData.gd, sur le modèle de Sprites/tile_meta.json : la donnée vit en JSON pour être éditable depuis MapEditor plus tard, sans recompiler ni toucher aux scènes. Aucun libellé ici — les noms passent par Localization (id 'unit.<id>.name'). L'animation 'move_back' (retour a l'emplacement apres une attaque) est FACULTATIVE : sans elle l'unite revient sur sa planche de repos. Aucun personnage n'en a aujourd'hui — le fichier livre sous ce nom etait un export errone (cf. docs/plan_systeme_combat.md). Le bloc 'behaviour' ne concerne que les ennemis : il dit comment ils choisissent leur action, faute de phase de preparation. Le tableau 'ekos' liste les compétences connues, définies dans ekos.json. 'basic_attack' decrit la commande Attack de l'unite (puissance, type de degats, et 'animation' = le nom de la planche a jouer dans son bloc 'animations'). Sa nature de degats est fixee par l'auteur : Noah frappe DIRECT, Iris inflige des BLESSURES. 'sounds' est la liste des sons de l'action. Chaque entree : 'at' = le moment de l'assaut ou le son part (announce | rhythm | approach | gesture | hit | return ; 'hit' par defaut, cf. SOUND_MOMENTS dans Scripts/Battle/BattleAssault.gd), et 'sound' = UN chemin res:// ou PLUSIEURS. Plusieurs chemins sont des VARIANTES du meme son (noah_att1/att2/att3), tirees au hasard ; pour jouer deux sons au meme moment, mettre deux entrees. 'approach' et 'return' n'existent que pour une action offensive, 'rhythm' que pour une action qui a une 'sequence' : un son accroche a un moment que l'action n'atteint pas ne se joue jamais. Les sons vivent sur l'action, pas dans le code, pour qu'un Eko ou un objet puisse avoir les siens. Un bloc 'sounds' peut aussi vivre sur l'UNITE elle-meme, a cote de 'stats' et 'animations' : meme forme ('at' + 'sound'), mais un AUTRE vocabulaire de moments (cf. UNIT_SOUNDS dans Scripts/Battle/BattleData.gd : turn | menu_attack | menu_eko | menu_items | menu_guard | hurt). Ce sont les sons qui appartiennent au personnage et non a son geste — il encaisse un coup, il prend la main, il choisit une commande — et ils n'ont pas de defaut : une entree sans 'at' est ecartee avec un avertissement. 'sequence' est la suite de notes de la barre de rythme (cf. Scripts/Battle/UI/RhythmBar.gd) : cross | circle | square | triangle | up | down | left | right. PROVISOIRE comme le reste de l'equilibrage. ; ses valeurs sont PROVISOIRES, l'auteur n'a pas chiffre l'equilibrage. Chaque animation peut restreindre la planche à un extrait ('first_frame') et déclarer son 'anchor' — le point de la cellule qui se pose sur l'emplacement au sol, relevé sur l'ellipse d'ombre pour que le personnage ne saute pas en changeant de planche (cf. Scripts/Battle/Stage/UnitSprite.gd).",
   "units": {
     "noah": {
       "portrait": "res://UI/Battle/battle_face_noah.png",
@@ -113,7 +113,29 @@
             "sound": "res://Audio/Battle/Voices/noah_lets_go.wav"
           }
         ]
-      }
+      },
+      "sounds": [
+        {
+          "at": "turn",
+          "sound": "res://Audio/Battle/Voices/noah_its_my_turn.wav"
+        },
+        {
+          "at": "hurt",
+          "sound": [
+            "res://Audio/Battle/Voices/noah_hit.wav",
+            "res://Audio/Battle/Voices/noah_hit2.wav",
+            "res://Audio/Battle/Voices/noah_hit3.wav"
+          ]
+        },
+        {
+          "at": "menu_attack",
+          "sound": "res://Audio/Battle/Voices/noah_lets_start.wav"
+        },
+        {
+          "at": "menu_eko",
+          "sound": "res://Audio/Battle/Voices/noah_now_then.wav"
+        }
+      ]
     },
     "iris": {
       "portrait": "res://UI/Battle/battle_face_iris.png",

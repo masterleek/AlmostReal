@@ -57,6 +57,16 @@ const SFX_CANCEL := preload("res://Audio/error.wav")
 ##
 ## Les sons de MENU restent sur Master : ils doivent pouvoir claquer par-dessus
 ## la musique sans la faire plonger à chaque mouvement de curseur.
+## Les quatre moments de voix du menu racine, et celui du tour. Les valeurs
+## appartiennent à BattleData.UNIT_SOUNDS ; les nommer ici évite de recopier des
+## chaînes nues dans un `match` — une faute de frappe n'y lèverait rien, elle
+## rendrait simplement le personnage muet.
+const SOUND_TURN := "turn"
+const SOUND_MENU_ATTACK := "menu_attack"
+const SOUND_MENU_EKO := "menu_eko"
+const SOUND_MENU_ITEMS := "menu_items"
+const SOUND_MENU_GUARD := "menu_guard"
+
 const BUS_MUSIC := "Music"
 const BUS_VOICE := "Voice"
 
@@ -367,6 +377,8 @@ var _field: Node2D
 ## Vrai tant que le cadrage de préparation est en place. Sert à savoir si un
 ## déplacement du curseur de ciblage doit refaire suivre la vue : une attaque
 ## ordinaire ne cadre rien, seul le choix d'un Eko ouvre cette séquence.
+## Allié dont le tour a déjà été annoncé à haute voix (cf. _announce_turn).
+var _announced_ally := -1
 var _framing := false
 ## Pose d'origine du fond capturé, relevée au montage plutôt que recalculée :
 ## `_shift_field` la reprend pour le faire glisser avec le terrain.
@@ -449,6 +461,9 @@ func _ready() -> void:
 	_build_targeting()
 	_build_audio()
 	_build_hud()
+	# Le premier allié n'entre pas par `_open_root_menu` : son menu est monté
+	# avec le HUD. Son tour s'annonce donc ici, une fois l'audio en place.
+	_announce_turn()
 
 func _setup_background() -> void:
 	background_dim.size = Vector2(DESIGN_SIZE * STAGE_SCALE)
@@ -890,18 +905,32 @@ func _on_menu_moved(_index: int) -> void:
 ## « Attack » vise directement un ennemi ; « Eko » et « Items » passent d'abord
 ## par leur sous-liste. « Guard » n'a pas encore d'action (Lot 5), elle se
 ## contente du son de validation.
+## La voix ne part QUE si la commande a abouti : « Eko » sur une unité qui n'en
+## connaît aucun, ou « Attack » sans cible debout, sonnent l'erreur — y ajouter
+## une réplique enjouée donnerait deux messages contradictoires dans la même
+## frame.
 func _on_menu_confirmed(id: String) -> void:
+	# Relevé AVANT le dispatch : la garde fait passer le tour dans la foulée, et
+	# `_active_unit()` désignerait alors l'allié SUIVANT.
+	var actor := _active_unit()
 	match id:
 		MENU_ATTACK:
-			_start_action({"source": BattleData.SOURCE_ATTACK, "target": "enemy"}, _menu)
+			if _start_action({"source": BattleData.SOURCE_ATTACK, "target": "enemy"}, _menu):
+				_play_unit_sound(actor, SOUND_MENU_ATTACK)
 		MENU_EKO:
-			_open_sublist(BattleData.SOURCE_EKO, _eko_entries())
+			if _open_sublist(BattleData.SOURCE_EKO, _eko_entries()):
+				_play_unit_sound(actor, SOUND_MENU_EKO)
 		MENU_ITEMS:
-			_open_sublist(BattleData.SOURCE_ITEM, _item_entries())
+			if _open_sublist(BattleData.SOURCE_ITEM, _item_entries()):
+				_play_unit_sound(actor, SOUND_MENU_ITEMS)
 		MENU_GUARD:
 			# La garde ne vise personne et ne coûte rien : elle est retenue
 			# immédiatement, sans passer par le ciblage.
 			_sfx_confirm.play()
+			# AVANT `_queue_action`, qui enchaîne sur le tour de l'allié suivant :
+			# posée après, la réplique de la garde passerait derrière celle du
+			# tour, et on entendrait les deux personnages dans le désordre.
+			_play_unit_sound(actor, SOUND_MENU_GUARD)
 			_queue_action({"source": BattleData.SOURCE_GUARD, "target": "self", "cost": 0}, -1)
 		_:
 			_sfx_confirm.play()
@@ -949,12 +978,14 @@ func _item_entries() -> Array[Dictionary]:
 		})
 	return entries
 
-func _open_sublist(kind: String, entries: Array[Dictionary]) -> void:
+## Renvoie false si la liste est vide, donc si rien ne s'est ouvert (cf.
+## _start_action pour la même convention).
+func _open_sublist(kind: String, entries: Array[Dictionary]) -> bool:
 	if entries.is_empty():
 		# Aucun Eko connu, ou sac vide : mieux vaut le son d'erreur qu'une
 		# liste vide où la touche « Back » serait la seule issue.
 		_sfx_cancel.play()
-		return
+		return false
 	_sfx_confirm.play()
 	_sublist_kind = kind
 	_state = State.SUBLIST
@@ -970,6 +1001,7 @@ func _open_sublist(kind: String, entries: Array[Dictionary]) -> void:
 	# agit. `kind` ne sert plus à trancher ici — il reste le sujet de la liste,
 	# et c'est le ciblage qui décide ensuite où la vue se déplace.
 	_focus_field(_focus_point_of(_active_sprite()))
+	return true
 
 func _close_sublist() -> void:
 	# L'état AVANT tout le reste : _set_units_dimmed rafraîchit les combattants,
@@ -986,6 +1018,26 @@ func _close_sublist() -> void:
 	_menu.visible = true
 	_menu.active = true
 	_set_legend_cancel(_root_cancel_prompt())
+
+## Joue le son que l'UNITÉ porte pour `moment` (cf. BattleData.UNIT_SOUNDS).
+## Silencieux si l'unité n'en déclare pas : toutes n'ont pas de voix, et c'est
+## l'état normal du catalogue aujourd'hui.
+func _play_unit_sound(unit: BattleUnit, moment: String) -> void:
+	if unit == null or moment == "":
+		return
+	_audio.play_path(BattleData.pick(BattleData.unit_sounds(unit.id), moment))
+
+## Annonce le tour de l'allié actif — UNE fois par changement d'allié.
+##
+## Le garde-fou est nécessaire : le menu racine se rouvre aussi sans que le tour
+## change (retour d'une sous-liste, nouvelle manche), et la réplique se
+## répéterait. Il couvre du même coup les trois appelants de `_open_root_menu`
+## sans qu'aucun ait à savoir dans quel cas il se trouve.
+func _announce_turn() -> void:
+	if _active_ally == _announced_ally:
+		return
+	_announced_ally = _active_ally
+	_play_unit_sound(_active_unit(), SOUND_TURN)
 
 func _show_description(id: String) -> void:
 	if id == "":
@@ -1032,11 +1084,16 @@ func _on_sublist_cancelled() -> void:
 ##  CIBLAGE
 ## ──────────────────────────────────────────────────────────────────────────
 
-func _start_action(pending: Dictionary, list: CommandMenu) -> void:
+## Renvoie false si l'action n'a pas pu s'engager — c'est ce qui distingue un
+## choix RETENU d'un clic sans effet, et la voix du personnage ne doit partir que
+## dans le premier cas.
+func _start_action(pending: Dictionary, list: CommandMenu) -> bool:
 	if not _open_targeting(pending, list):
 		# Plus rien à viser : le son d'erreur vaut mieux qu'un écran de ciblage
 		# vide.
 		_sfx_cancel.play()
+		return false
+	return true
 
 ## `list` est la liste qui porte l'action retenue : c'est elle qui se réduit à
 ## sa seule entrée pour aller se poser à côté de la cible.
@@ -1370,6 +1427,7 @@ func _open_root_menu() -> void:
 	_set_units_dimmed(false, false)
 	_refresh_allies()
 	_set_legend_cancel(_root_cancel_prompt())
+	_announce_turn()
 
 ## Tous les alliés vivants ont choisi : la préparation est finie, l'assaut
 ## commence. L'écran se vide de tout ce qui appelle une entrée — plus de menu,
