@@ -118,8 +118,12 @@ static func make(
 	label.add_theme_font_size_override("bold_font_size", font_size * SUPERSAMPLE)
 	label.add_theme_color_override("default_color", color)
 
-	# `outline_size` est donné en unités de design, comme tout le reste ; il
-	# est ensuite converti dans l'espace suréchantillonné du nœud.
+	# `outline_size` est converti dans l'espace suréchantillonné du nœud. Ce
+	# n'est PAS une épaisseur en pixels de design pour autant : Godot rend un
+	# contour environ quatre fois plus fin que le `outline_size` qu'il reçoit.
+	# Mesuré en jeu sur un chiffre de dégâts : 2 donne 0,5 px de design, 8 en
+	# donne 2,0. C'est ce rapport qui explique l'UI_OUTLINE_SIZE de 3,0
+	# ci-dessus et les 0,75 px que son commentaire annonce.
 	if outline_size < 0:
 		set_outlined(label, font_size, true)
 	else:

@@ -886,6 +886,13 @@ pas partir en guerre contre des choix déjà faits et documentés dans ce repo :
   posées sur l'image, qui ne reçoivent plus rien. Et un drapeau « ça a glissé »,
   lu au clic (qui arrive après le relâchement), évite qu'un déplacement de la
   planche ne se solde par une sélection involontaire.
+- **`outline_size` n'est pas une épaisseur en pixels : Godot rend un contour
+  ~4× plus fin que la valeur reçue.** Mesuré sur les chiffres de dégâts, à
+  l'écran et non en relisant le code : 2 donne 0,5 px de design, 8 en donne 2,0.
+  Le commentaire de `BattleText.make` annonçait l'inverse (« donné en unités de
+  design »), et c'est pourtant ce rapport qui explique son `UI_OUTLINE_SIZE` de
+  3,0 pour les 0,75 px qu'il revendique. Toute épaisseur de contour se règle
+  donc PAR MESURE sur une capture, jamais en recopiant la valeur voulue.
 - **Une valeur « légère » que les maquettes ne montrent pas est un CHOIX, et
   doit se dire comme tel.** Les 12 px dont la bande noire haute descend pendant
   l'assaut ne sont relevés nulle part — les deux maquettes la posent au même
