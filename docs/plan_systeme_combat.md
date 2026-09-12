@@ -1157,6 +1157,24 @@ Un `kind` inconnu retombe sur `random` **avec un avertissement** : une faute de
 frappe ne doit pas faire planter un combat, mais elle ne doit pas passer
 inaperçue non plus.
 
+**L'action d'un ennemi est RETENUE, comme celle d'un allié.** Elle était
+décidée à la volée, à l'instant où son tour arrivait, et n'était donc jamais
+posée sur l'unité : tout ce qui se joue au moment de la rétention lui échappait.
+Deux conséquences, corrigées ensemble en décidant les actions ennemies à
+l'ouverture de l'assaut (`BattleAssault._commit_enemy_actions`) :
+
+- un ennemi `defensive` **ne levait jamais sa garde** — `_raise_guards` ne
+  parcourait que les alliés, et `_resolve` sort avant d'y toucher sur un
+  commentaire (« son effet est déjà en place ») qui n'était vrai que pour un
+  allié. Tout le comportement `defensive` était donc inerte ;
+- un ennemi ne **payait pas ses PA** en lançant un Eko, faute de quoi
+  `eko_chance` en aurait fait une source infinie dès qu'un ennemi aurait des PA.
+
+Décider à l'ouverture du tour plutôt qu'à l'instant d'agir suit le même
+principe que l'ordre d'agilité, calculé une fois et non recalculé : le tour se
+décide quand il s'ouvre. Une cible tombée entre-temps était déjà gérée — cette
+machinerie existait précisément pour les actions retenues à l'avance.
+
 Conséquence sur le modèle de ciblage, et c'est le vrai changement : un mode de
 ciblage est désormais lu **relativement à celui qui agit**. « ally » désigne son
 propre camp, « enemy » celui d'en face. C'est ce qui permet aux deux camps de

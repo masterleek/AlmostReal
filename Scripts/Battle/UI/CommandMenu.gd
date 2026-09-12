@@ -366,7 +366,11 @@ func setup(entries: Array[Dictionary], selected: int = 0) -> void:
 ## n'inflige RIEN — un soin n'est ni « blessure » ni « direct », et lui coller
 ## l'une des deux couleurs annoncerait des dégâts qu'elle ne fait pas. Sa rangée
 ## reste donc sans icône en attendant que l'auteur tranche.
-## l'affichage : une donnée fautive doit se voir, pas casser l'écran.
+##
+## Une nature INCONNUE rend `null` elle aussi, sans avertir : le champ vient du
+## JSON et l'avertissement est déjà émis par BattleData à la lecture. La rangée
+## sort alors sans icône plutôt que d'emporter l'affichage — une donnée fautive
+## doit se voir, pas casser l'écran.
 func _damage_icon(damage_type: String) -> Texture2D:
 	match damage_type:
 		"injury":

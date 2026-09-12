@@ -143,6 +143,7 @@ func setup(
 
 func run() -> void:
 	_rhythm.open()
+	_commit_enemy_actions()
 	_raise_guards()
 	for entry in _order():
 		var unit: BattleUnit = entry["unit"]
@@ -158,14 +159,38 @@ func run() -> void:
 	_rhythm.close()
 	finished.emit(_outcome())
 
+## Les ennemis n'ont pas de phase de préparation : leur action est décidée ICI,
+## à l'ouverture de l'assaut, et RETENUE sur l'unité exactement comme celle d'un
+## allié l'a été au menu. C'est ce qui fait que tout ce qui se joue au moment de
+## la rétention — payer les PA, lever la garde — vaut aussi pour eux.
+##
+## Décidée à l'ouverture du tour plutôt qu'à l'instant où l'ennemi agit : c'est
+## le même choix que pour `_order()`, le tour se décide quand il s'ouvre. Une
+## cible tombée entre-temps est déjà gérée (cf. `_living_targets`), machinerie
+## qui existe précisément pour les actions retenues à l'avance.
+func _commit_enemy_actions() -> void:
+	var own := _standing(_enemies)
+	var foes := _standing(_allies)
+	for entry in _enemies:
+		var unit := _unit_of(entry)
+		if not unit.is_alive():
+			continue
+		unit.action = EnemyBehaviour.choose(unit, own, foes)
+		unit.spend_ap(int(unit.action.get("cost", 0)))
+
 ## Les gardes sont posées AVANT le premier coup, pas au moment où l'unité
 ## aurait agi. Autrement, une unité lente se ferait frapper à découvert par tous
-## ceux qui la devancent : la garde a été choisie pendant la préparation, elle
-## vaut pour le tour entier.
+## ceux qui la devancent : la garde a été choisie pour le tour, elle vaut pour
+## le tour entier.
+##
+## LES DEUX CAMPS, depuis que l'action d'un ennemi est retenue elle aussi. Tant
+## que seuls les alliés étaient parcourus, un ennemi « defensive » passait son
+## tour sans jamais lever sa garde : `_resolve` sort avant d'y toucher, sur un
+## commentaire qui n'était vrai que pour un allié.
 func _raise_guards() -> void:
-	for entry in _allies:
+	for entry in _allies + _enemies:
 		var unit: BattleUnit = entry["unit"]
-		if unit.is_alive() and String(unit.action.get("source", "")) == "guard":
+		if unit.is_alive() and String(unit.action.get("source", "")) == BattleData.SOURCE_GUARD:
 			unit.guarding = true
 
 ## Ordre d'agilité décroissante sur tous les combattants vivants. À égalité, les
@@ -202,7 +227,7 @@ func _resolve(entry: Dictionary) -> void:
 	var targets := _living_targets(entry, action)
 	# La garde n'a rien à exécuter : son effet est déjà en place, et elle ne
 	# vise personne. Elle ne coûte pas non plus de temps à l'assaut.
-	if String(action.get("source", "")) == "guard" or targets.is_empty():
+	if String(action.get("source", "")) == BattleData.SOURCE_GUARD or targets.is_empty():
 		return
 
 	var effect := _effect_of(unit, action)
@@ -304,10 +329,10 @@ func _run_rhythm(
 ## maquette du tour ennemi.
 func _text_id_of(unit: BattleUnit, action: Dictionary) -> String:
 	var id := String(action.get("id", ""))
-	match String(action.get("source", "attack")):
-		"eko":
+	match String(action.get("source", BattleData.SOURCE_ATTACK)):
+		BattleData.SOURCE_EKO:
 			return "eko.%s.name" % id
-		"item":
+		BattleData.SOURCE_ITEM:
 			return "item.%s.name" % id
 	return "battle.menu.attack"
 
@@ -341,10 +366,11 @@ func _gesture_for(unit: BattleUnit, action: Dictionary) -> Dictionary:
 ## du terrain tel qu'il est quand il agit, coups déjà portés compris. C'est ce
 ## qui permet à un comportement « agressif » d'achever une cible que ses
 ## congénères viennent d'entamer.
+## L'action retenue, quel que soit le camp : celle choisie au menu pour un allié,
+## celle décidée par `_commit_enemy_actions` pour un ennemi. Les deux vivent au
+## même endroit, et le reste de l'assaut n'a plus à savoir à qui il a affaire.
 func _action_of(entry: Dictionary) -> Dictionary:
-	if _allies.has(entry):
-		return _unit_of(entry).action
-	return EnemyBehaviour.choose(_unit_of(entry), _standing(_enemies), _standing(_allies))
+	return _unit_of(entry).action
 
 ## Cibles encore debout. Une cible tombée entre la validation et l'exécution est
 ## remplacée par une autre du même camp plutôt que de faire perdre son tour à
@@ -375,13 +401,6 @@ func _standing(camp: Array[Dictionary]) -> Array[BattleUnit]:
 			units.append(unit)
 	return units
 
-## Modes de ciblage qui désignent le PROPRE CAMP de celui qui agit. Même liste
-## que BattleScene.ALLY_TARGETS, mais lue en relatif : pour l'équipe « ally »
-## veut dire l'équipe, pour un cactoon il veut dire les cactoons.
-##
-## C'est ce qui permet aux deux camps de partager UN SEUL catalogue d'Ekos : un
-## soin déclaré « ally » soigne le camp de celui qui le lance, sans qu'il faille
-## deux versions de chaque compétence.
 ## MOMENTS DE L'ASSAUT auxquels un son peut s'accrocher (champ `at`). Ce sont
 ## des points RÉELS de `_resolve`, pas une liste de souhaits : chacun est un
 ## `_cue()` posé dans le déroulé ci-dessus.
@@ -400,12 +419,11 @@ const SOUND_MOMENTS: PackedStringArray = [
 ]
 const SOUND_DEFAULT_MOMENT := "hit"
 
-const OWN_CAMP_TARGETS: PackedStringArray = ["ally", "allies", "self"]
 
 ## Camp visé par un mode de ciblage, du point de vue de `entry`.
 func _camp_for(entry: Dictionary, kind: String) -> Array[Dictionary]:
 	var caster_is_ally := _allies.has(entry)
-	var aims_at_own_camp := kind in OWN_CAMP_TARGETS
+	var aims_at_own_camp := BattleData.targets_own_camp(kind)
 	return _allies if caster_is_ally == aims_at_own_camp else _enemies
 
 ## Ce que l'action inflige ou rend : {offensive, power, heal, damage_type}.
@@ -462,18 +480,10 @@ func _effect_of(unit: BattleUnit, action: Dictionary) -> Dictionary:
 		"injury": String(definition.get("damage_type", "direct")) == "injury",
 	}
 
-## Définition chiffrée de l'action, prise dans le catalogue qui la décrit.
-## L'attaque de base n'a pas de catalogue : elle vit dans la fiche de l'unité
-## (`basic_attack`), pour qu'un ennemi comme un allié puisse frapper avec sa
-## propre puissance.
+## Raccourci de lecture : la règle elle-même vit dans BattleData, partagée avec
+## la phase de préparation.
 func _definition_of(unit: BattleUnit, action: Dictionary) -> Dictionary:
-	var id := String(action.get("id", ""))
-	match String(action.get("source", "attack")):
-		"eko":
-			return BattleData.get_eko(id)
-		"item":
-			return BattleData.get_item(id)
-	return BattleData.get_unit(unit.id).get("basic_attack", {})
+	return BattleData.definition_of(unit.id, action)
 
 func _apply(actor: BattleUnit, target: BattleUnit, effect: Dictionary) -> void:
 	var anchor := _head_of(target)

@@ -146,9 +146,6 @@ func close() -> void:
 	# le sélecteur n'a fait que le garder sous la main.
 	_targets = []
 
-func get_selected_index() -> int:
-	return _selected
-
 ## Point « pieds » de la cible courante, dans le repère du terrain. Sert à
 ## l'appelant pour aligner ce qu'il affiche lui-même sur la cible — la pastille
 ## de l'action retenue, notamment.

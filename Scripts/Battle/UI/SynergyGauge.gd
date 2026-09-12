@@ -17,6 +17,8 @@ const LEVEL_PLATE := preload("res://UI/Battle/round_synergie.svg")
 
 const BattleText = preload("res://Scripts/Battle/UI/BattleText.gd")
 const PixelScale = preload("res://Scripts/Battle/UI/PixelScale.gd")
+## Uniquement pour ses TEMPS d'animation, pas pour son dessin (cf. PREVIEW_HOLD).
+const HpBar = preload("res://Scripts/Battle/UI/HpBar.gd")
 
 ## Quatre niveaux, 0 à 3 — c'est ce que montre `synergy.jpg`, dont la pastille
 ## va de « 0 » à « 3 ».
@@ -94,10 +96,11 @@ static var _tinted: Dictionary = {}
 const PREVIEW_LEVEL := -1
 const PREVIEW_COLOR := Color(1, 1, 1)
 ## Temps d'affichage du blanc avant que la couleur ne parte, puis durée de sa
-## montée. Repris de HpBar : c'est la même animation, elle doit avoir le même
-## tempo d'un élément à l'autre.
-const PREVIEW_HOLD := 0.18
-const FILL_DURATION := 0.35
+## montée. LUS SUR LA JAUGE DE PV, pas recopiés : l'auteur a demandé que ce soit
+## la MÊME animation, donc le même tempo — deux copies du chiffre finiraient par
+## diverger sans qu'aucune erreur ne le dise.
+const PREVIEW_HOLD := HpBar.PREVIEW_HOLD
+const FILL_DURATION := HpBar.SETTLE_DURATION
 
 var _progress: TextureProgressBar
 var _preview: TextureProgressBar
@@ -256,9 +259,6 @@ func _refresh_level() -> void:
 	)
 	_level_node.position = LEVEL_POS
 	add_child(_level_node)
-
-func get_level() -> int:
-	return _level
 
 ## Spirale recolorée pour `level`. Chaque pixel garde son ALPHA — donc tout
 ## l'anticrénelage de l'asset — et ne change que de teinte, reportée sur le

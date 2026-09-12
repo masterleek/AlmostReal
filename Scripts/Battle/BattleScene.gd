@@ -36,6 +36,7 @@ const BattleData = preload("res://Scripts/Battle/BattleData.gd")
 const BattleText = preload("res://Scripts/Battle/UI/BattleText.gd")
 const PixelScale = preload("res://Scripts/Battle/UI/PixelScale.gd")
 const CanvasZoom = preload("res://Scripts/UI/CanvasZoom.gd")
+const SfxBank = preload("res://Scripts/Audio/SfxBank.gd")
 
 const DARK_LINES := preload("res://Sprites/Battle/dark_lines.png")
 const PLATFORM := preload("res://Sprites/Battle/platform_grass.png")
@@ -257,14 +258,6 @@ const GAME_OVER_SIZE := 24
 ## géométrique.
 const GAME_OVER_Y := 124
 
-## Modes de ciblage qui retiennent tout un camp d'un bloc, sans choix
-## individuel (cf. TargetSelector). « self » en fait partie : il n'y a rien à
-## choisir, mais la cible s'allume quand même pour dire sur qui ça porte.
-const GROUP_TARGETS: PackedStringArray = ["enemies", "allies", "self"]
-
-## Modes de ciblage qui désignent le camp allié.
-const ALLY_TARGETS: PackedStringArray = ["ally", "allies", "self"]
-
 ## Libellés de la touche « cercle » de la légende : « Back » tant qu'on peut
 ## revenir en arrière dans le choix d'une action, « Cancel » au menu racine.
 const PROMPT_BACK := "battle.prompt.back"
@@ -374,22 +367,13 @@ var _hud: Node2D
 ## La validation ne rend la main au worldmap que sur une VICTOIRE : l'écran de
 ## défaite n'a pas encore de suite (cf. docs/plan_systeme_combat.md).
 var _can_exit := false
+## Tout l'audio de l'écran (cf. Scripts/Audio/SfxBank.gd) : les trois sons
+## d'interface gardent un lecteur dédié, les sons portés par les actions
+## passent par son pool.
+var _audio: SfxBank
 var _sfx_move: AudioStreamPlayer
 var _sfx_confirm: AudioStreamPlayer
 var _sfx_cancel: AudioStreamPlayer
-## Lecteurs des sons portés par les actions (cf. _play_action_sound). Séparés
-## des trois ci-dessus parce que leur flux change à chaque action : le partager
-## couperait le son d'interface en cours. Il y en a PLUSIEURS parce qu'une
-## action peut accrocher deux sons au même moment (un cri et un impact, par
-## exemple) — un lecteur unique jouerait le second par-dessus le premier, donc
-## un seul des deux.
-const SFX_ACTION_VOICES := 4
-var _sfx_action: Array[AudioStreamPlayer] = []
-## Flux déjà chargés, par chemin. `load()` à chaque coup relirait le disque en
-## plein assaut ; un échec est mémorisé sous forme de `null` pour que le
-## fichier manquant ne soit signalé qu'une fois.
-var _sounds: Dictionary = {}
-var _music: AudioStreamPlayer
 
 ## Point d'entrée depuis le worldmap. Appeler AVANT d'ajouter la scène à
 ## l'arbre : _ready() monte l'écran avec ce qui a été fourni ici, ou avec la
@@ -416,8 +400,7 @@ func _ready() -> void:
 	_build_dark_lines()
 	_build_assault()
 	_build_targeting()
-	_build_sfx()
-	_build_music()
+	_build_audio()
 	_build_hud()
 
 func _setup_background() -> void:
@@ -533,15 +516,6 @@ func _build_dark_lines() -> void:
 	top.position = DARK_LINE_TOP
 	stage.add_child(top)
 
-## Le sélecteur est posé sur le Stage APRÈS le conteneur d'unités et AVANT les
-## groupes d'interface : sa plaque passe donc au-dessus des combattants, et
-## sous le menu et le HUD.
-##
-## Son ordre dans l'arbre compte aussi pour les entrées : `_unhandled_input`
-## est distribué à l'envers de l'arbre, le menu — ajouté plus tard — voit donc
-## chaque touche en premier. C'est ce qui fait que la validation qui OUVRE le
-## ciblage n'est pas aussitôt reconsommée par celui-ci : le menu la marque
-## traitée avant que le sélecteur ne soit interrogé.
 ## L'assaut est un nœud comme un autre : il a besoin de l'arbre pour ses
 ## attentes (cf. BattleAssault._wait). Monté une fois, relancé à chaque tour.
 func _build_assault() -> void:
@@ -634,6 +608,16 @@ func _combatants(units: Array[BattleUnit], sprites: Array[AnimatedSprite2D]) -> 
 		entries.append({"unit": units[i], "sprite": sprites[i]})
 	return entries
 
+## Le sélecteur est posé sur le TERRAIN, après le conteneur d'unités et avant
+## les groupes d'interface : sa plaque passe donc au-dessus des combattants, et
+## sous le menu et le HUD. Sur le terrain et non sur le Stage, pour qu'il suive
+## le glissement de l'assaut comme les unités qu'il désigne (cf. _build_field).
+##
+## Son ordre dans l'arbre compte aussi pour les entrées : `_unhandled_input`
+## est distribué à l'envers de l'arbre, le menu — ajouté plus tard — voit donc
+## chaque touche en premier. C'est ce qui fait que la validation qui OUVRE le
+## ciblage n'est pas aussitôt reconsommée par celui-ci : le menu la marque
+## traitée avant que le sélecteur ne soit interrogé.
 func _build_targeting() -> void:
 	_target_selector = TargetSelector.new()
 	_field.add_child(_target_selector)
@@ -774,64 +758,27 @@ func _refresh_allies() -> void:
 		_status_panels[i].set_hp(unit.hp, unit.hp_max, unit.injury)
 	_refresh_unit_visuals()
 
-## Sons repris tels quels du worldmap plutôt que dupliqués : c'est le même
-## vocabulaire sonore d'un écran à l'autre (déplacement, validation, action
-## impossible), cf. WorldmapCursor.move_sfx et Hero.validation_sfx/error_sfx.
-## Le quatrième lecteur, lui, part sans flux : le sien lui vient de l'action.
-func _build_sfx() -> void:
-	_sfx_move = _add_audio(SFX_MOVE)
-	_sfx_confirm = _add_audio(SFX_CONFIRM)
-	_sfx_cancel = _add_audio(SFX_CANCEL)
-	for i in SFX_ACTION_VOICES:
-		_sfx_action.append(_add_audio())
+## Sons d'interface repris tels quels du worldmap plutôt que dupliqués : c'est
+## le même vocabulaire sonore d'un écran à l'autre (déplacement, validation,
+## action impossible), cf. WorldmapCursor.move_sfx et Hero.validation_sfx.
+##
+## Le thème de combat part ici aussi. Rien à faire du côté du worldmap :
+## `BattleLauncher` le passe en `PROCESS_MODE_DISABLED`, ce qui suspend son
+## `AudioStreamPlayer` (vérifié en jeu : `playing` retombe à false et la
+## position reste figée) et le reprend là où il en était à la sortie.
+func _build_audio() -> void:
+	_audio = SfxBank.new()
+	add_child(_audio)
+	_sfx_move = _audio.player(SFX_MOVE)
+	_sfx_confirm = _audio.player(SFX_CONFIRM)
+	_sfx_cancel = _audio.player(SFX_CANCEL)
+	_audio.music(MUSIC_THEME, MUSIC_VOLUME)
 
 ## Joue le son qu'une action porte dans sa définition (cf. BattleAssault.
-## _sound_of). La scène ne sait pas de QUELLE action il s'agit — c'est voulu :
+## _sounds_of). La scène ne sait pas de QUELLE action il s'agit — c'est voulu :
 ## donner sa voix à un personnage se fait dans `units.json`, pas ici.
 func _play_action_sound(path: String) -> void:
-	if not _sounds.has(path):
-		# `exists` d'abord : `load()` sur un chemin absent hurle dans la console
-		# à CHAQUE coup, alors que le fichier manquant est une faute de frappe
-		# dans le JSON, à signaler une fois.
-		_sounds[path] = ResourceLoader.load(path) if ResourceLoader.exists(path) else null
-		if _sounds[path] == null:
-			push_warning("Son d'action introuvable : %s" % path)
-	var stream: AudioStream = _sounds[path]
-	if stream == null:
-		return
-	# Le lecteur est pris UNE fois : rappeler `_free_voice()` pour le `play()`
-	# rendrait un autre lecteur dès que celui-ci serait occupé.
-	var voice := _free_voice()
-	voice.stream = stream
-	voice.play()
-
-## Un lecteur libre, ou le premier de la liste si les quatre sont occupés. Voler
-## un son en cours vaut mieux que de laisser tomber celui qu'on vient de
-## demander : l'action que le joueur regarde est celle qui doit s'entendre.
-func _free_voice() -> AudioStreamPlayer:
-	for voice in _sfx_action:
-		if not voice.playing:
-			return voice
-	return _sfx_action[0]
-
-## Le thème de combat, lancé dès l'ouverture de l'écran. Rien à faire du côté
-## du worldmap : `BattleLauncher` le passe en `PROCESS_MODE_DISABLED`, ce qui
-## suspend son `AudioStreamPlayer` (vérifié en jeu : `playing` retombe à false
-## et la position reste figée) et le reprend là où il en était à la sortie.
-func _build_music() -> void:
-	_music = _add_audio(MUSIC_THEME)
-	# Le bouclage est une propriété de la RESSOURCE, pas du lecteur : on le
-	# force ici plutôt que de dépendre du réglage d'import, comme le fait déjà
-	# le thème du worldmap (cf. map_loader._ready).
-	_music.stream.loop = true
-	_music.volume_linear = MUSIC_VOLUME
-	_music.play()
-
-func _add_audio(stream: AudioStream = null) -> AudioStreamPlayer:
-	var player := AudioStreamPlayer.new()
-	player.stream = stream
-	add_child(player)
-	return player
+	_audio.play_path(path)
 
 func _on_menu_moved(_index: int) -> void:
 	_sfx_move.play()
@@ -842,16 +789,16 @@ func _on_menu_moved(_index: int) -> void:
 func _on_menu_confirmed(id: String) -> void:
 	match id:
 		MENU_ATTACK:
-			_start_action({"source": "attack", "target": "enemy"}, _menu)
+			_start_action({"source": BattleData.SOURCE_ATTACK, "target": "enemy"}, _menu)
 		MENU_EKO:
-			_open_sublist("eko", _eko_entries())
+			_open_sublist(BattleData.SOURCE_EKO, _eko_entries())
 		MENU_ITEMS:
-			_open_sublist("item", _item_entries())
+			_open_sublist(BattleData.SOURCE_ITEM, _item_entries())
 		MENU_GUARD:
 			# La garde ne vise personne et ne coûte rien : elle est retenue
 			# immédiatement, sans passer par le ciblage.
 			_sfx_confirm.play()
-			_queue_action({"source": "guard", "target": "self", "cost": 0}, -1)
+			_queue_action({"source": BattleData.SOURCE_GUARD, "target": "self", "cost": 0}, -1)
 		_:
 			_sfx_confirm.play()
 
@@ -942,16 +889,20 @@ func _on_sublist_moved(_index: int) -> void:
 	_show_description(_sublist.get_selected_id())
 
 func _on_sublist_confirmed(id: String) -> void:
-	var definition: Dictionary = (
-		BattleData.get_eko(id) if _sublist_kind == "eko" else BattleData.get_item(id)
+	var unit := _active_unit()
+	# Même lecture que l'assaut : la règle « où vit la définition d'une action »
+	# n'existe qu'à un seul endroit. L'id de l'unité ne sert qu'à l'attaque de
+	# base, qui ne passe jamais par une sous-liste — il est passé quand même,
+	# pour que l'appel reste juste si un troisième type de liste apparaît.
+	var definition := BattleData.definition_of(
+		unit.id if unit != null else "", {"source": _sublist_kind, "id": id}
 	)
 	var cost: int = int(definition.get("ap_cost", 0))
-	var unit := _active_unit()
 	# Deux refus différents selon la liste : un Eko demande des PA, un objet
 	# demande d'en avoir encore en réserve. Dans les deux cas la ligne le disait
 	# déjà — losanges éteints ou « x0 » — le son ne fait que confirmer.
 	var available := (
-		int(_inventory.get(id, 0)) > 0 if _sublist_kind == "item"
+		int(_inventory.get(id, 0)) > 0 if _sublist_kind == BattleData.SOURCE_ITEM
 		else unit != null and unit.can_pay(cost)
 	)
 	if unit == null or not available:
@@ -997,12 +948,14 @@ func _open_targeting(pending: Dictionary, list: CommandMenu) -> bool:
 	# plus rien à apporter et il encombrerait le terrain qu'on vise.
 	_description.visible = false
 	# Le camp visé garde son opacité, l'autre s'efface.
-	var aims_at_allies := kind in ALLY_TARGETS
+	# Le mode se lit relativement à celui qui agit ; ici c'est toujours un allié,
+	# « son camp » désigne donc l'équipe (cf. BattleData.targets_own_camp).
+	var aims_at_allies := BattleData.targets_own_camp(kind)
 	_set_units_dimmed(aims_at_allies, not aims_at_allies)
 	# Première cible vivante par défaut, comme les listes s'ouvrent sur leur
 	# première entrée : une sélection par défaut stable vaut mieux qu'une
 	# sélection « intelligente » qui changerait d'un tour à l'autre.
-	_target_selector.open(targets, kind in GROUP_TARGETS)
+	_target_selector.open(targets, BattleData.targets_whole_camp(kind))
 	_follow_target()
 	_set_legend_cancel(PROMPT_BACK)
 	return true
@@ -1054,7 +1007,11 @@ func _on_target_confirmed(index: int) -> void:
 	_target_selector.close()
 	_focus_list.restore()
 	_pending = {}
-	_close_sublist()
+	# Une attaque vient du menu racine : il n'y a aucune sous-liste à refermer.
+	# Ce qui suit — le tour de l'allié suivant, ou l'assaut — repose de toute
+	# façon l'écran en entier.
+	if _focus_list == _sublist:
+		_close_sublist()
 	_queue_action(pending, index)
 
 ## « Back » ramène d'où l'on vient : au menu racine pour une attaque, à la
@@ -1063,7 +1020,7 @@ func _on_target_cancelled() -> void:
 	_sfx_cancel.play()
 	_target_selector.close()
 	_focus_list.restore()
-	var from_sublist := String(_pending.get("source", "attack")) != "attack"
+	var from_sublist := String(_pending.get("source", BattleData.SOURCE_ATTACK)) != BattleData.SOURCE_ATTACK
 	_pending = {}
 	if not from_sublist:
 		_close_sublist()
@@ -1101,12 +1058,12 @@ func _refresh_unit_visuals() -> void:
 		if not _enemy_units[i].is_alive():
 			continue
 		_enemy_sprites[i].modulate = faded if _dim_enemies else Color.WHITE
+	# Combat joué : la célébration pose elle-même les teintes des alliés, fondu
+	# de retour d'un ranimé compris. Les réécrire ici le ferait réapparaître d'un
+	# coup au milieu de son propre fondu. Les ennemis, eux, sont tous à terre.
+	if _state == State.FINISHED:
+		return
 	for i in mini(_ally_sprites.size(), _ally_units.size()):
-		# Combat joué : la célébration pose elle-même les teintes, fondu de
-		# retour d'un allié ranimé compris. Les réécrire ici le ferait
-		# réapparaître d'un coup au milieu de son propre fondu.
-		if _state == State.FINISHED:
-			break
 		if not _ally_units[i].is_alive():
 			continue
 		if _state != State.ASSAULT and _ally_units[i].has_action():
@@ -1140,10 +1097,10 @@ func _ally_animation(index: int) -> String:
 func _is_aiming() -> bool:
 	match _state:
 		State.SUBLIST:
-			return _sublist_kind == "eko"
+			return _sublist_kind == BattleData.SOURCE_EKO
 		State.TARGETING:
 			var source := String(_pending.get("source", ""))
-			return source == "attack" or source == "eko"
+			return source == BattleData.SOURCE_ATTACK or source == BattleData.SOURCE_EKO
 	return false
 
 ## Met chaque allié sur la planche que son état demande. On ne rejoue que les
@@ -1201,7 +1158,7 @@ func _queue_action(pending: Dictionary, target: int) -> void:
 	# cette liste aura changé quand l'assaut exécutera l'action.
 	action["targets"] = _resolve_targets(kind, target)
 	unit.action = action
-	if String(pending.get("source", "")) == "item":
+	if String(pending.get("source", "")) == BattleData.SOURCE_ITEM:
 		var id := String(pending.get("id", ""))
 		_inventory[id] = maxi(0, int(_inventory.get(id, 0)) - 1)
 	else:
@@ -1214,7 +1171,7 @@ func _queue_action(pending: Dictionary, target: int) -> void:
 func _resolve_targets(kind: String, index: int) -> Array[BattleUnit]:
 	var offered := _targets_for(kind)
 	var chosen: Array[BattleUnit] = []
-	if kind in GROUP_TARGETS:
+	if BattleData.targets_whole_camp(kind):
 		for entry in offered:
 			chosen.append(entry["unit"])
 	elif index >= 0 and index < offered.size():
@@ -1225,7 +1182,7 @@ func _resolve_targets(kind: String, index: int) -> Array[BattleUnit]:
 func _undo_action(unit: BattleUnit) -> void:
 	if not unit.has_action():
 		return
-	if String(unit.action.get("source", "")) == "item":
+	if String(unit.action.get("source", "")) == BattleData.SOURCE_ITEM:
 		var id := String(unit.action.get("id", ""))
 		_inventory[id] = int(_inventory.get(id, 0)) + 1
 	else:
@@ -1312,7 +1269,11 @@ func _on_assault_finished(outcome: int) -> void:
 ## tour précédent sont oubliées : elles ont été jouées, elles ne doivent pas
 ## reparaître comme des choix déjà pris.
 func _start_round() -> void:
-	for unit in _ally_units:
+	# LES DEUX CAMPS : depuis que l'action d'un ennemi est retenue et payée comme
+	# celle d'un allié (cf. BattleAssault._commit_enemy_actions), ses PA doivent
+	# repartir au maximum comme les siens — sans quoi un ennemi qui lance un Eko
+	# n'en relancerait plus jamais.
+	for unit in _ally_units + _enemy_units:
 		unit.clear_action()
 		unit.restore_ap()
 	var first := _next_ally_to_play(0)

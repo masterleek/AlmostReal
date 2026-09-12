@@ -1,6 +1,6 @@
 extends RefCounted
 
-## Décide l'action d'un ennemi au moment où son tour arrive dans l'assaut.
+## Décide l'action d'un ennemi à l'ouverture de l'assaut, avant le premier coup.
 ##
 ## POURQUOI UN FICHIER À PART. Un ennemi n'a pas de phase de préparation : il
 ## faut bien que quelqu'un choisisse à sa place. Mais ce choix est de la donnée
@@ -50,13 +50,16 @@ static func choose(
 	var kind := _kind_of(behaviour, unit.id)
 
 	if kind == KIND_DEFENSIVE and unit.hp_ratio() < _guard_below(behaviour):
-		return {"source": "guard", "target": "self", "cost": 0, "targets": [unit]}
+		return {
+			"source": BattleData.SOURCE_GUARD, "target": "self", "cost": 0,
+			"targets": [unit],
+		}
 
 	var eko := _pick_eko(unit, behaviour)
 	if not eko.is_empty():
 		var mode := String(BattleData.get_eko(eko["id"]).get("target", "enemy"))
 		return {
-			"source": "eko",
+			"source": BattleData.SOURCE_EKO,
 			"id": eko["id"],
 			"target": mode,
 			"cost": int(eko["cost"]),
@@ -64,7 +67,7 @@ static func choose(
 		}
 
 	return {
-		"source": "attack",
+		"source": BattleData.SOURCE_ATTACK,
 		"target": "enemy",
 		"cost": 0,
 		"targets": _targets_for("enemy", unit, allies, foes, kind, behaviour),

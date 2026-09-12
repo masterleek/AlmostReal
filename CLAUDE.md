@@ -108,9 +108,15 @@ pas partir en guerre contre des choix déjà faits et documentés dans ce repo :
   : la résolution par `class_name` seul s'est avérée peu fiable au tout
   premier chargement headless du projet. Voir `WorldmapCursor.gd`,
   `HeroShadow.gd`, `TileRevealController.gd`.
-- **Fonctions statiques plutôt que `const` pour des tableaux** partagés entre
-  scripts (`TileGeometry.gd`) : un `const` de type tableau ne se résout pas de
-  façon fiable en accès inter-scripts sur cette version de Godot.
+- **`const` de tableau partagé entre scripts : VÉRIFIÉ OK en 4.6.2.** La règle
+  précédente (« toujours passer par une fonction statique ») venait d'une
+  version plus ancienne et a été retestée : via `const X = preload(...)`, un
+  `const SLOTS: Array[Vector2i]`, un `PackedStringArray` et un `Vector2` se
+  lisent, s'indexent et se parcourent correctement depuis un autre script.
+  `TileGeometry.gd` garde ses fonctions statiques pour une AUTRE raison, qui
+  tient toujours (elle est documentée dans le fichier). Ne pas invoquer cette
+  contre-indication sans la reteste : une règle périmée oriente les décisions
+  aussi sûrement qu'une règle juste.
 - **Commentaires en français, denses, orientés "pourquoi"** — pas juste
   "quoi". Le code existant explique systématiquement le raisonnement (pourquoi
   ce mécanisme plutôt qu'un autre), pas seulement l'action. Suivre ce style
@@ -648,6 +654,22 @@ pas partir en guerre contre des choix déjà faits et documentés dans ce repo :
   et sur `FINISHED` : sans ça la célébration de victoire est écrasée par la
   planche de repos, et le fondu de retour d'un allié ranimé par un `modulate`
   remis à blanc d'un coup.
+- **Un commentaire qui n'est vrai que pour UN de ses appelants est un bug qui
+  attend.** « La garde n'a rien à exécuter : son effet est déjà en place » était
+  juste pour un allié (posé pendant la préparation) et faux pour un ennemi
+  (dont l'action n'existait pas encore) — et le `return` qui suivait rendait
+  tout le comportement `defensive` inerte. Quand deux camps passent par le même
+  code, relire chaque justification en se demandant *pour lequel* elle tient.
+- **Corriger à la profondeur de la cause, pas du symptôme.** Le vrai défaut
+  n'était pas « il manque une ligne dans `_raise_guards` » mais « rien n'est
+  jamais RETENU pour un ennemi » : son action se décidait à la volée. La poser
+  sur l'unité à l'ouverture de l'assaut, comme celle d'un allié, corrige d'un
+  coup la garde ET les PA jamais débités — et supprime un cas particulier dans
+  `_action_of` au lieu d'en ajouter un.
+- **Un vocabulaire fermé porté par de la donnée mérite des constantes**, même
+  côté moteur : les valeurs de `source` d'une action (`attack`/`eko`/`item`/
+  `guard`) traînaient en chaînes nues dans trois fichiers. Une faute de frappe
+  n'y lève aucune erreur, elle tombe dans la branche par défaut d'un `match`.
 - **Reconstruire une liste de nœuds : `remove_child()` AVANT `queue_free()`.**
   La libération est différée à la fin de la frame, donc les anciens nœuds
   restent enfants — et donc affichés par-dessus les nouveaux — le temps d'une
