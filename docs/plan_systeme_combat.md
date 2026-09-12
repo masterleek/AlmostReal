@@ -1783,6 +1783,82 @@ laisse `Battle/units.json` **identique au byte près** — `git status` vide.
 
 ---
 
+## 5 duodecies. Cadrage de la préparation
+
+Ouvrir une liste rapproche la vue sur celui qui agit ; choisir une cible la
+déplace sur la cible. Annuler pour revenir au menu racine remet tout à plat.
+
+**Ce n'est toujours pas une caméra.** Une Camera2D n'agit pas sur un CanvasLayer
+(cf. `CanvasZoom`), et surtout elle emporterait le HUD, le menu et les bandes
+noires. Comme pour le glissement d'assaut, seul le nœud `_field` se transforme —
+zoom 1,25 plus translation — et `_shift_field` comme `_focus_field` passent
+désormais par la même fonction.
+
+| Moment | Cadrage |
+|---|---|
+| Menu racine | à plat |
+| Liste d'Ekos, liste d'objets | ×1,25 sur celui qui agit |
+| Ciblage d'un ennemi | ×1,25 sur la cible, suit le curseur |
+| Ciblage d'un allié | **aucun mouvement** — la vue reste sur celui qui agit |
+| « Back » vers la liste | retour sur celui qui agit |
+| « Back » vers le menu racine | remise à plat |
+
+**« Attack » n'a pas de liste où cadrer d'abord** : sa séquence commence
+directement sur la cible, il n'existe aucun autre moment où la poser. Les trois
+commandes qui visent partagent donc le même `_frame_target`, et c'est le mode de
+ciblage — pas la commande — qui décide si la vue bouge.
+
+On cadre sur la planche RÉELLEMENT montée à cet instant : un allié qui ouvre sa
+liste d'Ekos est déjà passé sur sa pose de visée, celui qui ouvre son sac est
+resté au repos, et les deux planches n'ont pas le même centre. C'est ce qui
+explique que le cadrage du lanceur ne donne pas la même translation dans les
+deux cas (−153,75 contre −144,375 sur Noah).
+
+### On cadre sur le CENTRE DU DESSIN, pas sur la cellule ni sur les pieds
+
+Le point visé est le centre des pixels réellement peints
+(`UnitSprite.art_centre`), relevé une fois par planche et mis en cache.
+
+Ni `position`, qui est le point au SOL — viser dessus mettrait la moitié de
+l'écran sous la plateforme. Ni le centre de la CELLULE : mesuré, l'écart est
+nul sur `idle` et `standby` (moins d'un pixel) mais vaut **11 px** sur la pose
+de visée de Noah, dont la planche réserve la place de l'arc de lame et n'occupe
+donc pas toute sa cellule. Un ciblage de groupe, lui, ne rend qu'un barycentre
+de pieds : il est relevé de `FOCUS_BODY_RISE` faute de sprite unique à mesurer.
+
+**L'unité va au centre de l'écran (240, 135), dans les deux cas.** Une première
+version la poussait dans la seule bande restée libre (370, 120), la liste
+d'Ekos occupant toute la moitié gauche et le cadre de description tout le bas.
+L'auteur a tranché pour un cadrage franc : la liste passe par-dessus le lanceur,
+c'est assumé.
+
+### Le fond capturé ne suit PAS le cadrage
+
+Son débord (`BACKGROUND_OVERSCAN`) a été calculé pour les 60 px du glissement
+d'assaut, pas pour les 250 qu'un cadrage peut demander. Mesuré : à ×1,25 et
+111 px de translation, son bord gauche entre dans l'image et laisse une bande
+noire sur un tiers de l'écran. L'élargir assez le rendrait deux fois plus
+agrandi **en permanence**, donc plus flou au repos — un dégât durable pour un
+mouvement passager. Le laisser immobile se lit d'ailleurs comme du parallaxe.
+C'est `_shift_field` qui le fait suivre, lui, et il reste dans son budget.
+
+### La pastille d'action doit être reposée à chaque image
+
+Elle se place à partir de la transformation du terrain. Calculée une seule fois
+au changement de cible, elle lisait une transformation que le tween était
+justement en train de changer : elle restait accrochée au point de départ et
+atterrissait sur le HUD en visant l'ennemi du fond. Un `_process` la repose tant
+que le cadrage s'anime.
+
+Deuxième conséquence du même changement : les pieds d'une cible sont en espace
+TERRAIN alors que la liste se place en espace Stage. Tant que le terrain restait
+à l'identité pendant la préparation les deux se confondaient — d'où un
+`_field.transform *` ajouté dans `_follow_target`. Le décalage de la pastille,
+lui, s'applique APRÈS la transformation : il se mesure à l'écran et n'a aucune
+raison de grossir avec le zoom.
+
+---
+
 ## 6. Vérification (Lot 1)
 
 Conforme au workflow de `CLAUDE.md` :

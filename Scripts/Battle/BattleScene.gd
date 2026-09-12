@@ -74,6 +74,25 @@ const DARK_LINE_BOTTOM := Vector2(0, 224)
 const FIELD_SHIFT := 60
 const FIELD_SLIDE := 0.35
 
+## CADRAGE DE PRÉPARATION. Choisir un Eko rapproche la vue sur celui qui le
+## lance, puis sur ce qu'il vise. Même mécanique que le glissement d'assaut, et
+## pour la même raison : ce n'est pas une Camera2D — une caméra n'agit pas sur un
+## CanvasLayer (cf. CanvasZoom), et surtout elle emporterait le HUD, le menu et
+## les bandes noires avec elle. Seul le TERRAIN se transforme.
+const FOCUS_ZOOM := 1.25
+const FOCUS_SLIDE := 0.3
+## Point de l'écran où vient se poser l'unité regardée : le centre, dans les
+## deux cas. La liste d'Ekos passe par-dessus le lanceur et le cadre de
+## description mord sur le bas de l'écran — c'est assumé, l'auteur a tranché
+## pour un cadrage franc plutôt que pour un compromis qui poussait l'allié dans
+## la seule bande restée libre.
+const FOCUS_CENTRE := Vector2(240, 135)
+## Ce qu'on vise sur une unité : le centre de son DESSIN, pas son point au sol
+## (qui mettrait la moitié de l'écran sous la plateforme) ni le centre de sa
+## cellule (cf. UnitSprite.art_centre). Une cible désignée par le sélecteur, elle,
+## n'est connue que par ses pieds : ce relèvement les remonte au buste.
+const FOCUS_BODY_RISE := 40
+
 ## Débord du fond capturé. Il est cadré pile sur l'écran ; le déplacer
 ## découvrirait du noir sur un bord, d'où cet agrandissement qui couvre le
 ## décalage des deux côtés. Sur une photo floutée sous un voile sombre, le
@@ -99,8 +118,16 @@ const PLATFORM_RIGHT := Vector2(239, 130)
 ## Décrire un emplacement par un point au sol plutôt que par le coin de la
 ## texture permet d'y placer n'importe quel personnage, quelle que soit la
 ## taille de sa cellule.
+##
+## Les emplacements ennemis sont rangés de DROITE À GAUCHE : le premier ennemi
+## déclaré occupe celui qui est le plus près de l'équipe, le deuxième celui
+## juste à sa gauche, et ainsi de suite. Les positions elles-mêmes sont celles
+## de la maquette, seul leur ordre change — c'est lui qui décide sur qui le
+## ciblage s'ouvre, et viser d'abord l'ennemi le plus proche est plus naturel
+## que de partir du fond du terrain. Conséquence : l'ordre de la liste ne suit
+## plus l'abscisse, et la navigation ←/→ trie par position (cf. TargetSelector).
 const ENEMY_SLOTS: Array[Vector2i] = [
-	Vector2i(103, 178), Vector2i(149, 150), Vector2i(195, 169)
+	Vector2i(195, 169), Vector2i(149, 150), Vector2i(103, 178)
 ]
 const ALLY_SLOTS: Array[Vector2i] = [
 	Vector2i(307, 170), Vector2i(365, 159)
@@ -190,7 +217,7 @@ const DEFAULT_INVENTORY := {
 
 ## Coin haut-gauche du cadre « INFO », relevé sur
 ## mockup_preparation_select_eko.jpg.
-const DESCRIPTION_POS := Vector2(213, 159)
+const DESCRIPTION_POS := Vector2(270, 145)
 
 ## Secousse d'impact. Amplitude en unités de design — deux pixels, « léger »
 ## comme demandé : à l'écran ça fait huit, assez pour marquer le coup sans
@@ -270,7 +297,7 @@ const PROMPT_CANCEL := "battle.prompt.cancel"
 ##
 ## Ce décalage est en coordonnées d'ÉCRAN ; le menu étant incliné, il faut le
 ## repasser dans son repère (cf. _menu_local).
-const FOCUS_PILL_OFFSET := Vector2(23, -87)
+const FOCUS_PILL_OFFSET := Vector2(23, -107)
 
 ## Composition par défaut, utilisée quand la scène est lancée seule (F6) sans
 ## passer par setup(). Elle reproduit le mockup.
@@ -324,6 +351,13 @@ var _synergy := SynergyMeter.new()
 var _synergy_gauge: SynergyGauge
 ## Terrain déplaçable : décor, combattants et effets (cf. _build_field).
 var _field: Node2D
+## Vrai tant que le cadrage de préparation est en place. Sert à savoir si un
+## déplacement du curseur de ciblage doit refaire suivre la vue : une attaque
+## ordinaire ne cadre rien, seul le choix d'un Eko ouvre cette séquence.
+var _framing := false
+## Pose d'origine du fond capturé, relevée au montage plutôt que recalculée :
+## `_shift_field` la reprend pour le faire glisser avec le terrain.
+var _background_home := Vector2.ZERO
 var _field_tween: Tween
 ## Bande noire du bas, gardée sous la main : elle remonte pendant l'assaut.
 var _dark_bottom: Sprite2D
@@ -425,6 +459,9 @@ func _setup_background() -> void:
 		* BACKGROUND_OVERSCAN
 	)
 	background.position = -Vector2(DESIGN_SIZE * STAGE_SCALE) * (BACKGROUND_OVERSCAN - 1.0) / 2.0
+	# Relevée ici et pas recalculée ailleurs : `_shift_field` la reprend telle
+	# quelle pour faire glisser le fond avec le terrain.
+	_background_home = background.position
 	# Rééchantillonnage non entier (1676 → 1920) : le filtrage linéaire donne un
 	# fond propre, là où le "nearest" hérité du projet doublerait irrégulièrement
 	# une colonne sur sept. C'est une photo floutée derrière un voile noir, pas
@@ -580,18 +617,49 @@ func _refresh_synergy() -> void:
 ## déplacent avec le décor. Il est agrandi d'autant (cf. BACKGROUND_OVERSCAN)
 ## pour ne jamais découvrir son bord.
 func _shift_field(direction: int) -> void:
+	var x := float(direction * FIELD_SHIFT)
+	_move_field(1.0, Vector2(x, 0.0), FIELD_SLIDE)
+	if background.visible:
+		# Le fond suit CE mouvement-là : 60 px, c'est ce pour quoi son débord a
+		# été calculé (cf. BACKGROUND_OVERSCAN). Un point d'écran va en `p + 4·x`.
+		_field_tween.tween_property(
+			background, "position:x", _background_home.x + x * STAGE_SCALE, FIELD_SLIDE
+		)
+
+## Cadre la vue sur `point` (en unités de terrain), agrandie de FOCUS_ZOOM.
+func _focus_field(point: Vector2) -> void:
+	_framing = true
+	_move_field(FOCUS_ZOOM, FOCUS_CENTRE - point * FOCUS_ZOOM, FOCUS_SLIDE)
+
+## Remet le terrain à plat. Sans effet s'il y était déjà : la remise à zéro est
+## appelée depuis plusieurs sorties (annulation, changement d'allié, fin de
+## préparation) et relancer un tween à l'identique ferait sauter l'écran.
+func _reset_framing() -> void:
+	if not _framing:
+		return
+	_framing = false
+	_move_field(1.0, Vector2.ZERO, FOCUS_SLIDE)
+
+## Transforme le TERRAIN — décor, combattants, effets, ciblage — sans toucher au
+## HUD, au menu ni aux bandes noires.
+##
+## LE FOND CAPTURÉ NE SUIT PAS. Il est cadré pile sur l'écran, et son débord
+## (BACKGROUND_OVERSCAN) a été calculé pour les 60 px du glissement d'assaut, pas
+## pour les 250 que peut demander un cadrage. Mesuré : à zoom 1,25 et 111 px de
+## translation, son bord gauche entre dans l'image et laisse une bande noire.
+## L'élargir assez couvrirait le cas, au prix d'un fond deux fois plus agrandi
+## EN PERMANENCE, donc plus flou au repos — un dégât durable pour un mouvement
+## passager. Le laisser immobile se lit d'ailleurs comme du parallaxe : un plan
+## lointain bouge moins que le premier plan. C'est `_shift_field` qui le fait
+## suivre, lui, et il reste dans le budget du débord.
+func _move_field(zoom: float, at: Vector2, duration: float) -> void:
 	if _field_tween != null and _field_tween.is_valid():
 		_field_tween.kill()
-	var x := float(direction * FIELD_SHIFT)
 	_field_tween = create_tween()
 	_field_tween.set_parallel(true)
-	_field_tween.tween_property(_field, "position:x", x, FIELD_SLIDE) \
-		.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
-	if background.visible:
-		var home := -float(DESIGN_SIZE.x * STAGE_SCALE) * (BACKGROUND_OVERSCAN - 1.0) / 2.0
-		_field_tween.tween_property(
-			background, "position:x", home + x * STAGE_SCALE, FIELD_SLIDE
-		).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	_field_tween.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	_field_tween.tween_property(_field, "scale", Vector2(zoom, zoom), duration)
+	_field_tween.tween_property(_field, "position", at, duration)
 
 ## Fait monter ou redescendre la bande basse. `raised` = pendant l'assaut.
 func _slide_dark_band(raised: bool) -> void:
@@ -715,6 +783,24 @@ func _build_hud() -> void:
 ## Hors table (fin de préparation, ou un troisième emplacement qui n'aurait pas
 ## encore été relevé sur maquette), on retombe sur l'écart des emplacements de
 ## combat : approché, mais toujours du bon côté de l'écran.
+## Sprite de l'allié dont c'est le tour, ou null hors préparation.
+func _active_sprite() -> UnitSprite:
+	if _active_ally < 0 or _active_ally >= _ally_sprites.size():
+		return null
+	return _ally_sprites[_active_ally]
+
+## Point à regarder sur une unité dont on a le sprite : le centre de son dessin,
+## relevé sur les pixels réellement peints.
+func _focus_point_of(sprite: UnitSprite) -> Vector2:
+	if sprite == null:
+		return FOCUS_CENTRE
+	return sprite.art_centre()
+
+## Idem pour une cible que le sélecteur ne connaît que par ses pieds — un
+## ciblage de groupe rend un barycentre, pas un sprite.
+func _focus_point_of_feet(feet: Vector2) -> Vector2:
+	return feet - Vector2(0, FOCUS_BODY_RISE)
+
 func _menu_offset(index: int) -> Vector2i:
 	if index >= 0 and index < MENU_SLOT_OFFSET.size():
 		return MENU_SLOT_OFFSET[index]
@@ -862,6 +948,10 @@ func _open_sublist(kind: String, entries: Array[Dictionary]) -> void:
 	_set_units_dimmed(true, true)
 	_show_description(_sublist.get_selected_id())
 	_set_legend_cancel(PROMPT_BACK)
+	# Ekos ET objets : les deux listes se choisissent en regardant celui qui
+	# agit. `kind` ne sert plus à trancher ici — il reste le sujet de la liste,
+	# et c'est le ciblage qui décide ensuite où la vue se déplace.
+	_focus_field(_focus_point_of(_active_sprite()))
 
 func _close_sublist() -> void:
 	# L'état AVANT tout le reste : _set_units_dimmed rafraîchit les combattants,
@@ -869,6 +959,7 @@ func _close_sublist() -> void:
 	# (cf. _is_aiming). Posé après, il voyait encore « liste d'Ekos ouverte » et
 	# laissait l'allié dégainé sur le menu racine.
 	_state = State.MENU
+	_reset_framing()
 	_set_units_dimmed(false, false)
 	_sublist.active = false
 	_sublist.visible = false
@@ -956,6 +1047,10 @@ func _open_targeting(pending: Dictionary, list: CommandMenu) -> bool:
 	# première entrée : une sélection par défaut stable vaut mieux qu'une
 	# sélection « intelligente » qui changerait d'un tour à l'autre.
 	_target_selector.open(targets, BattleData.targets_whole_camp(kind))
+	# APRÈS l'ouverture, jamais avant : c'est elle qui fixe la cible courante, et
+	# la lire plus tôt cadrerait sur la sélection du ciblage PRÉCÉDENT — ou sur
+	# l'origine de l'écran au tout premier.
+	_frame_target(kind)
 	_follow_target()
 	_set_legend_cancel(PROMPT_BACK)
 	return true
@@ -991,14 +1086,31 @@ func _living(
 ## Réduit la liste active à l'action retenue et la pose près de la cible. La
 ## conversion vers le repère interne est demandée à la liste elle-même : les
 ## deux ne pivotent pas autour du même point.
+## Les pieds de la cible sont en espace TERRAIN, la liste se place en espace
+## Stage. Tant que le terrain restait à l'identité pendant la préparation, les
+## deux se confondaient — plus depuis le cadrage. Le décalage de la pastille,
+## lui, s'applique APRÈS la transformation : il se mesure à l'écran et n'a aucune
+## raison de grossir avec le zoom.
 func _follow_target() -> void:
-	_focus_list.focus_selection(
-		_focus_list.to_flat(_target_selector.get_selected_feet() + FOCUS_PILL_OFFSET)
-	)
+	var feet := _field.transform * _target_selector.get_selected_feet()
+	_focus_list.focus_selection(_focus_list.to_flat(feet + FOCUS_PILL_OFFSET))
 
 func _on_target_moved(_index: int) -> void:
 	_sfx_move.play()
+	_frame_target(String(_pending.get("target", "enemy")))
 	_follow_target()
+
+## Recadre la vue sur la cible courante, pour les trois commandes qui visent.
+##
+## NE BOUGE PAS quand l'action désigne le camp allié : la vue est déjà sur celui
+## qui lance, et la déplacer d'un allié à l'autre pour un soin ne montrerait rien
+## de plus. Conséquence pour « Attack », qui n'a pas de liste où cadrer d'abord :
+## sa séquence commence directement sur la cible, il n'y a aucun autre moment où
+## la poser.
+func _frame_target(kind: String) -> void:
+	if BattleData.targets_own_camp(kind):
+		return
+	_focus_field(_focus_point_of_feet(_target_selector.get_selected_feet()))
 
 ## Valider une cible retient l'action pour l'allié courant et passe au suivant.
 func _on_target_confirmed(index: int) -> void:
@@ -1026,6 +1138,10 @@ func _on_target_cancelled() -> void:
 		_close_sublist()
 		return
 	_state = State.SUBLIST
+	# La vue revient sur celui qui lance : on retourne à sa liste, c'est lui que
+	# le joueur regarde à nouveau. Sans effet si rien n'était cadré (un objet).
+	if _framing:
+		_focus_field(_focus_point_of(_active_sprite()))
 	_sublist.active = true
 	_description.visible = true
 	_set_units_dimmed(true, true)
@@ -1224,6 +1340,7 @@ func _step_back() -> void:
 
 func _open_root_menu() -> void:
 	_state = State.MENU
+	_reset_framing()
 	# Reconstruite plutôt que réactivée : la sélection repart sur « Attack »,
 	# comme sur la maquette du tour du second allié, et les coûts d'Ekos sont
 	# recalculés pour le nouvel allié.
@@ -1241,6 +1358,8 @@ func _open_root_menu() -> void:
 ## plus de légende : pendant l'assaut le joueur regarde, il ne décide plus.
 func _finish_preparation() -> void:
 	_state = State.ASSAULT
+	# L'assaut a son propre glissement de terrain : il doit partir de l'identité.
+	_reset_framing()
 	_active_ally = _ally_units.size()
 	_menu.active = false
 	_menu.visible = false
@@ -1370,6 +1489,17 @@ func _show_game_over() -> void:
 	BattleText.set_centered_text(label, Localization.get_text("battle.game_over"))
 	label.position = Vector2(0, GAME_OVER_Y)
 	stage.add_child(label)
+
+## La pastille de l'action retenue est posée à partir de la transformation du
+## TERRAIN. Tant que le cadrage l'anime, elle doit donc être reposée à chaque
+## image : calculée une seule fois au changement de cible, elle se fige sur la
+## position d'où la cible vient de partir et n'y revient jamais — c'est ce qui
+## l'envoyait sur le HUD en visant l'ennemi du fond.
+func _process(_delta: float) -> void:
+	if _state != State.TARGETING:
+		return
+	if _field_tween != null and _field_tween.is_valid():
+		_follow_target()
 
 ## Seule touche encore écoutée une fois le combat joué. Les composants de
 ## préparation sont désactivés plus haut, la validation arrive donc bien ici.

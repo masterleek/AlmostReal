@@ -208,6 +208,7 @@ blend_mode = 1
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_white_tint"]
 shader = ExtResource("16_white_tint_shader")
 shader_parameter/white_amount = 0.0
+shader_parameter/dark_cutoff = 0.0
 
 [sub_resource type="Animation" id="Animation_h1m7h"]
 resource_name = "tile_reveal"
@@ -298,6 +299,10 @@ _data = {
 &"tile_reveal": SubResource("Animation_h1m7h")
 }
 
+[sub_resource type="FontVariation" id="FontVariation_action_bold"]
+base_font = ExtResource("9_pixel_font")
+variation_embolden = 1.0
+
 [sub_resource type="StyleBoxTexture" id="StyleBoxTexture_bubble"]
 content_margin_left = 14.0
 content_margin_top = 10.0
@@ -308,10 +313,6 @@ texture_margin_left = 16.0
 texture_margin_top = 16.0
 texture_margin_right = 16.0
 texture_margin_bottom = 16.0
-
-[sub_resource type="FontVariation" id="FontVariation_action_bold"]
-base_font = ExtResource("9_pixel_font")
-variation_embolden = 1.0
 
 [node name="Main" type="Node2D" unique_id=1012213867]
 y_sort_enabled = true
@@ -554,11 +555,11 @@ horizontal_alignment = 1
 vertical_alignment = 1
 
 [node name="ActionLabel" type="RichTextLabel" parent="HUD/ActionHint" unique_id=1190450613]
-layout_mode = 2
 clip_contents = false
+layout_mode = 2
 theme_override_colors/default_color = Color(1, 1, 1, 1)
-theme_override_colors/font_shadow_color = Color(0.411765, 0.203922, 0.054902, 1)
 theme_override_colors/font_outline_color = Color(0.411765, 0.203922, 0.054902, 1)
+theme_override_colors/font_shadow_color = Color(0.411765, 0.203922, 0.054902, 1)
 theme_override_constants/shadow_offset_x = 4
 theme_override_constants/shadow_offset_y = 4
 theme_override_constants/outline_size = 16
@@ -569,8 +570,8 @@ theme_override_font_sizes/bold_font_size = 64
 bbcode_enabled = true
 text = "Go to"
 fit_content = true
-autowrap_mode = 0
 scroll_active = false
+autowrap_mode = 0
 vertical_alignment = 1
 
 [node name="TileCostBubble" type="Control" parent="HUD" unique_id=609416610]

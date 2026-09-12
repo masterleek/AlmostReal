@@ -341,6 +341,13 @@ pas partir en guerre contre des choix déjà faits et documentés dans ce repo :
   Un SVG dont TOUT le contenu est en formes vectorielles natives (paths,
   rects, circles, gradients — sans `<image>`) n'a pas ce problème ; vérifier
   par `grep -c '<image' fichier.svg` avant de se lancer dans un remplacement.
+- **Un 9-slice dont les marges dépassent la taille du rectangle ne préserve
+  plus rien — il fait une tache.** Le cadre « INFO » réutilisait son asset en
+  28×15 avec des marges de 20 px par côté (40 au total) : Godot écrase alors
+  les quatre coins les uns sur les autres, et quatre coins de rayon 15 empilés
+  donnent un disque noir. Règle : `2 × marge` doit rester nettement sous la
+  plus petite dimension du rectangle. Symptôme trompeur — le MÊME asset dans le
+  MÊME code rend correctement en grand format, seul le petit usage dégénère.
 - **Ne pas déduire un espacement de la taille d'un asset** : l'icône « on »
   fait 11 px de large parce qu'elle porte un halo qui déborde, alors que les
   losanges sont espacés de 9 px sur la maquette (mesuré : 9,0 entre trois
@@ -566,6 +573,15 @@ pas partir en guerre contre des choix déjà faits et documentés dans ce repo :
   comparer l'intensité moyenne du rendu importé à celle du PNG d'origine. Un
   asset qui perd plus d'un quart revient au PNG — en bilinéaire s'il est
   anticrénelé.
+  **`bkg_description.svg` est dans ce cas et n'est PAS encore corrigé** : tout
+  son bord flou tient dans un `feGaussianBlur stdDeviation="2.5"`, et Godot en
+  fait un rectangle à bord dur — l'alpha de sa ligne médiane saute de 0 à 153
+  d'une colonne à l'autre là où l'asset veut une montée progressive. Le PNG
+  existe dans `_assets/battle/`. Test rapide et sans ambiguïté : dumper
+  `texture.get_image()` et lire le profil d'alpha en travers d'un bord — un
+  bord flou monte par paliers, un bord dur saute en une colonne. (Ne PAS
+  comparer à un rendu `qlmanage`, qui aplatit l'alpha sur du blanc et fausse
+  toute mesure d'intensité.)
 - **Pour faire un FONDU entre deux états d'un même élément, superposer deux
   nœuds plutôt que d'échanger une texture.** La barre de rythme montrait sa
   moitié allumée en remplaçant la texture du sprite éteint : aucune place pour
@@ -670,6 +686,46 @@ pas partir en guerre contre des choix déjà faits et documentés dans ce repo :
   côté moteur : les valeurs de `source` d'une action (`attack`/`eko`/`item`/
   `guard`) traînaient en chaînes nues dans trois fichiers. Une faute de frappe
   n'y lève aucune erreur, elle tombe dans la branche par défaut d'un `match`.
+- **Ce qui est posé à partir d'une transformation animée doit être reposé à
+  chaque image.** La pastille d'action se calcule depuis la transformation du
+  terrain ; lue une seule fois au changement de cible, elle lisait une valeur
+  que le tween allait changer pendant 0,3 s — elle restait accrochée au point de
+  départ et n'y revenait jamais. Symptôme trompeur : elle atterrissait sur le
+  HUD pour certaines cibles seulement (celles dont le mouvement était le plus
+  grand), ce qui fait chercher un problème de position, pas de temps.
+- **Dès qu'un nœud intermédiaire se transforme, tout ce qui lit des coordonnées
+  « dedans » doit passer par sa transformation.** Tant que `_field` restait à
+  l'identité pendant la préparation, espace terrain et espace Stage se
+  confondaient et le code mélangeait les deux sans conséquence. Le premier zoom
+  a révélé la confusion. Corollaire : un décalage qui se mesure À L'ÉCRAN
+  (position d'une pastille à côté d'une cible) s'applique APRÈS la
+  transformation, sinon il grossit avec le zoom.
+- **Un fond cadré pile sur l'écran ne peut suivre qu'un mouvement borné.** Le
+  débord du fond de combat est dimensionné pour les 60 px de l'assaut ; à 111 px
+  de translation son bord entre dans l'image. L'élargir dégraderait le rendu au
+  REPOS pour un mouvement passager — le laisser immobile est à la fois plus sûr
+  et plus juste (un plan lointain bouge moins, c'est du parallaxe).
+- **Le point « pieds » d'une unité n'est PAS le milieu de son dessin.** Les
+  ancres de `units.json` alignent les planches d'un même personnage entre elles
+  (sur l'ombre), pas sur le centre du corps : mesuré, le dessin de Noah est
+  centré à +0,5 px de ses pieds sur `idle` mais à +11,5 px sur `standby` (l'épée
+  tenue de côté élargit la silhouette vers la droite). Tout ce qui doit être
+  CENTRÉ SUR LE PERSONNAGE — le nom et la jauge de la cible — se pose donc sur
+  `UnitSprite.art_centre()` en abscisse, et sur les pieds en ordonnée seulement.
+  Symptôme qui l'a révélé : la plaque paraissait juste sur Iris (dessin centré à
+  0,0 sur `idle`) et franchement décalée sur Noah, selon la seule planche que
+  chacun tenait à cet instant.
+- **`flip_h` miroite la texture DANS la cellule** : un rect utile mesuré sur la
+  planche décrit donc le dessin du mauvais côté pour une unité retournée (tous
+  les ennemis le sont). Invisible tant que les planches sont symétriques dans
+  leur cellule — le cactoon l'est à un demi-pixel près — et faux du double de
+  l'excentrement dès qu'une ne l'est pas.
+- **L'ordre d'une liste de cibles n'est pas forcément l'ordre de l'écran.** Les
+  emplacements ennemis sont numérotés de droite à gauche (le ciblage s'ouvre sur
+  le plus proche de l'équipe) ; ←/→ doivent, eux, suivre l'abscisse, sinon la
+  flèche droite déplace le curseur vers la gauche. `TargetSelector` garde donc un
+  ordre visuel à part, trié sur l'abscisse des PIEDS — pas sur celle du dessin,
+  que deux planches de largeurs très différentes pourraient inverser.
 - **Reconstruire une liste de nœuds : `remove_child()` AVANT `queue_free()`.**
   La libération est différée à la fin de la frame, donc les anciens nœuds
   restent enfants — et donc affichés par-dessus les nouveaux — le temps d'une

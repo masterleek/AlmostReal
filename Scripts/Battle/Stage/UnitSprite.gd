@@ -149,6 +149,55 @@ func _anchor(config: Dictionary, cell: Vector2i) -> Vector2:
 		return Vector2(int(declared[0]), int(declared[1]))
 	return Vector2(int(cell.x / 2.0), cell.y)
 
+## Centre du DESSIN, dans les coordonnées du parent.
+##
+## Ni `position`, qui est le point au SOL, ni le centre de la cellule : une
+## planche peut être bien plus large que le personnage. Celle du geste d'attaque
+## de Noah réserve la place de l'arc de lame, et la pose de visée qu'on en
+## extrait y est décalée de 11 px — cadrer sur le milieu de la cellule mettrait
+## le personnage à côté du centre de l'écran.
+##
+## Mesuré sur les pixels réellement dessinés, et mis en cache par planche : lire
+## l'image d'une texture est cher, et une planche donnée a toujours le même
+## cadrage utile.
+static var _art_rects: Dictionary = {}
+
+func art_centre() -> Vector2:
+	var rect := _used_rect()
+	var centre := Vector2(rect.position) + Vector2(rect.size) * 0.5
+	# `flip_h` ne DÉPLACE pas le nœud : il miroite la texture à l'intérieur de
+	# la cellule. Le rect utile, lui, est mesuré sur la planche telle qu'elle
+	# est dessinée — donc du mauvais côté pour un ennemi, qui est retourné.
+	# Sans ce repli, un personnage décentré dans sa cellule verrait son centre
+	# calculé à l'opposé du dessin qu'on voit à l'écran.
+	if flip_h:
+		centre.x = _cell_size().x - centre.x
+	return position + offset + centre
+
+## Taille de cellule de la planche montée. Lue sur la RÉGION d'atlas d'une
+## frame, pas sur son image : la région est une simple propriété, là où lire
+## l'image coûte un transfert depuis la texture.
+func _cell_size() -> Vector2:
+	var frame: Texture2D = sprite_frames.get_frame_texture("default", 0)
+	return frame.get_size() if frame != null else Vector2.ZERO
+
+func _used_rect() -> Rect2i:
+	if _art_rects.has(sheet_path):
+		return _art_rects[sheet_path]
+	var rect := Rect2i(Vector2i.ZERO, Vector2i.ONE)
+	var frame: Texture2D = sprite_frames.get_frame_texture("default", 0)
+	if frame != null:
+		var image := frame.get_image()
+		if image != null:
+			var used := image.get_used_rect()
+			# Une planche entièrement transparente rendrait un rect vide : on
+			# retombe alors sur la cellule entière plutôt que sur un point.
+			rect = used if used.size.x > 0 and used.size.y > 0 else Rect2i(
+				Vector2i.ZERO, image.get_size()
+			)
+	_art_rects[sheet_path] = rect
+	return rect
+
 ## Décale la phase de l'animation pour que plusieurs unités partageant la même
 ## planche ne bougent pas à l'unisson. `ratio` ∈ [0,1[ = fraction du cycle.
 func offset_phase(ratio: float) -> void:

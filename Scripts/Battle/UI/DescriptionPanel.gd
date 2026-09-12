@@ -4,9 +4,15 @@ extends Node2D
 ##
 ## Le fond est `bkg_description.svg` : un rectangle sombre à coins arrondis et
 ## bord flou, dessiné en 60×60 mais destiné à être étiré — d'où le 9-slice, qui
-## préserve les quatre coins et n'étire que le centre uni. Le même asset sert
-## deux fois : une fois pour le cadre, une fois en petit pour l'onglet du
-## titre.
+## préserve les quatre coins et n'étire que le centre uni.
+##
+## PAS D'ONGLET DERRIÈRE « INFO ». Il y en avait un, le même asset réutilisé en
+## 28×15 — et il sortait en gros rond noir. Un 9-slice dont les marges (20 px de
+## chaque côté, soit 40) dépassent la taille du rectangle (28×15) ne peut pas
+## préserver ses coins : Godot les écrase les uns sur les autres, et quatre
+## coins de rayon 15 empilés font un disque. La maquette montre bien un onglet
+## discret sous le titre, mais le rendre correctement demande d'autres marges
+## que celles du grand cadre — l'auteur a préféré s'en passer.
 ##
 ## Géométrie relevée sur la deuxième vignette de
 ## mockup_preparation_select_eko.jpg. Le contour du cadre a été isolé en
@@ -28,9 +34,6 @@ const PATCH_MARGIN := 20
 ## donc encastré de 5 px.
 const SIZE := Vector2(203, 71)
 
-## Onglet du titre, en haut à gauche du cadre.
-const TAB_OFFSET := Vector2(15, 9)
-const TAB_SIZE := Vector2(28, 15)
 const TITLE_OFFSET := Vector2(17, 12)
 const TITLE_SIZE := 10
 const TITLE_COLOR := Color8(0xE3, 0x93, 0x5B)
@@ -45,7 +48,6 @@ var _label: RichTextLabel
 
 func _ready() -> void:
 	add_child(_frame(SIZE, Vector2.ZERO))
-	add_child(_frame(TAB_SIZE, TAB_OFFSET))
 
 	var title: RichTextLabel = BattleText.make(
 		Localization.get_text("battle.info.title"), TITLE_SIZE, TITLE_COLOR

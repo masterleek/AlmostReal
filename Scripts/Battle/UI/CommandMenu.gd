@@ -94,7 +94,7 @@ const MAX_VISIBLE := 4
 ## sur le bord de la pastille : celle-ci est inclinée, son bout droit remonte
 ## de 6 px sur 123, et son contour flou par-dessus. Le texte, lui, se mesure
 ## sans ambiguïté.
-const LIST_ORIGIN := Vector2(103, 45)
+const LIST_ORIGIN := Vector2(43, 55)
 const LIST_STEP := Vector2(10, 15)
 const LIST_WIDTH := 123
 ## Le libellé est retiré de 18 px et non de 6 : la place à gauche revient à
@@ -249,6 +249,12 @@ func set_layout(layout: Layout) -> void:
 			_max_visible = MAX_VISIBLE
 			_typed = false
 			_row_tilt_deg = 0.0
+## Nombre affiché dans la colonne de droite en MODE RÉDUIT. Une action ne
+## consomme qu'un objet, quelle que soit la réserve : la pastille posée près de
+## la cible annonce ce qui va être dépensé, pas ce qui reste au sac — c'est la
+## liste, elle, qui montre la réserve.
+const FOCUS_QUANTITY := 1
+
 ## Mode « réduit » : voir focus_selection().
 var _focused: bool = false
 var _focus_position: Vector2 = Vector2.ZERO
@@ -324,18 +330,11 @@ func setup(entries: Array[Dictionary], selected: int = 0) -> void:
 			_entries[i]["icon"] = icon
 		var quantity := int(_entries[i].get("quantity", -1))
 		if quantity >= 0:
-			var amount: RichTextLabel = BattleText.make(
-				Localization.get_text("battle.item.quantity") % quantity,
-				TEXT_SIZE, TEXT_COLOR,
-			)
+			var amount: RichTextLabel = BattleText.make("", TEXT_SIZE, TEXT_COLOR)
 			amount.rotation_degrees = _row_tilt_deg
 			add_child(amount)
 			_entries[i]["amount"] = amount
-			# La largeur ne dépend que du nombre : mesurée une fois, pas à
-			# chaque redessin.
-			_entries[i]["amount_width"] = BattleText.text_width(
-				amount.get_parsed_text(), TEXT_SIZE
-			)
+			_write_quantity(_entries[i], quantity)
 		var cost := int(_entries[i].get("cost", 0))
 		if cost > 0:
 			var dots: Node2D = ApDots.new()
@@ -432,6 +431,23 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	get_viewport().set_input_as_handled()
 
+## Écrit le nombre de la colonne de droite et REMESURE sa largeur dans la
+## foulée : c'est elle qui aligne le texte à droite, et elle change avec le
+## nombre de chiffres (« x1 » contre « x13 »). Les deux se font ensemble, sans
+## quoi un nombre changé en mode réduit garderait l'alignement de l'autre.
+##
+## Ne fait rien si le nombre est déjà celui affiché : la mesure passe par une
+## passe de police, inutile à chaque rafraîchissement.
+func _write_quantity(entry: Dictionary, value: int) -> void:
+	if int(entry.get("shown_quantity", -1)) == value:
+		return
+	entry["shown_quantity"] = value
+	var amount: RichTextLabel = entry["amount"]
+	amount.text = Localization.get_text("battle.item.quantity") % value
+	entry["amount_width"] = BattleText.text_width(
+		amount.get_parsed_text(), TEXT_SIZE
+	)
+
 func _refresh() -> void:
 	_scroll_to_selection()
 	for i in _entries.size():
@@ -493,6 +509,10 @@ func _refresh() -> void:
 			).rotated(deg_to_rad(_row_tilt_deg))
 			dots.z_index = pill.z_index
 		if amount != null:
+			_write_quantity(
+				_entries[i],
+				FOCUS_QUANTITY if _focused else int(_entries[i].get("quantity", 0)),
+			)
 			# Aligné à droite : c'est la largeur du nombre qui décide, et elle
 			# change avec lui (« x1 » contre « x13 »).
 			var span_q: float = _entries[i].get("amount_width", 0.0)
