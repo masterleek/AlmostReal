@@ -34,6 +34,13 @@ const MAX_ZOOM = 2;
 // sans la taille de l'image.
 const sizes = new Map();
 
+// À appeler quand le FICHIER derrière une URL a changé (réimport par-dessus) :
+// la taille mémorisée décrirait sinon l'ancienne image, et c'est elle qui sert
+// à afficher la taille de vignette et le défaut d'ancrage.
+export function forgetSheetSize(url) {
+  sizes.delete(url);
+}
+
 export function sheetSize(url) {
   if (!url) return Promise.resolve(null);
   if (!sizes.has(url)) {

@@ -1222,6 +1222,56 @@ button:hover { border-color: var(--accent); }
    puisque rien dans le dessin ne l'annonce. */
 .sheet-preview-openable { cursor: zoom-in; }
 
+/* Le relevé du découpage et ce qu'il donne, sur une ligne : le bouton agit, la
+   note dit ce qu'on obtient — y compris quand personne n'a cliqué. */
+.battle-anim-grid-line {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: -2px;
+}
+
+.battle-anim-grid-line .battle-inline-hint { font-variant-numeric: tabular-nums; }
+
+/* L'état d'abord : c'est lui qui dit QUAND la planche se joue, et le reste des
+   réglages n'a de sens qu'une fois cette question tranchée. */
+.battle-anim-state-line {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.battle-anim-state-line > .battle-field { flex: 0 1 300px; }
+.battle-anim-state-line > .battle-inline-hint { flex: 1 1 200px; padding-bottom: 5px; }
+
+/* Ce que le moteur réclame et qui manque : une phrase au-dessus de la liste,
+   pas une alarme — une unité peut légitimement n'avoir qu'un repos. */
+.battle-anim-missing {
+  margin: 0 0 4px;
+  padding: 5px 9px;
+  border-left: 2px solid var(--border);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+/* La ligne du fichier : le choix, puis l'import juste à côté — c'est en
+   parcourant la liste qu'on découvre que le fichier voulu n'y est pas. */
+.battle-sheet-line {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.battle-sheet-line > .battle-field { flex: 1 1 220px; }
+.battle-sheet-import { display: flex; align-items: center; padding-bottom: 3px; }
+.battle-sheet-import button[disabled] { opacity: 0.6; cursor: progress; }
+
+/* L'avertissement « pas encore importée » prend toute la ligne : c'est une
+   phrase, elle ne se met pas en colonne à côté d'un champ. */
+.battle-sheet-line > .battle-warning { flex: 1 0 100%; margin: 0; }
+
 /* Même rouge pâle que .battle-warning : c'est la couleur « ça ne va pas » de la page. */
 .battle-play-failed { border-color: #ffb4a2; color: #ffb4a2; }
 
@@ -1380,14 +1430,6 @@ button:hover { border-color: var(--accent); }
   border: 1px solid #6b3b32;
   border-radius: 3px;
   padding: 1px 5px;
-}
-
-.battle-sub-label {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: #9aa0ab;
-  margin-top: 4px;
 }
 
 .battle-grid {

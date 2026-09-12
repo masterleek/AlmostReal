@@ -4,11 +4,15 @@ import fsSync from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { spawn } from "child_process";
+import { createHash } from "crypto";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(__dirname, "..", "..");
 const MAPS_DIR = path.join(PROJECT_ROOT, "maps");
 const SPRITES_DIR = path.join(PROJECT_ROOT, "Sprites");
+// Les planches de combat vivent toutes là : c'est le dossier que la page
+// « Combat » liste, et celui où elle dépose ce qu'on lui donne à importer.
+const BATTLE_SHEETS_DIR = path.join(SPRITES_DIR, "Battle");
 const TILE_META_PATH = path.join(SPRITES_DIR, "tile_meta.json");
 const PROPS_META_PATH = path.join(SPRITES_DIR, "props_meta.json");
 const SCRIPTS_DIR = path.join(PROJECT_ROOT, "Scripts");
@@ -23,6 +27,7 @@ const AUDIO_DIR = path.join(PROJECT_ROOT, "Audio");
 const BATTLE_ASSAULT_PATH = path.join(SCRIPTS_DIR, "Battle", "BattleAssault.gd");
 const RHYTHM_BAR_PATH = path.join(SCRIPTS_DIR, "Battle", "UI", "RhythmBar.gd");
 const BATTLE_DATA_PATH = path.join(SCRIPTS_DIR, "Battle", "BattleData.gd");
+const BATTLE_SCENE_PATH = path.join(SCRIPTS_DIR, "Battle", "BattleScene.gd");
 // Libellés que l'auteur donne aux moments de son. Côté OUTIL et pas côté jeu :
 // le moteur ne connaît que les clés (`hit`, `gesture`…), qui sont son
 // vocabulaire ; renommer ici ne change que ce qui s'affiche dans l'éditeur.
@@ -140,36 +145,76 @@ function sameShape(body, model) {
 // `defaultValue` généralise ce qui était autrefois toujours un tableau ([]) :
 // un tableau vide pour tiles/props (comportement inchangé), un objet vide de
 // catalogue pour /api/texts et pour les catalogues de combat (cf plus bas).
+// Empreinte du CONTENU du fichier, annoncée au chargement et réclamée à la
+// sauvegarde (cf. le verrou de metaRoutes ci-dessous).
+//
+// Une empreinte plutôt qu'un compteur `_rev` comme les maps : ces fichiers-là
+// sont de la DONNÉE DE JEU, lue par Godot. Y écrire un compteur d'éditeur les
+// salirait, et surtout il ne verrait pas passer une modification faite à la
+// main dans un éditeur de texte — alors qu'une empreinte du contenu, si.
+function revisionOf(text) {
+  return createHash("sha1").update(text).digest("hex").slice(0, 16);
+}
+
 function metaRoutes(urlPath, filePath, defaultValue = []) {
   app.get(urlPath, async (req, res) => {
     try {
       const raw = await fs.readFile(filePath, "utf-8");
+      res.set("X-Catalog-Revision", revisionOf(raw));
       res.json(JSON.parse(raw));
     } catch {
       res.json(defaultValue);
     }
   });
 
+  // VERROU OPTIMISTE. La page tient TOUT le catalogue en mémoire et le renvoie
+  // ENTIER à chaque changement : un onglet ouvert depuis une heure réécrit donc
+  // le fichier tel qu'il était il y a une heure, et efface sans un mot ce qui a
+  // été fait depuis — par un autre onglet, ou à la main dans le fichier. Ce
+  // n'est pas une hypothèse : c'est ainsi qu'une série d'ancrages relevés au
+  // pixel a disparu, remplacée par les valeurs d'avant, au premier import fait
+  // depuis un onglet resté ouvert.
+  //
+  // Le client renvoie donc l'empreinte qu'il a chargée ; si le disque ne porte
+  // plus la même, on REFUSE (409) au lieu d'écraser. Même politique que les
+  // maps, dont la note disait déjà que ce mécanisme était rétrofitable « si
+  // l'édition concurrente devient un vrai problème ». Elle l'est devenue.
   app.put(urlPath, async (req, res) => {
     const body = req.body;
     if (!sameShape(body, defaultValue)) {
       return res.status(400).json({ error: "invalid payload" });
     }
+    const expected = req.get("X-Expected-Revision");
+    if (expected) {
+      let current = null;
+      try {
+        current = revisionOf(await fs.readFile(filePath, "utf-8"));
+      } catch {
+        // Fichier absent : il n'y a rien à écraser, la sauvegarde le crée.
+      }
+      if (current !== null && current !== expected) {
+        return res.status(409).json({
+          error: "conflict",
+          message:
+            "Ce catalogue a été modifié ailleurs depuis que cette page l'a "
+            + "chargé. Recharge la page avant de sauvegarder : sans ça, tu "
+            + "écraserais ces changements par l'état d'il y a un moment.",
+        });
+      }
+    }
     // Saut de ligne final : ces fichiers s'éditent AUSSI à la main, et
     // `JSON.stringify` n'en met pas. Sans lui, chaque sauvegarde depuis
     // l'éditeur produisait un diff git parasite (« \ No newline at end of
     // file ») sur un fichier par ailleurs inchangé.
-    await fs.writeFile(filePath, JSON.stringify(body, null, 2) + "\n");
+    const text = JSON.stringify(body, null, 2) + "\n";
+    await fs.writeFile(filePath, text);
+    res.set("X-Catalog-Revision", revisionOf(text));
     res.json({ ok: true });
   });
 }
 
 metaRoutes("/api/tiles", TILE_META_PATH);
 metaRoutes("/api/props", PROPS_META_PATH);
-// Pas de verrou optimiste (_rev) ici contrairement aux maps : catalogue
-// mono-utilisateur pour l'instant (cf CLAUDE.md) — même logique que
-// tiles/props, rétrofitable avec le mécanisme des maps si l'édition
-// concurrente devient un vrai problème.
 metaRoutes("/api/texts", TEXTS_PATH, {
   languages: [
     { code: "en", label: "English" },
@@ -181,9 +226,8 @@ metaRoutes("/api/texts", TEXTS_PATH, {
 
 // ---------- Combat : les trois catalogues, édités par la page « Combat » ----------
 // Mêmes routes que tiles/props/texts, et pour la même raison : la donnée de
-// combat vit en JSON justement pour être éditable sans recompiler. Pas de
-// verrou optimiste (_rev) ici non plus — catalogue mono-utilisateur, cf. la
-// note sur /api/texts.
+// combat vit en JSON justement pour être éditable sans recompiler — donc aussi
+// à la main, en parallèle de la page. D'où le verrou optimiste de metaRoutes.
 metaRoutes("/api/battle/units", path.join(BATTLE_DIR, "units.json"), { units: {} });
 metaRoutes("/api/battle/ekos", path.join(BATTLE_DIR, "ekos.json"), { ekos: {} });
 metaRoutes("/api/battle/items", path.join(BATTLE_DIR, "items.json"), { items: {} });
@@ -214,15 +258,95 @@ app.get("/api/battle/sounds", async (req, res) => {
 // façon pour la montrer, et `naturalWidth` la lui donne sans que le serveur ait
 // à décoder du PNG.
 app.get("/api/battle/sheets", async (req, res) => {
-  const dir = path.join(SPRITES_DIR, "Battle");
-  const files = await walkFiles(dir, ".png");
+  const files = await walkFiles(BATTLE_SHEETS_DIR, ".png");
   res.json(
     files
       .map((file) => path.relative(SPRITES_DIR, file).split(path.sep).join("/"))
       .sort()
-      .map((rel) => ({ path: "res://Sprites/" + rel, url: "/sprites/" + rel }))
+      .map((rel) => ({
+        path: "res://Sprites/" + rel,
+        url: "/sprites/" + rel,
+        // Godot ne lit pas un PNG posé sur le disque : il lui faut son `.import`
+        // et la texture compilée qui va avec. Un fichier qui n'en a pas est
+        // visible ICI et INVISIBLE EN JEU — l'éditeur doit donc le dire, sinon
+        // l'auteur choisit une planche qui laissera son personnage vide.
+        imported: fsSync.existsSync(path.join(SPRITES_DIR, rel) + ".import"),
+      }))
   );
 });
+
+// Les huit octets de signature d'un PNG.
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+// Nom de fichier acceptable pour une planche : pas de séparateur, pas de `..`,
+// et l'extension que Godot importe. On ne se contente pas d'assainir le nom
+// donné — un nom refusé se répare à la main, un nom silencieusement transformé
+// se retrouve dans `units.json` sans que personne ne l'ait voulu.
+function isValidSheetName(name) {
+  return /^[A-Za-z0-9_-]+\.png$/.test(name);
+}
+
+// Import d'une planche DEPUIS LE DISQUE de l'auteur. Le corps est le PNG brut
+// (Content-Type: image/png) plutôt qu'un multipart : ça évite une dépendance
+// pour un seul formulaire, et le client n'a qu'à passer le File tel quel.
+app.post(
+  "/api/battle/sheets",
+  express.raw({ type: "image/png", limit: "24mb" }),
+  async (req, res) => {
+    const name = String(req.query.name || "");
+    if (!isValidSheetName(name)) {
+      return res.status(400).json({
+        error: "Nom de planche invalide : lettres, chiffres, _ et -, extension .png.",
+      });
+    }
+    const body = req.body;
+    if (!Buffer.isBuffer(body) || body.length === 0) {
+      return res.status(400).json({ error: "Corps vide : envoie le PNG en image/png." });
+    }
+    // Un fichier mal choisi (un JPEG renommé, une planche exportée en WebP)
+    // passerait autrement jusque dans `units.json`, et n'échouerait qu'au
+    // combat.
+    if (!body.subarray(0, 8).equals(PNG_SIGNATURE)) {
+      return res.status(400).json({ error: "Ce fichier n'est pas un PNG." });
+    }
+    const target = path.join(BATTLE_SHEETS_DIR, name);
+    if (fsSync.existsSync(target) && req.query.overwrite !== "1") {
+      return res.status(409).json({ error: `« ${name} » existe déjà.` });
+    }
+    try {
+      await fs.mkdir(BATTLE_SHEETS_DIR, { recursive: true });
+      await fs.writeFile(target, body);
+    } catch (err) {
+      return res.status(500).json({ error: String(err) });
+    }
+    const imported = await importWithGodot();
+    const rel = path.relative(SPRITES_DIR, target).split(path.sep).join("/");
+    res.json({
+      path: "res://Sprites/" + rel,
+      url: "/sprites/" + rel,
+      imported: imported && fsSync.existsSync(target + ".import"),
+    });
+  }
+);
+
+// Passe d'import de Godot, ATTENDUE : tant qu'elle n'a pas tourné, le fichier
+// existe sur le disque mais le jeu ne sait pas le charger. On rend la main
+// seulement quand c'est fait, pour que la réponse puisse le dire honnêtement.
+//
+// `--quit-after 40` borne la passe : un éditeur qui resterait ouvert bloquerait
+// la requête indéfiniment.
+function importWithGodot() {
+  if (!fsSync.existsSync(GODOT_BIN)) return Promise.resolve(false);
+  return new Promise((resolve) => {
+    const child = spawn(
+      GODOT_BIN,
+      ["--headless", "--path", PROJECT_ROOT, "--editor", "--quit-after", "40"],
+      { stdio: "ignore" }
+    );
+    child.on("error", () => resolve(false));
+    child.on("exit", () => resolve(true));
+  });
+}
 
 // Vocabulaires FERMÉS du combat. Ceux qui sont déclarés une fois pour toutes
 // dans le code Godot sont LUS LÀ-BAS plutôt que recopiés ici : deux listes qui
@@ -260,6 +384,51 @@ function parseGdStringArrayNotes(content, name) {
   return Object.keys(notes).length ? notes : null;
 }
 
+// Constantes de NOM D'ANIMATION du moteur : `const ANIM_IDLE := "idle"`, avec
+// le bloc de commentaires `##` qui la précède. Lues dans le .gd plutôt que
+// recopiées ici, pour la même raison que les moments de son : deux listes qui
+// disent la même chose finissent par se contredire, et c'est le jeu qui a
+// raison.
+//
+// Le COMMENTAIRE est ce qui donne son sens à l'état. « atkeff » ne dit rien ;
+// « pose de visée, tenue figée pendant qu'il choisit sa cible » dit tout.
+function parseGdAnimationStates(content) {
+  const states = [];
+  const lines = content.split("\n");
+  let note = [];
+  for (const line of lines) {
+    const comment = line.match(/^\s*##\s?(.*)$/);
+    if (comment) {
+      note.push(comment[1].trim());
+      continue;
+    }
+    const decl = line.match(/^const\s+(ANIM_[A-Z_]+)\s*:?=\s*"([^"]+)"/);
+    if (decl) {
+      states.push({
+        key: decl[2],
+        constant: decl[1],
+        note: note.join(" ").trim(),
+      });
+    }
+    // Toute ligne qui n'est pas un commentaire ferme le bloc en cours : un
+    // commentaire doit TOUCHER sa constante pour lui appartenir.
+    if (line.trim() !== "" || note.length === 0) note = [];
+  }
+  return states.length ? states : null;
+}
+
+// Nom de planche qu'une ACTION joue quand elle n'en déclare pas — lu dans son
+// propre défaut, `get("animation", …)`, plutôt que fixé ici. Le défaut peut
+// être écrit en clair ou renvoyer à une constante d'état, qu'on résout alors
+// dans la liste déjà lue.
+function parseGdActionAnimationDefault(content, states) {
+  const match = content.match(/get\("animation",\s*(?:"([^"]+)"|([A-Z][A-Z0-9_]*))\)/);
+  if (!match) return null;
+  if (match[1]) return match[1];
+  const named = states.find((state) => state.constant === match[2]);
+  return named ? named.key : null;
+}
+
 function parseGdDictionaryKeys(content, name) {
   const match = content.match(
     new RegExp(String.raw`const\s+${name}[^=]*=\s*\{([\s\S]*?)\n\}`)
@@ -278,10 +447,11 @@ async function readGd(filePath) {
 }
 
 app.get("/api/battle/vocabulary", async (req, res) => {
-  const [assault, rhythm, battleData] = await Promise.all([
+  const [assault, rhythm, battleData, battleScene] = await Promise.all([
     readGd(BATTLE_ASSAULT_PATH),
     readGd(RHYTHM_BAR_PATH),
     readGd(BATTLE_DATA_PATH),
+    readGd(BATTLE_SCENE_PATH),
   ]);
   // Un repli est prévu pour chaque liste lue dans le code : si un refactor
   // renomme la constante, la page continue de fonctionner sur la dernière
@@ -298,7 +468,27 @@ app.get("/api/battle/vocabulary", async (req, res) => {
   // proposer partout des moments que l'entrée ne peut pas atteindre.
   const unitMoments = parseGdStringArray(battleData, "UNIT_SOUNDS");
   const unitMomentNotes = parseGdStringArrayNotes(battleData, "UNIT_SOUNDS");
+  // Les ÉTATS D'ANIMATION que le moteur va chercher par leur nom. Les deux
+  // fichiers ne portent pas les mêmes : la scène tient le tour d'un allié
+  // (repos, visée, attente, victoire), l'assaut tient le retour à
+  // l'emplacement. Une planche nommée autrement reste valide — c'est ainsi
+  // qu'une action désigne la sienne — mais AUCUN état ne la jouera.
+  const animationStates = [
+    ...(parseGdAnimationStates(battleScene) || []),
+    ...(parseGdAnimationStates(assault) || []),
+  ];
+  const actionDefault = parseGdActionAnimationDefault(assault, animationStates);
+
   res.json({
+    animation_states: animationStates.length ? animationStates : [
+      { key: "idle", constant: "ANIM_IDLE", note: "pose de repos" },
+      { key: "atkeff", constant: "ANIM_AIMING", note: "pose de visée, pendant le ciblage" },
+      { key: "standby", constant: "ANIM_STANDBY", note: "attente, action retenue" },
+      { key: "win_before", constant: "ANIM_WIN_BEFORE", note: "célébration, jouée une fois" },
+      { key: "win", constant: "ANIM_WIN", note: "pose de victoire, tenue" },
+      { key: "move_back", constant: "ANIM_RETURN", note: "retour à l'emplacement" },
+    ],
+    action_animation_default: actionDefault || "attack",
     moments: moments || ["announce", "rhythm", "approach", "gesture", "hit", "return"],
     // Repli volontairement PLUS PAUVRE que les commentaires du .gd : il dit
     // l'essentiel sans prétendre être à jour. Une copie détaillée finirait par

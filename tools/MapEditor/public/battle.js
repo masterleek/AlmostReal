@@ -1,15 +1,19 @@
 import {
   getBattleCatalog,
   saveBattleCatalog,
+  battleCatalogChanged,
+  CatalogConflictError,
   getBattleSounds,
   getBattleVocabulary,
   getBattleSheets,
+  uploadBattleSheet,
   getBattleMomentLabels,
   saveBattleMomentLabels,
   getTexts,
 } from "./api.js";
 import { pickFrames } from "./frame-picker.js";
-import { animationPreview, sheetSize, staticFrame } from "./sheet-preview.js";
+import { animationPreview, forgetSheetSize, sheetSize, staticFrame } from "./sheet-preview.js";
+import { measureGrid, measureGround } from "./sheet-grid.js";
 
 // Page « Combat » : les trois catalogues de Battle/ (unités, Ekos, objets).
 //
@@ -48,6 +52,9 @@ let catalogs = { units: null, ekos: null, items: null };
 let texts = { texts: [], default_language: "en" };
 let sounds = [];
 let sheetFiles = [];
+// États d'animation que le moteur va chercher par leur nom (lus dans le .gd).
+let animationStates = [];
+let actionAnimationDefault = "atk";
 let momentLabels = { labels: {} };
 let vocabulary = {
   moments: [],
@@ -74,8 +81,16 @@ function entriesOf(section) {
   return catalogs[section]?.[SECTIONS[section].container] || {};
 }
 
+// Un conflit n'est PAS rattrapable ici : la page tient tout le catalogue en
+// mémoire, il n'y a rien à fusionner. On le dit, et on s'arrête — se taire
+// laisserait croire que le changement est enregistré alors qu'il est perdu.
 async function persist(section) {
-  await saveBattleCatalog(section, catalogs[section]);
+  try {
+    await saveBattleCatalog(section, catalogs[section]);
+  } catch (err) {
+    if (!(err instanceof CatalogConflictError)) throw err;
+    alert(err.message);
+  }
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -560,7 +575,7 @@ function actionFields(action, fields, animations, onChanged) {
         if (v) action.animation = v;
         else delete action.animation;
         onChanged();
-      }, { empty: "(pas en avant)" }),
+      }, { empty: "(pas en avant)", labelOf: animationOptionLabel }),
       "Nom cherché dans le bloc « animations » de l'unité qui agit, pas ici."
     )
   );
@@ -568,17 +583,115 @@ function actionFields(action, fields, animations, onChanged) {
   return grid;
 }
 
+// MÊME VOCABULAIRE QUE LA PAGE UNITÉS. Une action ne porte pas une planche,
+// elle porte le NOM d'une planche que l'unité qui agit doit déclarer — c'est
+// exactement la liaison que le champ « État » montre de l'autre côté. Les
+// libellés sont donc les mêmes des deux bords, sinon la même chaîne s'appelle
+// « Repos — idle » ici et « idle » là.
+function animationOptionLabel(key) {
+  const label = momentLabels.animation_labels?.[key];
+  if (label) return `${label} — ${key}`;
+  return key === actionAnimationDefault
+    ? `${key} (planche d'action, par défaut)`
+    : `${key} (nom libre)`;
+}
+
+// Qui sait jouer cette planche, et qui ne sait pas. Le pendant exact du
+// « qui l'appelle » affiché sur une planche d'unité : une action qui nomme une
+// planche qu'aucun personnage ne déclare ne fait AUCUN geste, sans erreur.
+//
+// `performers` limite la question À CEUX QUE ÇA CONCERNE : l'attaque de base
+// d'une unité ne regarde qu'elle, un Eko ne regarde que les personnages qui le
+// connaissent. Sans ça, la ligne accuserait un manque chez des unités qui ne
+// lanceront jamais cette action.
+function animationCoverage(action, performers) {
+  const name = action.animation || actionAnimationDefault;
+  const units = entriesOf("units");
+  const has = [];
+  const fallback = [];
+  const none = [];
+  for (const id of performers) {
+    const unit = units[id];
+    if (!unit) continue;
+    const sheets = unit.animations || {};
+    // Le moteur retombe sur l'ATTAQUE DU PERSONNAGE quand l'action nomme une
+    // planche qu'il n'a pas (cf. BattleAssault._gesture_for) : l'éditeur doit
+    // dire la même chose, sinon il annonce un geste manquant là où il y en a un.
+    if (sheets[name]) has.push(id);
+    else if (sheets[actionAnimationDefault]) fallback.push(id);
+    else none.push(id);
+  }
+  return { name, has, fallback, none };
+}
+
+// Ligne d'information sous les champs d'une action, dans le même esprit que
+// « États sans planche : … » côté unité.
+function actionCoverageLine(action, performers) {
+  const line = el("span", "battle-inline-hint");
+  if (!performers || performers.length === 0) {
+    line.textContent = "Aucune unité ne connaît cette action pour l'instant.";
+    return line;
+  }
+  const { name, has, fallback, none } = animationCoverage(action, performers);
+  const parts = [];
+  if (has.length) parts.push(`déclarée par ${has.join(", ")}`);
+  if (fallback.length) {
+    parts.push(`${fallback.join(", ")} jouera « ${actionAnimationDefault} » à la place`);
+  }
+  if (none.length) parts.push(`aucun geste pour ${none.join(", ")}`);
+  line.textContent = `Planche « ${name} » : ${parts.join(" ; ")}.`;
+  // Rouge seulement quand quelqu'un frappe VRAIMENT sans rien montrer : un
+  // repli sur la planche du personnage est un fonctionnement normal, pas une
+  // alerte.
+  if (none.length) line.classList.add("battle-warning");
+  return line;
+}
+
+// Les personnages qui peuvent lancer cette action : eux seuls doivent déclarer
+// sa planche.
+function performersOf(section, id) {
+  const units = Object.entries(entriesOf("units"));
+  if (section === "ekos") {
+    return units.filter(([, u]) => (u.ekos || []).includes(id)).map(([uid]) => uid);
+  }
+  // Un objet est utilisable par n'importe quel allié : tout le monde est
+  // concerné, sauf les ennemis, qui n'ouvrent pas le sac.
+  return units.filter(([, u]) => !u.behaviour).map(([uid]) => uid);
+}
+
+// Les moments que CETTE action n'atteindra jamais, dits une fois pour toutes
+// plutôt qu'au coup par coup sur une entrée déjà posée — comme la ligne des
+// états sans planche, qui se lit avant d'ouvrir quoi que ce soit.
+function unreachableLine(action) {
+  const unreachable = [...unreachableMoments(action)];
+  if (unreachable.length === 0) return null;
+  return el("p", "battle-inline-hint battle-anim-missing",
+    "Moments que cette action n'atteint pas : "
+    + unreachable.map(momentLabel).join(", ")
+    + " — un son posé là ne se jouera pas.");
+}
+
 // `sounds = false` sur l'attaque de base d'une unité : ses sons rejoignent la
 // liste unique de l'unité, avec la voix du personnage. Un Eko ou un objet, lui,
 // n'a qu'une famille et garde ses sons dans son propre bloc.
-function actionBlock(title, action, fields, animations, onChanged, { sounds = true } = {}) {
+function actionBlock(
+  title, action, fields, animations, onChanged, { sounds = true, performers = [] } = {}
+) {
   const block = el("div", "battle-block");
-  block.appendChild(el("h4", "battle-block-title", title));
+  // MÊME INTERTITRE QUE LES AUTRES SECTIONS. Il y en avait trois formes pour
+  // le même rôle — `battle-block-title` ici, `battle-sub-label` en dessous,
+  // `battle-section-title` sur la page Unités — et la page Ekos n'avait donc
+  // pas le même rythme de lecture qu'une unité, alors qu'elle dit la même
+  // chose : des réglages, un geste, des sons.
+  block.appendChild(sectionTitle(title));
   block.appendChild(actionFields(action, fields, animations, onChanged));
-  block.appendChild(el("span", "battle-sub-label", "Séquence de rythme"));
+  block.appendChild(actionCoverageLine(action, performers));
+  block.appendChild(sectionTitle("Séquence de rythme"));
   block.appendChild(sequenceEditor(action, onChanged));
   if (sounds) {
-    block.appendChild(el("span", "battle-sub-label", "Sons"));
+    block.appendChild(sectionTitle("Sons", "aux six moments du geste"));
+    const unreachable = unreachableLine(action);
+    if (unreachable) block.appendChild(unreachable);
     block.appendChild(soundsEditor([actionFamily(action)], onChanged));
   }
   return block;
@@ -654,14 +767,6 @@ const STAT_FIELDS = [
 //  Planches d'animation
 // ──────────────────────────────────────────────────────────────────────────
 
-// Les noms que le MOTEUR va chercher lui-même (cf. les constantes ANIM_* de
-// BattleScene et l'appel à « idle » de BattleAssault). Proposés en suggestion,
-// pas imposés : une action de catalogue peut nommer n'importe quelle planche
-// déclarée ici, et rien n'interdit d'en inventer une pour un Eko.
-const KNOWN_ANIMATIONS = [
-  "idle", "standby", "atkeff", "atk", "move_back", "win_before", "win",
-];
-
 // Ce qui se règle sur une planche, hors vignettes (choisies sur l'image) et
 // hors ancrage (qui a sa propre paire de champs).
 const SHEET_FIELDS = [
@@ -695,6 +800,18 @@ function animationsEditor(unit, onChanged) {
       el("span", "battle-warning", "Aucune planche : l'unité n'a rien à afficher en combat.")
     );
   }
+  // Ce que le moteur RÉCLAME et que l'unité n'a pas. Un état manquant ne lève
+  // aucune erreur en jeu : le personnage garde simplement la planche qu'il
+  // avait, ou ne bouge pas. Le dire ici est le seul endroit où ça se voit.
+  const missing = animationStates.filter((st) => !(st.key in unit.animations));
+  if (missing.length) {
+    wrap.appendChild(
+      el("p", "battle-inline-hint battle-anim-missing",
+        "États sans planche : "
+        + missing.map((st) => momentLabels.animation_labels?.[st.key] || st.key).join(", ")
+        + ".")
+    );
+  }
   for (const name of names) {
     wrap.appendChild(animationBlock(unit, name, onChanged));
   }
@@ -703,7 +820,8 @@ function animationsEditor(unit, onChanged) {
   add.type = "button";
   add.onclick = () => {
     const name = prompt(
-      `Nom de la planche (reconnus par le moteur : ${KNOWN_ANIMATIONS.join(", ")}) :`
+      "Nom de la planche (l'état se choisit ensuite dans le bloc ; reconnus par le "
+        + `moteur : ${animationStates.map((st) => st.key).join(", ")}) :`
     );
     if (!name) return;
     if (!ID_PATTERN.test(name)) {
@@ -755,6 +873,23 @@ function animationBlock(unit, name, onChanged) {
   toggle.appendChild(el("span", "battle-anim-caret", open ? "▾" : "▸"));
   toggle.appendChild(el("span", "battle-id", name));
   toggle.appendChild(el("span", "battle-inline-hint", animationSummary(config)));
+  // L'AVERTISSEMENT EST DANS L'EN-TÊTE, donc visible planche REPLIÉE, et il est
+  // DANS le bouton : le geste qu'il appelle est justement d'ouvrir la planche.
+  // Le réserver aux champs d'ancrage le rendrait invisible — ces blocs sont
+  // repliés par défaut, et on n'ouvre pas celui qu'on ne soupçonne pas.
+  const warning = el("span", "battle-warning");
+  warning.hidden = true;
+  toggle.appendChild(warning);
+  anchorDrift(unit, name, config).then((drift) => {
+    if (!drift) return;
+    warning.hidden = false;
+    warning.textContent = `⚠ ancrage : ${describeDrift(drift)}`;
+    warning.title = drift.implicit
+      ? "Aucun ancrage déclaré : le moteur prend le centre-bas de la cellule, "
+        + "qui n'est juste que pour une cellule collée au dessin."
+      : `Déclaré ${drift.declared.join(" / ")}, relevé sur l'ombre `
+        + `${drift.measured.join(" / ")}.`;
+  });
   toggle.onclick = () => {
     if (open) openSheets.delete(key);
     else openSheets.add(key);
@@ -777,19 +912,8 @@ function animationBlock(unit, name, onChanged) {
   const settings = el("div", "battle-anim-fields");
   column.appendChild(settings);
 
-  settings.appendChild(
-    field(
-      "Fichier",
-      selectInput(
-        sheetFiles.map((f) => f.path), config.sheet || "",
-        (value) => {
-          config.sheet = value;
-          onChanged();
-        },
-        { labelOf: (path) => path.split("/").pop() }
-      )
-    )
-  );
+  settings.appendChild(stateLine(unit, name, onChanged));
+  settings.appendChild(sheetLine(unit, config, name, onChanged));
 
   const grid = el("div", "battle-grid");
   for (const [key, label, options] of SHEET_FIELDS) {
@@ -798,6 +922,7 @@ function animationBlock(unit, name, onChanged) {
     );
   }
   settings.appendChild(grid);
+  settings.appendChild(gridLine(unit, name, config, onChanged));
 
   settings.appendChild(framesLine(config, name, onChanged));
 
@@ -825,13 +950,441 @@ function animationBlock(unit, name, onChanged) {
   );
   settings.appendChild(options);
 
-  settings.appendChild(anchorLine(config, onChanged));
+  settings.appendChild(anchorLine(unit, name, config, onChanged));
   return block;
 }
 
 // Les vignettes se choisissent SUR L'IMAGE : `first_frame` et `frames`
 // décrivent un extrait d'une grille qu'on ne voit pas, et les régler de tête
 // demande de compter les cases sur l'image ouverte à côté.
+// À QUEL MOMENT DU COMBAT cette planche se joue.
+//
+// Le moteur va chercher ses planches PAR LEUR NOM : `idle` quand l'unité
+// attend, `atkeff` pendant qu'elle vise, `win_before` puis `win` à la victoire
+// (cf. les constantes ANIM_* lues dans les .gd). Une planche nommée autrement
+// reste valide — c'est ainsi qu'une action désigne la sienne — mais aucun état
+// ne la jouera : elle ne s'anime que si une attaque ou un Eko l'appelle.
+//
+// Cette liste rend donc visible ce que la clé du fichier cachait : renommer
+// « atk » en « attack » est un geste anodin dans un éditeur de texte, et il
+// détache la planche de tout ce qui la réclamait.
+function stateLine(unit, name, onChanged) {
+  const line = el("div", "battle-anim-state-line");
+  const taken = new Set(Object.keys(unit.animations).filter((n) => n !== name));
+  const known = animationStates.map((s) => s.key);
+  const values = [...known];
+  // Le nom courant figure toujours dans la liste, même s'il n'est pas un état :
+  // un `select` qui ne sait pas afficher sa propre valeur se présente vide, et
+  // l'auteur croit que rien n'est réglé.
+  if (!values.includes(name)) values.push(name);
+
+  const select = selectInput(values, name, (value) => {
+    if (value === name) return;
+    if (taken.has(value)) {
+      alert(`« ${value} » est déjà pris par une autre planche de cette unité.`);
+      onChanged();
+      return;
+    }
+    renameAnimation(unit, name, value);
+    onChanged();
+  }, {
+    labelOf: (key) => {
+      const label = momentLabels.animation_labels?.[key];
+      if (label) return `${label} — ${key}`;
+      return key === actionAnimationDefault
+        ? `${key} (planche d'action, par défaut)`
+        : `${key} (nom libre)`;
+    },
+    titleOf: (key) => animationStates.find((s) => s.key === key)?.note || "",
+  });
+  line.appendChild(field("État", select));
+
+  const state = animationStates.find((s) => s.key === name);
+  const hint = el("span", "battle-inline-hint");
+  if (state) {
+    hint.textContent = state.note
+      ? `Jouée automatiquement : ${state.note.toLowerCase()}`
+      : "Jouée automatiquement par le moteur.";
+  } else {
+    const users = actionsUsing(unit, name);
+    hint.textContent = users.length
+      ? `Planche d'action, appelée par : ${users.join(", ")}.`
+      : "Nom libre, et personne ne l'appelle : aucune action ne joue cette planche.";
+    if (!users.length) hint.classList.add("battle-warning");
+  }
+  line.appendChild(hint);
+  return line;
+}
+
+// Qui réclame une planche par ce nom : l'attaque de base de l'unité affichée,
+// et les Ekos du catalogue. Les objets n'en nomment pas.
+//
+// L'unité est passée en paramètre plutôt que relue dans `catalogs` : c'est le
+// même objet que celui qu'on est en train d'éditer, donc à jour même avant
+// l'enregistrement.
+function actionsUsing(unit, name) {
+  const users = [];
+  const declared = unit.basic_attack?.animation || actionAnimationDefault;
+  if (declared === name) users.push("l'attaque de base");
+  for (const [id, eko] of Object.entries(entriesOf("ekos"))) {
+    if ((eko.animation || actionAnimationDefault) === name) users.push(id);
+  }
+  return users;
+}
+
+// Renomme une planche SANS la déplacer dans le fichier : une clé supprimée puis
+// réécrite reviendrait en fin d'objet, et un simple changement d'état ferait un
+// diff illisible. On reconstruit donc la table dans le même ordre.
+//
+// L'attaque de base de l'unité suit le renommage : elle désigne sa planche par
+// ce nom, et elle appartient à la même unité — il n'y a pas d'ambiguïté. Les
+// Ekos, eux, sont PARTAGÉS entre personnages : les réécrire depuis ici
+// changerait la planche de tout le monde.
+function renameAnimation(unit, from, to) {
+  const rebuilt = {};
+  for (const [key, value] of Object.entries(unit.animations)) {
+    rebuilt[key === from ? to : key] = value;
+  }
+  unit.animations = rebuilt;
+  if (unit.basic_attack && unit.basic_attack.animation === from) {
+    unit.basic_attack.animation = to;
+  }
+  const oldKey = `units:${selection.units}:${from}`;
+  if (openSheets.delete(oldKey)) openSheets.add(`units:${selection.units}:${to}`);
+}
+
+// Choix de la planche, et import d'une nouvelle. Les deux vont ensemble : c'est
+// en cherchant un fichier dans la liste qu'on découvre qu'il n'y est pas, et
+// envoyer l'auteur copier un PNG à la main dans Sprites/Battle — puis rouvrir
+// Godot pour l'importer — casse net ce qu'il était en train de faire.
+function sheetLine(unit, config, name, onChanged) {
+  const line = el("div", "battle-sheet-line");
+  line.appendChild(
+    field(
+      "Fichier",
+      selectInput(
+        sheetFiles.map((f) => f.path), config.sheet || "",
+        (value) => {
+          config.sheet = value;
+          onChanged();
+        },
+        { labelOf: sheetLabel }
+      )
+    )
+  );
+  line.appendChild(importButton(unit, config, name, onChanged));
+  // Une planche que Godot n'a pas importée existe sur le disque et reste
+  // INVISIBLE EN JEU : le dire ici, là où on la choisit, plutôt que de laisser
+  // l'auteur découvrir un personnage vide au combat.
+  const entry = sheetFiles.find((f) => f.path === config.sheet);
+  if (entry && entry.imported === false) {
+    line.appendChild(
+      el("p", "battle-warning", "Godot n'a pas encore importé cette planche : "
+        + "elle ne s'affichera pas en jeu tant que l'éditeur Godot n'aura pas été ouvert.")
+    );
+  }
+  return line;
+}
+
+// Le nom de fichier suffit à se repérer — les planches vivent toutes dans le
+// même dossier — sauf pour celles que Godot ignore encore, qu'on marque.
+function sheetLabel(path) {
+  const file = path.split("/").pop();
+  const entry = sheetFiles.find((f) => f.path === path);
+  return entry && entry.imported === false ? `${file} (non importée)` : file;
+}
+
+// Le nom de destination suit la convention du dossier : <unité>_<planche>.png
+// (noah_idle.png, iris_win_before.png). Proposé, pas imposé — l'auteur peut
+// garder le nom d'origine, qui est souvent un numéro d'export (313000404_atk).
+function suggestedSheetName(name) {
+  const unit = selection.units || "unite";
+  return `${unit}_${name}.png`.toLowerCase().replace(/[^a-z0-9_.-]/g, "_");
+}
+
+function importButton(unit, config, name, onChanged) {
+  const button = el("button", "text-btn", "Importer une planche…");
+  button.type = "button";
+  button.title = "Déposer un PNG dans Sprites/Battle et l'affecter à cette planche.";
+  const picker = el("input");
+  picker.type = "file";
+  picker.accept = "image/png,.png";
+  picker.hidden = true;
+  picker.onchange = async () => {
+    const file = picker.files && picker.files[0];
+    // Le champ est remis à zéro tout de suite : sans ça, réimporter DEUX FOIS
+    // le même fichier ne déclencherait pas de second `change`.
+    picker.value = "";
+    if (!file) return;
+    const wanted = prompt(
+      "Nom du fichier dans Sprites/Battle :", suggestedSheetName(name)
+    );
+    if (!wanted) return;
+    button.disabled = true;
+    button.textContent = "Import en cours…";
+    try {
+      let result;
+      try {
+        result = await uploadBattleSheet(file, wanted);
+      } catch (err) {
+        // 409 : le fichier existe. C'est la seule erreur qui vaut une seconde
+        // chance, et elle doit être posée explicitement — écraser une planche
+        // déjà utilisée par d'autres animations ne se devine pas.
+        if (!String(err.message).includes("existe déjà")) throw err;
+        if (!confirm(`${err.message} L'écraser ?`)) return;
+        result = await uploadBattleSheet(file, wanted, { overwrite: true });
+      }
+      sheetFiles = await getBattleSheets();
+      config.sheet = result.path;
+      // Réimport PAR-DESSUS un nom existant : la taille mémorisée pour cette
+      // URL est celle de l'image d'avant.
+      forgetSheetSize(result.url);
+      const measured = await applyMeasuredGrid(unit, name, config, result.url, true);
+      if (!result.imported) {
+        alert(
+          "Le fichier est en place, mais Godot ne l'a pas importé : ouvre "
+          + "l'éditeur Godot une fois pour qu'il s'affiche en jeu."
+        );
+      } else if (measured === null) {
+        alert("La grille n'a pas pu être relevée : règle les colonnes et les lignes à la main.");
+      }
+      onChanged();
+    } catch (err) {
+      alert(`Import impossible : ${err.message}`);
+    } finally {
+      button.disabled = false;
+      button.textContent = "Importer une planche…";
+    }
+  };
+  button.onclick = () => picker.click();
+  const holder = el("span", "battle-sheet-import");
+  holder.appendChild(button);
+  holder.appendChild(picker);
+  return holder;
+}
+
+// Le découpage relevé, et la taille de vignette qui en découle.
+//
+// LA TAILLE DE VIGNETTE N'EST PAS UNE DONNÉE : elle se déduit de l'image et du
+// découpage (le moteur fait exactement ce calcul, en division entière). La
+// montrer plutôt que de l'inventer en champ évite deux vérités concurrentes —
+// mais il faut bien la MONTRER : « 3 colonnes, 7 lignes » ne dit pas si les
+// vignettes font 75 × 94 ou 25 × 31, alors que c'est ce chiffre-là qu'on
+// compare à la planche source ouverte à côté.
+function gridLine(unit, name, config, onChanged) {
+  const line = el("div", "battle-anim-grid-line");
+  const note = el("span", "battle-inline-hint", "Vignette : …");
+  const describe = () => {
+    const columns = Math.max(1, Number(config.columns || 1));
+    const rows = Math.max(1, Number(config.rows || 1));
+    sheetSize(sheetUrl(config.sheet)).then((size) => {
+      if (!size) {
+        note.textContent = "Vignette : taille inconnue (image illisible).";
+        return;
+      }
+      const w = Math.floor(size[0] / columns);
+      const h = Math.floor(size[1] / rows);
+      // Un découpage qui ne tombe pas juste est un PIÈGE silencieux : le moteur
+      // tronque, et toutes les vignettes après la première ligne glissent.
+      const exact = size[0] % columns === 0 && size[1] % rows === 0;
+      note.textContent = `Planche ${size[0]}×${size[1]} — vignette ${w}×${h} px`
+        + (exact ? "" : " ⚠ le découpage ne tombe pas juste");
+      note.classList.toggle("battle-warning", !exact);
+    });
+  };
+  describe();
+
+  const auto = el("button", "text-btn", "Automatique");
+  auto.type = "button";
+  auto.title = "Relever sur l'image : colonnes, lignes, vignettes, et l'ancrage au sol.";
+  auto.disabled = !config.sheet;
+  auto.onclick = async () => {
+    const url = sheetUrl(config.sheet);
+    if (!url) return;
+    auto.disabled = true;
+    auto.textContent = "Relevé en cours…";
+    const grid = await applyMeasuredGrid(unit, name, config, url);
+    if (grid === null) {
+      auto.disabled = false;
+      auto.textContent = "Automatique";
+      alert("La grille n'a pas pu être relevée sur cette image.");
+      return;
+    }
+    onChanged();
+  };
+  line.appendChild(auto);
+  line.appendChild(note);
+  return line;
+}
+
+// Relève la grille sur l'image et la pose dans la planche. Sert à l'import
+// comme au bouton « Automatique » : c'est le même geste, une fois subi et une
+// fois demandé. Rend la grille mesurée, ou null si la lecture a échoué.
+//
+// CE QUI EST REMIS À ZÉRO, ET POURQUOI. `frames` et `first_frame` sont des
+// CHOIX D'AUTEUR — l'extrait qu'il retient d'une planche — et on n'y touche que
+// si la grille a bougé, auquel cas ils désignent des cases qui n'existent plus.
+// L'ancrage, lui, est une MESURE : rien n'est gagné à garder celle d'hier quand
+// on peut refaire celle d'aujourd'hui.
+//
+// D'où `remeasureAnchor`, que l'import passe et que « Automatique » ne passe
+// pas. L'IMPORT CHANGE L'IMAGE : l'ancrage d'avant a été relevé sur une autre,
+// il est caduc même si la grille tombe pareil. « Automatique » ne change rien à
+// l'image, et re-relever écraserait sans prévenir les ancrages posés
+// DÉLIBÉRÉMENT à côté du relevé (noah/standby est 1 px plus haut, exprès).
+//
+// LE RACCOURCI « MÊME GRILLE » A DÉJÀ LAISSÉ PASSER LE BUG UNE FOIS. Une
+// planche importée dans un emplacement NEUF part de colonnes et lignes
+// indéfinies, donc lues comme 1 × 1 ; une planche à vignette unique mesure
+// 1 × 1 ; la grille était donc « inchangée » et l'ancrage n'était jamais
+// relevé. C'est exactement ce qui est arrivé à `noah_approach`.
+async function applyMeasuredGrid(unit, name, config, url, remeasureAnchor = false) {
+  const grid = await measureGrid(url);
+  if (grid === null) return null;
+  const same = Number(config.columns || 1) === grid.columns
+    && Number(config.rows || 1) === grid.rows;
+  config.columns = grid.columns;
+  config.rows = grid.rows;
+  if (!same) {
+    config.frames = grid.frames;
+    delete config.first_frame;
+  }
+  if (remeasureAnchor || !same) {
+    // L'ancrage est RELEVÉ, plus seulement effacé. Le laisser au défaut était
+    // un piège silencieux : le centre-bas n'est juste que pour une cellule
+    // collée au dessin, et une planche de geste réserve de la place. Celle
+    // d'attaque d'Iris garde 23 px sous les pieds — le personnage flottait
+    // 18 px au-dessus du sol, et c'est exactement comme ça que le bug s'est vu.
+    const anchor = await measureAnchor(unit, name, config);
+    if (anchor === null) delete config.anchor;
+    else config.anchor = anchor;
+  }
+  return grid;
+}
+
+// La planche dont l'ancrage sert de RÉFÉRENCE à toutes les autres.
+const ANCHOR_REFERENCE = "idle";
+
+// Écart toléré, en pixels, entre l'ancrage déclaré et le relevé sur l'ombre.
+//
+// 1 px et pas 0 : deux ancrages du projet sont posés DÉLIBÉRÉMENT un pixel à
+// côté du relevé — le `standby` de Noah est remonté d'un pixel, son
+// `win_before` est relevé sur la dernière vignette et non la première, et leurs
+// commentaires le disent. Avertir sur ces deux-là apprendrait à ignorer
+// l'avertissement, ce qui est exactement ce qu'on ne veut pas.
+const ANCHOR_TOLERANCE = 1;
+
+// Relevés déjà faits, par configuration. La liste se reconstruit à CHAQUE
+// changement — une frappe dans un champ redessine toutes les planches de
+// l'unité — et un relevé décode deux images. Sans ce cache, éditer un champ
+// ferait relire une dizaine de PNG à chaque caractère.
+const anchorChecks = new Map();
+
+function anchorCheckKey(unit, name, config) {
+  const reference = unit.animations?.[ANCHOR_REFERENCE];
+  return JSON.stringify([
+    name, config.sheet, config.columns, config.rows, config.first_frame, config.anchor,
+    reference?.sheet, reference?.columns, reference?.rows, reference?.anchor,
+  ]);
+}
+
+// L'ÉCART entre l'ancrage que la planche porte vraiment et celui que l'ombre
+// dicte. Rend null quand tout va bien (ou quand rien n'est mesurable).
+//
+// POURQUOI CE CONTRÔLE EXISTE. Un ancrage faux ne casse rien, n'affiche aucune
+// erreur, et ne se voit qu'en lançant le combat et en amenant ce personnage
+// dans cet état-là. Il est arrivé deux fois de suite qu'une planche parte en
+// production avec le défaut du moteur et fasse flotter Iris 18 px au-dessus du
+// sol. Ce que la page peut mesurer, la page doit le signaler.
+async function anchorDrift(unit, name, config) {
+  const key = anchorCheckKey(unit, name, config);
+  if (anchorChecks.has(key)) return anchorChecks.get(key);
+  const pending = (async () => {
+    const measured = await measureAnchor(unit, name, config);
+    if (measured === null) return null;
+    const declared = await effectiveAnchor(config);
+    if (declared === null) return null;
+    const dx = declared[0] - measured[0];
+    const dy = declared[1] - measured[1];
+    if (Math.abs(dx) <= ANCHOR_TOLERANCE && Math.abs(dy) <= ANCHOR_TOLERANCE) return null;
+    return { dx, dy, measured, declared, implicit: !Array.isArray(config.anchor) };
+  })();
+  anchorChecks.set(key, pending);
+  return pending;
+}
+
+// L'écart dit DANS QUEL SENS LE PERSONNAGE PART, pas en coordonnées de cellule.
+// « ancrage Y trop grand de 18 » ne se relie à rien ; « 18 px trop haut » se
+// vérifie d'un coup d'œil sur la capture. L'ancrage étant le point de la
+// cellule posé au sol, l'augmenter TIRE le dessin dans l'autre sens.
+function describeDrift(drift) {
+  const parts = [];
+  if (drift.dx) parts.push(`${Math.abs(drift.dx)} px trop à ${drift.dx > 0 ? "gauche" : "droite"}`);
+  if (drift.dy) parts.push(`${Math.abs(drift.dy)} px trop ${drift.dy > 0 ? "haut" : "bas"}`);
+  return parts.join(", ");
+}
+
+// Relève l'ancrage d'une planche sur son ombre, RELATIVEMENT à la planche de
+// repos de la même unité. Rend la paire, ou null si le relevé n'aboutit pas.
+//
+// POURQUOI UNE RÉFÉRENCE ET PAS UNE RÈGLE ABSOLUE. Le point au sol d'une unité
+// est une convention arbitraire — chez Noah il tombe 7,5 px à gauche du milieu
+// de son ombre, chez Iris 1,5 px à droite — fixée une bonne fois par la planche
+// de repos. Ce qui doit être vrai n'est donc pas « le point au sol est au
+// milieu de l'ombre », c'est « le personnage NE SAUTE PAS en changeant de
+// planche » : même écart à l'ombre que sur `idle`. C'est aussi, mot pour mot,
+// la méthode que les commentaires de units.json décrivent à la main.
+//
+// VALIDÉ AVANT D'ÊTRE UTILISÉ, sur les dix ancrages déjà déclarés : l'ordonnée
+// tombe juste sur neuf — le dixième, noah/standby, est relevé 1 px plus haut
+// DÉLIBÉRÉMENT et son commentaire le dit — et l'abscisse sur quatre, à 2 px
+// près sur trois autres. Les deux écarts restants sont précisément ceux dont le
+// commentaire dit déjà que la première vignette est le mauvais repère : l'ombre
+// d'iris/win_before fusionne avec celle de sa mascotte, celle d'iris/atk dérive
+// de 57 px pendant le recul du tir. D'où des champs qui restent MODIFIABLES :
+// le relevé est un point de départ juste, pas un verdict.
+async function measureAnchor(unit, name, config) {
+  if (name === ANCHOR_REFERENCE) return null;
+  const reference = unit.animations?.[ANCHOR_REFERENCE];
+  if (!reference || !reference.sheet) return null;
+  const here = await groundOf(config);
+  const there = await groundOf(reference);
+  if (here === null || there === null) return null;
+  const base = await effectiveAnchor(reference);
+  if (base === null) return null;
+  return [
+    Math.round(here.x + base[0] - there.x),
+    Math.round(here.bottom + base[1] - there.bottom),
+  ];
+}
+
+async function groundOf(config) {
+  const url = sheetUrl(config.sheet);
+  if (!url) return null;
+  const { columns, rows } = gridOf(config);
+  return measureGround(url, columns, rows, Number(config.first_frame || 0));
+}
+
+function gridOf(config) {
+  return {
+    columns: Math.max(1, Number(config.columns || 1)),
+    rows: Math.max(1, Number(config.rows || 1)),
+  };
+}
+
+// L'ancrage qu'une planche a VRAIMENT — celui qu'elle déclare, ou le centre-bas
+// que le moteur lui donne à défaut. La référence n'en déclare souvent aucun
+// (`idle` se contente du défaut chez les trois unités) : lire `config.anchor`
+// seul rendrait alors zéro et enverrait toutes les autres planches une
+// demi-cellule trop à gauche.
+async function effectiveAnchor(config) {
+  if (Array.isArray(config.anchor)) return config.anchor;
+  const size = await sheetSize(sheetUrl(config.sheet));
+  if (!size) return null;
+  const { columns, rows } = gridOf(config);
+  return [Math.floor(size[0] / columns / 2), Math.floor(size[1] / rows)];
+}
+
 function framesLine(config, name, onChanged) {
   const line = el("div", "battle-anim-frames");
   const first = Number(config.first_frame || 0);
@@ -890,7 +1443,7 @@ async function openSheet(config, name, onChanged) {
 // qui corrigeait l'ordonnée d'un pixel écrivait du même coup une abscisse de 0
 // et déplaçait le personnage d'une demi-cellule — exactement le saut que
 // l'ancrage existe pour éviter.
-function anchorLine(config, onChanged) {
+function anchorLine(unit, name, config, onChanged) {
   const line = el("div", "battle-grid");
   const declared = Array.isArray(config.anchor) ? config.anchor : null;
   const inputs = [];
@@ -928,6 +1481,48 @@ function anchorLine(config, onChanged) {
       for (const input of inputs) input.classList.add("battle-input-default");
     });
   }
+  // Le relevé est accessible SANS réimporter. Les planches déjà en place sont
+  // le cas majoritaire, et jusqu'ici seul un changement de grille déclenchait la
+  // mesure : une planche posée avant ce relevé n'avait aucun moyen d'y accéder,
+  // sinon en cassant sa propre grille pour la refaire.
+  const measure = el("button", "text-btn", "Relever sur l'ombre");
+  measure.type = "button";
+  measure.disabled = !config.sheet || name === ANCHOR_REFERENCE;
+  measure.title = name === ANCHOR_REFERENCE
+    ? "La planche de repos est la RÉFÉRENCE : c'est son ancrage qui définit où l'unité se tient, il n'y a rien au-dessus de quoi le relever."
+    : "Poser l'ancrage pour que l'ombre tombe au même endroit que sur la planche de repos — le personnage ne saute pas en changeant d'état.";
+  measure.onclick = async () => {
+    measure.disabled = true;
+    measure.textContent = "Relevé en cours…";
+    const anchor = await measureAnchor(unit, name, config);
+    if (anchor === null) {
+      measure.disabled = false;
+      measure.textContent = "Relever sur l'ombre";
+      alert(
+        "L'ancrage n'a pas pu être relevé : aucune ombre reconnaissable sur "
+        + `cette planche ou sur « ${ANCHOR_REFERENCE} ». Règle les deux champs à la main.`
+      );
+      return;
+    }
+    config.anchor = anchor;
+    onChanged();
+  };
+  line.appendChild(measure);
+
+  // Le relevé est AFFICHÉ à côté des champs, pas seulement applicable. Un
+  // avertissement qui ne dit pas quelle valeur il attend oblige à cliquer pour
+  // savoir — et donc à écraser la valeur en place pour la comparer.
+  const reading = el("span", "battle-inline-hint", "");
+  reading.hidden = true;
+  line.appendChild(reading);
+  anchorDrift(unit, name, config).then((drift) => {
+    if (!drift) return;
+    reading.hidden = false;
+    reading.className = "battle-warning";
+    reading.textContent = `Relevé sur l'ombre : ${drift.measured.join(" / ")}`
+      + ` — l'ancrage en place dessine ${describeDrift(drift)}.`;
+  });
+
   const clear = el("button", "text-btn", "Défaut (centre-bas)");
   clear.type = "button";
   clear.disabled = !declared;
@@ -976,6 +1571,7 @@ function renderUnit(id, unit, refresh) {
   row.appendChild(
     actionBlock("Attaque de base", unit.basic_attack, ["heal"], sheets, refresh, {
       sounds: false,
+      performers: [id],
     })
   );
 
@@ -984,6 +1580,10 @@ function renderUnit(id, unit, refresh) {
   // de l'unité et non dans le bloc « Attaque de base », qui n'en porte que la
   // moitié — c'est le moment choisi, et lui seul, qui dit de quoi il s'agit.
   row.appendChild(sectionTitle("Sons", "geste de l'attaque et voix du personnage"));
+  // Les moments inatteignables de l'attaque de base se disent ICI et pas dans
+  // son bloc : c'est ici que sont ses sons.
+  const unreachable = unreachableLine(unit.basic_attack);
+  if (unreachable) row.appendChild(unreachable);
   row.appendChild(
     soundsEditor([actionFamily(unit.basic_attack), unitFamily(unit)], refresh)
   );
@@ -1098,7 +1698,11 @@ function renderAction(section, id, action, refresh) {
   row.appendChild(rowHead(section, id, null));
   row.appendChild(nameLine(section, id));
   const fields = section === "ekos" ? ["ap_cost", "target", "heal"] : ["target", "heal"];
-  row.appendChild(actionBlock("Effet", action, fields, allAnimationNames(), refresh));
+  row.appendChild(
+    actionBlock("Effet", action, fields, allAnimationNames(), refresh, {
+      performers: performersOf(section, id),
+    })
+  );
   return row;
 }
 
@@ -1358,6 +1962,8 @@ export async function openBattleManager() {
   texts = catalogTexts;
   sounds = soundList;
   vocabulary = vocab;
+  animationStates = vocab.animation_states || [];
+  actionAnimationDefault = vocab.action_animation_default || "atk";
   momentLabels = labels;
   sheetFiles = sheetList;
   if (!momentLabels.labels) momentLabels.labels = {};
@@ -1367,4 +1973,62 @@ export async function openBattleManager() {
     .querySelectorAll(".battle-tab")
     .forEach((t) => t.classList.toggle("selected", t.dataset.section === "units"));
   renderList();
+  watchForStaleCatalogs();
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+//  Page périmée
+// ──────────────────────────────────────────────────────────────────────────
+
+// Une page laissée ouverte pendant qu'on édite les mêmes fichiers ailleurs — un
+// autre onglet, un éditeur de texte — travaille sur une copie d'avant. Le
+// verrou du serveur l'empêche d'écraser quoi que ce soit, mais il ne parle
+// qu'AU MOMENT DE SAUVEGARDER : trop tard, la modification vient d'être faite
+// et sera refusée. On regarde donc au RETOUR SUR L'ONGLET, avant de toucher à
+// quoi que ce soit.
+//
+// C'est le versant préventif d'un incident réel : un onglet resté ouvert a
+// réécrit units.json tel qu'il était une heure plus tôt, effaçant une série
+// d'ancrages relevés au pixel.
+let staleNoticeShown = false;
+
+function watchForStaleCatalogs() {
+  window.addEventListener("focus", checkForStaleCatalogs);
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) checkForStaleCatalogs();
+  });
+}
+
+async function checkForStaleCatalogs() {
+  // Rien à dire si la page « Combat » n'est pas à l'écran, et rien à répéter :
+  // un avertissement qu'on redemande à chaque clic sur la fenêtre s'ignore.
+  if (staleNoticeShown || !listEl || listEl.offsetParent === null) return;
+  const changed = [];
+  for (const section of Object.keys(catalogs)) {
+    try {
+      if (await battleCatalogChanged(section)) changed.push(section);
+    } catch {
+      // Serveur arrêté ou redémarré : ce n'est pas un conflit, et bloquer
+      // l'édition sur une requête ratée serait pire que de se taire.
+    }
+  }
+  if (changed.length === 0) return;
+  staleNoticeShown = true;
+  // Nommés comme leurs onglets plutôt que par leur clé d'API : c'est sous ce
+  // nom-là que l'auteur les connaît, et il n'y a pas de deuxième libellé à
+  // tenir à jour.
+  const quoi = changed
+    .map((s) => tabsEl.querySelector(`[data-section="${s}"]`)?.textContent.trim() || s)
+    .join(", ");
+  if (confirm(
+    `${quoi} : ce catalogue a changé sur disque depuis que cette page l'a `
+    + "chargé. Cette page travaille sur la version d'avant, et tout ce que tu y "
+    + "modifieras sera refusé à la sauvegarde.\n\nRecharger maintenant ?"
+  )) {
+    location.reload();
+    return;
+  }
+  // Refus assumé : on ne redemande pas, mais on laisse le verrou du serveur
+  // faire son office à la première sauvegarde.
+  staleNoticeShown = true;
 }
