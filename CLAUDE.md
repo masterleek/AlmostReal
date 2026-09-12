@@ -726,6 +726,42 @@ pas partir en guerre contre des choix déjà faits et documentés dans ce repo :
   flèche droite déplace le curseur vers la gauche. `TargetSelector` garde donc un
   ordre visuel à part, trié sur l'abscisse des PIEDS — pas sur celle du dessin,
   que deux planches de largeurs très différentes pourraient inverser.
+- **Une voix ne s'entend pas parce qu'elle est trop BASSE, pas parce qu'elle est
+  mal égalisée — mesurer les deux.** Les 29 répliques livrées s'étalaient sur
+  11,8 dB de niveau perçu (RMS de la partie active, seuil à −30 dB de la crête)
+  ET tombaient à −16,5 dB médian, contre −12,4 pour le thème de combat. Les
+  normaliser à −14 dBFS règle le premier problème (étendue ramenée à 0,10 dB)
+  et pas le second : à 70 % le thème tient −15,5, soit 1,5 dB d'écart là où il
+  en faut une dizaine. Les monter davantage était impossible, elles crêtent déjà
+  à −3 dBFS — le crest factor va jusqu'à 15 dB, donc une normalisation RMS pure
+  est bornée par le fichier le plus pointu. D'où un limiteur à genou doux
+  (tanh au-dessus de −6 dBFS, plafond −1) qui ne touche que 0,1 à 1,5 % des
+  échantillons, et surtout un DUCKING.
+- **Le ducking est un compresseur posé sur la MUSIQUE et écouté depuis la VOIX**
+  (`AudioEffectCompressor.sidechain`), pas l'inverse. Réglage retenu après
+  balayage mesuré (seuil / ratio → creux le plus profond) : −24/4 efface la
+  musique (15 à 24 dB), −16/4 donne 4,6 à 15 dB pour 9,8 de moyenne, ce qui est
+  la zone usuelle. Les sons de MENU restent sur Master : ils n'ont aucune raison
+  de faire plonger la musique à chaque mouvement de curseur.
+- **Mesurer un niveau audio : jamais une moyenne en dB, et jamais un maximum sur
+  des fenêtres inégales.** Le plancher de `get_bus_peak_volume_left_db` est à
+  −200 dB : une seule image silencieuse effondre la moyenne (une voix à −14 y
+  était annoncée à −43). Et un maximum croît avec la durée de la fenêtre —
+  comparer 2 s de repos à 0,35 s d'atténuation fabrique un écart nul. Retenir le
+  MINIMUM côté signal ducké, le MAXIMUM côté déclencheur, sur des fenêtres de
+  même durée et RAPPROCHÉES (un morceau varie tout seul de 5 dB en trente
+  secondes).
+- **`add_child()` fait courir `_ready()` IMMÉDIATEMENT** : une propriété réglée
+  à la ligne suivante arrive trop tard pour ce que `_ready()` a déjà construit.
+  `SfxBank` bâtissait son pool sur Master avant que l'appelant ne demande le bus
+  « Voice », et les voix partaient au mauvais endroit sans la moindre erreur.
+  Remède à la source : un setter qui RÉASSIGNE l'existant, plutôt qu'un ordre
+  d'appels à respecter chez chaque appelant.
+- **Régénérer un `AudioBusLayout` par script EMPILE les effets** : le layout du
+  projet est déjà chargé au démarrage, donc `add_bus_effect` s'ajoute à ce qui
+  existe. Repartir de `set_bus_count(1)` + retrait des effets du Master avant de
+  reconstruire. Symptôme : deux compresseurs en série, le fichier .tres les
+  montre tous les deux.
 - **Reconstruire une liste de nœuds : `remove_child()` AVANT `queue_free()`.**
   La libération est différée à la fin de la frame, donc les anciens nœuds
   restent enfants — et donc affichés par-dessus les nouveaux — le temps d'une

@@ -22,6 +22,20 @@ extends Node
 ## marge avant que voler un son en cours devienne visible.
 const DEFAULT_VOICES := 4
 
+## Bus de destination des sons du POOL. « Master » par défaut : une banque qui
+## ne demande rien va là où va tout le reste, et le worldmap — qui n'a pas de
+## table de mixage — continue de marcher sans changer une ligne.
+##
+## RÉASSIGNE les lecteurs déjà bâtis. Sans ça l'ordre des appels déciderait du
+## résultat : `add_child()` fait courir `_ready()` immédiatement, donc le pool
+## existe déjà quand l'appelant règle le bus à la ligne suivante, et les voix
+## partaient sur Master en silence.
+var bus := "Master":
+	set(value):
+		bus = value
+		for voice in _voices:
+			_route(voice, value)
+
 ## Lecteurs du pool, pour les flux choisis à l'exécution.
 var _voices: Array[AudioStreamPlayer] = []
 ## Flux déjà chargés, indexés par chemin. Un échec est mémorisé sous forme de
@@ -37,13 +51,13 @@ func _ready() -> void:
 ## qui sait avoir besoin d'autre chose que la valeur par défaut.
 func set_voices(count: int) -> void:
 	while _voices.size() < count:
-		_voices.append(_new_player())
+		_voices.append(_new_player(bus))
 
 ## Un lecteur DÉDIÉ à `stream`, à garder sous la main par l'appelant. Pour les
 ## sons dont le flux ne change jamais : les jouer depuis le pool les exposerait
 ## à se faire voler leur lecteur.
-func player(stream: AudioStream) -> AudioStreamPlayer:
-	var node := _new_player()
+func player(stream: AudioStream, on_bus: String = "Master") -> AudioStreamPlayer:
+	var node := _new_player(on_bus)
 	node.stream = stream
 	return node
 
@@ -53,8 +67,10 @@ func player(stream: AudioStream) -> AudioStreamPlayer:
 ## ici plutôt que de dépendre du réglage d'import. Conséquence assumée — c'est la
 ## ressource partagée qu'on modifie, deux lecteurs sur le même fichier ne
 ## peuvent pas boucler différemment.
-func music(stream: AudioStream, volume: float = 1.0) -> AudioStreamPlayer:
-	var node := player(stream)
+func music(
+	stream: AudioStream, volume: float = 1.0, on_bus: String = "Master"
+) -> AudioStreamPlayer:
+	var node := player(stream, on_bus)
 	node.stream.loop = true
 	node.volume_linear = volume
 	node.play()
@@ -90,7 +106,17 @@ func _free_voice() -> AudioStreamPlayer:
 			return voice
 	return _voices[0]
 
-func _new_player() -> AudioStreamPlayer:
+func _new_player(on_bus: String) -> AudioStreamPlayer:
 	var node := AudioStreamPlayer.new()
+	_route(node, on_bus)
 	add_child(node)
 	return node
+
+## Un nom de bus inconnu est REFUSÉ par Godot avec une erreur, pas remplacé en
+## silence : on le signale et on laisse le lecteur sur Master, plutôt que de
+## laisser un renommage de bus rendre tout un écran muet.
+func _route(node: AudioStreamPlayer, on_bus: String) -> void:
+	if AudioServer.get_bus_index(on_bus) < 0:
+		push_warning("SfxBank : bus « %s » introuvable, repli sur Master" % on_bus)
+		return
+	node.bus = on_bus

@@ -47,10 +47,23 @@ const SFX_MOVE := preload("res://Audio/move.wav")
 const SFX_CONFIRM := preload("res://Audio/validation.wav")
 const SFX_CANCEL := preload("res://Audio/error.wav")
 
+## Bus de mixage. La musique et les voix sont séparées pour qu'un compresseur
+## posé sur MUSIC et écouté depuis VOICE baisse le thème pendant une réplique
+## (cf. Audio/default_bus_layout.tres). Mesuré sur les fichiers : le thème tient
+## −15,5 dBFS RMS à 70 %, les voix −14 — 1,5 dB d'écart, où il en faut une
+## dizaine pour qu'une phrase se détache. Monter les voix n'était pas possible,
+## elles crêtent déjà à −3 dBFS ; c'est donc la musique qui s'efface, et
+## seulement le temps de la réplique.
+##
+## Les sons de MENU restent sur Master : ils doivent pouvoir claquer par-dessus
+## la musique sans la faire plonger à chaque mouvement de curseur.
+const BUS_MUSIC := "Music"
+const BUS_VOICE := "Voice"
+
 const MUSIC_THEME := preload("res://Audio/battle_theme1.mp3")
-## 75 % du volume nominal. `volume_linear` et pas `volume_db` : la consigne est
-## une proportion, la convertir en −2,5 dB à la main la rendrait illisible.
-const MUSIC_VOLUME := 0.75
+## 70 % du volume nominal. `volume_linear` et pas `volume_db` : la consigne est
+## une proportion, la convertir en −3,1 dB à la main la rendrait illisible.
+const MUSIC_VOLUME := 0.70
 
 const DESIGN_SIZE := Vector2i(480, 270)
 const STAGE_SCALE := 4
@@ -858,7 +871,12 @@ func _build_audio() -> void:
 	_sfx_move = _audio.player(SFX_MOVE)
 	_sfx_confirm = _audio.player(SFX_CONFIRM)
 	_sfx_cancel = _audio.player(SFX_CANCEL)
-	_audio.music(MUSIC_THEME, MUSIC_VOLUME)
+	# Le pool sert les sons portés par les ACTIONS, qui sont des voix aujourd'hui
+	# (cf. units.json). Un bruitage non vocal — un impact, un sort — devra avoir
+	# son propre bus le jour où il arrivera : il n'a pas de raison d'effacer la
+	# musique.
+	_audio.bus = BUS_VOICE
+	_audio.music(MUSIC_THEME, MUSIC_VOLUME, BUS_MUSIC)
 
 ## Joue le son qu'une action porte dans sa définition (cf. BattleAssault.
 ## _sounds_of). La scène ne sait pas de QUELLE action il s'agit — c'est voulu :

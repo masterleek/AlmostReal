@@ -89,16 +89,7 @@
         "tempeste",
         "elan",
         "rosee",
-        "aubaine",
-        "test_1",
-        "test_2",
-        "test_3",
-        "test_4",
-        "test_5",
-        "test_6",
-        "test_7",
-        "test_8",
-        "test_9"
+        "aubaine"
       ],
       "basic_attack": {
         "power": 6,
@@ -111,7 +102,15 @@
         "sounds": [
           {
             "at": "hit",
-            "sound": "res://Audio/Battle/noah_att1.wav"
+            "sound": [
+              "res://Audio/Battle/Voices/noah_att1.wav",
+              "res://Audio/Battle/Voices/noah_att2.wav",
+              "res://Audio/Battle/Voices/noah_att3.wav"
+            ]
+          },
+          {
+            "at": "rhythm",
+            "sound": "res://Audio/Battle/Voices/noah_lets_go.wav"
           }
         ]
       }
