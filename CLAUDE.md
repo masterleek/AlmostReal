@@ -798,6 +798,12 @@ pas partir en guerre contre des choix déjà faits et documentés dans ce repo :
   DÉTECTE la dérive (une route de la livraison absente) pour l'annoncer avec le
   geste à faire. Un `async` de gestionnaire d'événement sans `catch` transforme
   n'importe quelle erreur de chargement en clic sans effet.
+- **Le bouclage d'une planche est une propriété de la PLANCHE, pas un argument
+  d'appel.** `play_sheet(config, false)` obligeait trois endroits à se souvenir
+  qu'un geste ne boucle pas et qu'un repos si, et interdisait à l'auteur de le
+  régler depuis l'éditeur. `loop` vit maintenant dans `units.json` (vrai par
+  défaut) et `UnitSprite` le lit. Règle générale : ce qu'un appelant passe
+  TOUJOURS de la même façon pour une donnée donnée appartient à la donnée.
 - **Reconstruire une liste de nœuds : `remove_child()` AVANT `queue_free()`.**
   La libération est différée à la fin de la frame, donc les anciens nœuds
   restent enfants — et donc affichés par-dessus les nouveaux — le temps d'une

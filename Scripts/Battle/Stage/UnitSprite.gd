@@ -73,7 +73,12 @@ static func build_frames(
 ## `config` = bloc "animations.<nom>" de units.json.
 ## `feet` = point au sol en unités de design ; `mirrored` retourne le sprite
 ## horizontalement (les ennemis regardent l'équipe, cf. plan §4).
-func setup(config: Dictionary, feet: Vector2i, mirrored: bool = false, loop: bool = true) -> void:
+## LE BOUCLAGE EST DANS LA DONNÉE (`loop`, vrai par défaut). Il l'était
+## auparavant chez l'APPELANT, qui passait `false` pour les planches jouées une
+## fois — le geste d'attaque, l'intro de victoire. C'était une propriété de la
+## planche déguisée en argument d'appel : trois endroits devaient s'en souvenir,
+## et l'auteur ne pouvait pas la régler depuis l'éditeur.
+func setup(config: Dictionary, feet: Vector2i, mirrored: bool = false) -> void:
 	_feet = feet
 	_mirrored = mirrored
 	sheet_path = String(config["sheet"])
@@ -85,7 +90,7 @@ func setup(config: Dictionary, feet: Vector2i, mirrored: bool = false, loop: boo
 		int(config.get("frames", columns * rows)),
 		float(config.get("fps", 6)),
 		int(config.get("first_frame", 0)),
-		loop,
+		bool(config.get("loop", true)),
 	)
 	# centered = false + offset explicite plutôt que centered = true : la
 	# cellule peut avoir une largeur impaire, et le centrage automatique
@@ -106,10 +111,9 @@ func setup(config: Dictionary, feet: Vector2i, mirrored: bool = false, loop: boo
 ## (l'accesseur de sa propriété `animation`, qui prend un StringName), et la
 ## redéfinir avec une autre signature est refusé au chargement du script.
 ##
-## `loop = false` sert aux planches qui se JOUENT une fois — un geste d'attaque
-## n'est pas un repos. La durée d'une telle planche se déduit alors de ses
-## propres données (`duration_of`), sans avoir à guetter un signal.
-func play_sheet(config: Dictionary, loop: bool = true) -> void:
+## La durée d'une planche qui ne boucle pas se déduit de ses propres données
+## (`duration_of`), sans avoir à guetter un signal.
+func play_sheet(config: Dictionary) -> void:
 	if config.is_empty():
 		return
 	# La POSITION COURANTE survit au changement de planche. `setup()` repose
@@ -119,7 +123,7 @@ func play_sheet(config: Dictionary, loop: bool = true) -> void:
 	# milieu du déplacement. Seul `offset` doit suivre la nouvelle planche —
 	# c'est lui qui porte l'ancrage, et il change bien d'une planche à l'autre.
 	var where := position
-	setup(config, _feet, _mirrored, loop)
+	setup(config, _feet, _mirrored)
 	position = where
 
 ## Durée d'une planche en secondes, déduite de son nombre de frames et de sa

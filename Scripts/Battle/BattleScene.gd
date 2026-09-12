@@ -1540,7 +1540,7 @@ func _play_win(sprite: UnitSprite, unit_id: String) -> void:
 	var intro := BattleData.get_animation(unit_id, ANIM_WIN_BEFORE)
 	var hold := BattleData.get_animation(unit_id, ANIM_WIN)
 	if not intro.is_empty():
-		sprite.play_sheet(intro, false)
+		sprite.play_sheet(intro)
 		await get_tree().create_timer(UnitSprite.duration_of(intro)).timeout
 	if not hold.is_empty():
 		sprite.play_sheet(hold)

@@ -550,7 +550,7 @@ func _return_home(entry: Dictionary) -> void:
 	var duration := RETURN_DURATION
 	if not gesture.is_empty():
 		duration = maxf(duration, UnitSprite.duration_of(gesture))
-		sprite.play_sheet(gesture, false)
+		sprite.play_sheet(gesture)
 	else:
 		# Sans planche de retour, on repasse au repos DÈS LE DÉPART plutôt qu'à
 		# l'arrivée : le geste d'attaque ne boucle pas, l'unité resterait figée
@@ -587,7 +587,7 @@ func _play_gesture(
 	entry: Dictionary, targets: Array[BattleUnit], gesture: Dictionary, offensive: bool
 ) -> void:
 	if not gesture.is_empty():
-		_node_of(entry).play_sheet(gesture, false)
+		_node_of(entry).play_sheet(gesture)
 		await _wait(UnitSprite.hit_time_of(gesture))
 		return
 	if offensive:
