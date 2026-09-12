@@ -40,6 +40,36 @@ Repo git, remote `origin` → github.com/masterleek/AlmostReal, branche `main`.
   retouchés côté sauvegarde de map, préserver ce mécanisme (ne pas
   réintroduire un `fs.writeFile` sans vérifier `_rev` d'abord).
 
+### Page « Combat » (`public/battle.js`)
+
+- **Un vocabulaire fermé partagé avec le moteur se LIT dans le `.gd`, il ne se
+  recopie pas.** `/api/battle/vocabulary` extrait `SOUND_MOMENTS` de
+  `BattleAssault.gd` et les clés de `NOTE_ACTIONS` de `RhythmBar.gd` — deux
+  listes qui disent la même chose finissent par se contredire. Chaque lecture a
+  un repli littéral : un refactor qui renomme la constante doit dégrader la
+  page, pas la casser en silence. Les vocabulaires SANS déclaration unique côté
+  moteur (ciblage, nature des dégâts, comportements — éparpillés dans des
+  `match`) restent écrits côté serveur, et le code le dit.
+- **Un champ de ce genre est une liste déroulante, jamais une saisie libre** :
+  une faute de frappe n'y produit pas une erreur mais un silence (un son qui ne
+  part jamais, un ennemi qui frappe au hasard), découvert seulement en lançant
+  ce combat-là.
+- **Un champ numérique FACULTATIF doit retirer sa clé à 0**, pas écrire `0` :
+  sinon la première visite de la page ajoute des champs que personne n'a
+  demandés à chaque entrée du catalogue. Ne s'applique QU'AUX champs dont le
+  défaut moteur est 0 — `guard_below` vaut 0,35, y effacer un 0 changerait le
+  sens.
+- **`JSON.stringify` n'écrit pas de saut de ligne final** : ces catalogues
+  s'éditent aussi à la main, et sans lui chaque sauvegarde depuis l'éditeur
+  produit un diff git parasite sur un fichier par ailleurs inchangé.
+- **Vérifier une page d'édition par un ALLER-RETOUR**, pas seulement par une
+  écriture : modifier une valeur puis la remettre doit rendre le fichier
+  identique au byte près (`git status` vide). C'est ce test qui a révélé le
+  saut de ligne manquant et les clés facultatives écrites à 0.
+- Le serveur du MapEditor **ne se recharge pas tout seul** : après une
+  modification de `server.js`, le relancer (les fichiers de `public/` sont
+  servis depuis le disque et n'ont, eux, besoin que d'un rafraîchissement).
+
 ## Qualité de code attendue
 
 - Code propre, logique, optimisé côté performance.

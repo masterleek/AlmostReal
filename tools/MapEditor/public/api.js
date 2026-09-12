@@ -90,6 +90,33 @@ export async function saveTexts(catalog) {
   return res.json();
 }
 
+// Les trois catalogues de combat partagent une seule paire de fonctions : ils
+// ont la même route à un segment près, et les distinguer par trois paires
+// identiques ne dirait rien de plus.
+export async function getBattleCatalog(name) {
+  const res = await fetch(`/api/battle/${name}`);
+  return res.json();
+}
+
+export async function saveBattleCatalog(name, catalog) {
+  const res = await fetch(`/api/battle/${name}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(catalog),
+  });
+  return res.json();
+}
+
+export async function getBattleSounds() {
+  const res = await fetch("/api/battle/sounds");
+  return res.json();
+}
+
+export async function getBattleVocabulary() {
+  const res = await fetch("/api/battle/vocabulary");
+  return res.json();
+}
+
 export async function playGame(mapId) {
   const res = await fetch("/api/play", {
     method: "POST",

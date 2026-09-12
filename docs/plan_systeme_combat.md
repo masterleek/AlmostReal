@@ -495,7 +495,7 @@ passer devant.
 | 7 | Barre de rythme : défilement des notes, fenêtres Perfect/Great/Good/Miss, bonus de dégâts | **fait** |
 | 8 | Jauge de synergie (remplissage, 4 niveaux) | **fait**, sauf la compétence qu'elle débloque |
 | 9 | Victoire / défaite, transition worldmap ↔ combat, animations `win` / `dying` / `dead` | **fait** pour la victoire, le retour au worldmap et le « Game Over » ; reste `dying`/`dead`, l'écran de récompense et le déclenchement d'un combat en jeu |
-| 10 | Page « Combat » de MapEditor : unités (stats, comportement ennemi, Ekos connus), Ekos, objets | |
+| 10 | Page « Combat » de MapEditor : unités (stats, comportement ennemi, Ekos connus), Ekos, objets | **fait** |
 
 ---
 
@@ -1673,6 +1673,95 @@ exactement l'incident `_close_sublist` du Lot 4, et `_refresh_ally_poses` /
 - **La suite du « Game Over »** : l'écran s'affiche et ne mène nulle part, la
   validation n'y répond pas. C'est conforme à ce qui a été demandé, mais il faut
   trancher — recommencer le combat ? revenir au worldmap ? un écran-titre ?
+
+---
+
+## 5 undecies. Résultat du Lot 10 — la page « Combat »
+
+Une entrée « Combat » dans la barre de menus, trois sections (Unités / Ekos /
+Objets) dans une seule modale. Côté serveur, trois `metaRoutes` de plus et deux
+routes de service ; côté client, `public/battle.js`.
+
+### Ce que la page édite
+
+| Section | Champs |
+|---|---|
+| Unités | les six statistiques, l'attaque de base, les Ekos connus (cases à cocher sur le catalogue réel), et pour un ennemi le bloc `behaviour` complet |
+| Ekos | coût en PA, ciblage, puissance, soin, nature des dégâts, planche, séquence, sons |
+| Objets | les mêmes, sans coût en PA |
+
+### Rien ne se saisit à la main
+
+C'est le principe de toute la page : **chaque champ dont le vocabulaire est
+fermé est une liste déroulante**, jamais une saisie libre. Un mode de ciblage,
+une nature de dégâts, une note de rythme, un moment de son, un comportement
+ennemi, la cible d'un `focus`, un identifiant d'Eko connu, un fichier audio —
+tout vient d'une liste. La raison est toujours la même : une faute de frappe
+dans ces champs ne produit pas une erreur mais un SILENCE (un son qui ne part
+jamais, une note qui ne s'affiche pas, un ennemi qui frappe au hasard), et ce
+silence ne se découvre qu'en lançant ce combat précis.
+
+**Les vocabulaires sont LUS DANS LE CODE GODOT**, pas recopiés : `/api/battle/
+vocabulary` extrait `SOUND_MOMENTS` de `BattleAssault.gd` et les clés de
+`NOTE_ACTIONS` de `RhythmBar.gd`. Deux listes qui disent la même chose finissent
+par se contredire (cf. l'incident `type`/`damage_type` au §5 septies), et la
+liste des moments est précisément celle où la divergence coûte le plus cher. Un
+repli littéral est prévu pour chacune : si un refactor renomme la constante, la
+page continue de fonctionner sur la dernière valeur connue plutôt que de tomber
+en panne muette, et le champ `parsed` de la réponse dit ce qui a réellement été
+lu. Les vocabulaires SANS déclaration unique côté moteur (ciblage, nature,
+comportements — éparpillés dans des `match`) restent écrits côté serveur, et
+c'est dit dans le code.
+
+### Les sons, et les moments hors d'atteinte
+
+Une liste répétable : par entrée un moment, et un ou plusieurs fichiers —
+plusieurs fichiers étant des VARIANTES tirées au hasard, ce que le bouton dit en
+toutes lettres (« + variante ») pour qu'on ne le confonde pas avec deux sons
+joués ensemble.
+
+**La page signale les moments que l'action n'atteindra jamais** : `approach` et
+`return` sur une action qui soigne (elle ne traverse pas le terrain), `rhythm`
+sur une action sans séquence. Le moteur, lui, se contente de ne rien jouer.
+Vérifié en jeu : un son posé sur `return` ne dit rien tant que l'attaque de Noah
+est offensive, et l'avertissement apparaît à la seconde où son champ « Soin »
+passe à 5.
+
+### Ce qui reste en lecture seule, délibérément
+
+- **Les libellés.** Les noms viennent de `Localization` : la page affiche le
+  texte résolu et l'id, avec un renvoi vers la page « Textes ». Une entrée sans
+  texte est signalée — elle n'aurait pas de nom en jeu.
+- **Les planches d'animation.** Leur grille, leur fourchette de frames et leur
+  ancrage se relèvent au pixel sur l'image (cf. `CLAUDE.md`), ce qu'un
+  formulaire web ne sait pas faire. Proposer de les saisir inviterait à poser
+  des valeurs plausibles et fausses. Seul le CHOIX d'une planche existante est
+  offert, par son nom.
+
+### Deux détails qui auraient sali les fichiers
+
+1. **Un champ numérique facultatif retire sa clé quand il retombe à 0**, au lieu
+   d'écrire `heal: 0` là où le catalogue n'avait rien. Le moteur lit ces champs
+   avec un défaut, donc absent et 0 disent la même chose — mais les écrire
+   ferait gonfler chaque entrée à la première visite de la page. À ne surtout
+   pas appliquer à `guard_below`, dont le défaut est 0,35 : y effacer un 0
+   changerait « ne se garde jamais » en « se garde sous 35 % ».
+2. **Le serveur écrit un saut de ligne final.** `JSON.stringify` n'en met pas,
+   et ces fichiers s'éditent aussi à la main : sans lui, chaque sauvegarde
+   produisait un diff git parasite sur un fichier par ailleurs inchangé. Corrigé
+   pour les cinq catalogues, pas seulement ceux du combat.
+
+Vérifié en jeu : un aller-retour complet par l'interface (puissance 6 → 7 → 6)
+laisse `Battle/units.json` **identique au byte près** — `git status` vide.
+
+### Ce que la page ne fait pas
+
+- Les **neuf Ekos `test_N`** sont toujours là. Ils sont du décor de test (faire
+  défiler une liste de quinze rangées) et c'est à l'auteur de dire quand ils
+  disparaissent — la page permet maintenant de les supprimer d'un clic.
+- **Pas de verrou optimiste** (`_rev`) sur ces trois catalogues, comme pour
+  `texts`/`tiles`/`props` : mono-utilisateur. Le mécanisme des maps est
+  rétrofitable si l'édition concurrente devient un vrai problème.
 
 ---
 

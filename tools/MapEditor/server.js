@@ -18,6 +18,10 @@ const LOCALIZATION_DIR = path.join(PROJECT_ROOT, "Localization");
 const TEXTS_PATH = path.join(LOCALIZATION_DIR, "texts.json");
 const PREVIEWS_DIR = path.join(LOCALIZATION_DIR, "previews");
 const FONTS_DIR = path.join(PROJECT_ROOT, "Fonts");
+const BATTLE_DIR = path.join(PROJECT_ROOT, "Battle");
+const AUDIO_DIR = path.join(PROJECT_ROOT, "Audio");
+const BATTLE_ASSAULT_PATH = path.join(SCRIPTS_DIR, "Battle", "BattleAssault.gd");
+const RHYTHM_BAR_PATH = path.join(SCRIPTS_DIR, "Battle", "UI", "RhythmBar.gd");
 
 const app = express();
 app.use(express.json({ limit: "5mb" }));
@@ -105,10 +109,26 @@ app.delete("/api/maps/:id", async (req, res) => {
   res.json({ ok: true });
 });
 
-// `defaultValue` généralise ce qui était autrefois toujours un tableau ([])
-// : un tableau vide pour tiles/props (comportement inchangé), un objet vide
-// de catalogue pour /api/texts (cf plus bas) — la forme attendue du PUT
-// s'aligne sur celle de `defaultValue` (Array.isArray ou objet avec `texts`).
+// La forme attendue du PUT s'aligne sur celle de `defaultValue` : un tableau
+// pour tiles/props, un objet portant les mêmes clés de conteneur pour les
+// catalogues (textes, et les trois catalogues de combat). On vérifie que
+// CHAQUE clé du modèle est présente, plutôt que « c'est un objet » : sans ça
+// une requête malformée écrirait `{}` par-dessus un catalogue entier. Les clés
+// commençant par `_` (`_comment`, `_champs`, qui documentent le fichier) sont
+// exemptées — elles se perdraient à la première sauvegarde d'un client qui ne
+// les renvoie pas, et c'est au client de les préserver, pas au validateur de
+// les exiger.
+function sameShape(body, model) {
+  if (Array.isArray(model)) return Array.isArray(body);
+  if (!body || typeof body !== "object" || Array.isArray(body)) return false;
+  return Object.keys(model)
+    .filter((key) => !key.startsWith("_"))
+    .every((key) => key in body);
+}
+
+// `defaultValue` généralise ce qui était autrefois toujours un tableau ([]) :
+// un tableau vide pour tiles/props (comportement inchangé), un objet vide de
+// catalogue pour /api/texts et pour les catalogues de combat (cf plus bas).
 function metaRoutes(urlPath, filePath, defaultValue = []) {
   app.get(urlPath, async (req, res) => {
     try {
@@ -121,11 +141,14 @@ function metaRoutes(urlPath, filePath, defaultValue = []) {
 
   app.put(urlPath, async (req, res) => {
     const body = req.body;
-    const valid = Array.isArray(defaultValue)
-      ? Array.isArray(body)
-      : body && typeof body === "object" && Array.isArray(body.texts);
-    if (!valid) return res.status(400).json({ error: "invalid payload" });
-    await fs.writeFile(filePath, JSON.stringify(body, null, 2));
+    if (!sameShape(body, defaultValue)) {
+      return res.status(400).json({ error: "invalid payload" });
+    }
+    // Saut de ligne final : ces fichiers s'éditent AUSSI à la main, et
+    // `JSON.stringify` n'en met pas. Sans lui, chaque sauvegarde depuis
+    // l'éditeur produisait un diff git parasite (« \ No newline at end of
+    // file ») sur un fichier par ailleurs inchangé.
+    await fs.writeFile(filePath, JSON.stringify(body, null, 2) + "\n");
     res.json({ ok: true });
   });
 }
@@ -143,6 +166,90 @@ metaRoutes("/api/texts", TEXTS_PATH, {
   ],
   default_language: "en",
   texts: [],
+});
+
+// ---------- Combat : les trois catalogues, édités par la page « Combat » ----------
+// Mêmes routes que tiles/props/texts, et pour la même raison : la donnée de
+// combat vit en JSON justement pour être éditable sans recompiler. Pas de
+// verrou optimiste (_rev) ici non plus — catalogue mono-utilisateur, cf. la
+// note sur /api/texts.
+metaRoutes("/api/battle/units", path.join(BATTLE_DIR, "units.json"), { units: {} });
+metaRoutes("/api/battle/ekos", path.join(BATTLE_DIR, "ekos.json"), { ekos: {} });
+metaRoutes("/api/battle/items", path.join(BATTLE_DIR, "items.json"), { items: {} });
+
+// Fichiers audio disponibles, pour que le choix d'un son d'action soit une
+// LISTE et pas un chemin `res://` tapé à la main — une faute de frappe y donne
+// un son qui ne part jamais, et l'avertissement runtime n'arrive que le jour
+// où quelqu'un lance ce combat.
+const AUDIO_EXTENSIONS = [".wav", ".mp3", ".ogg"];
+
+app.get("/api/battle/sounds", async (req, res) => {
+  const files = [];
+  for (const extension of AUDIO_EXTENSIONS) {
+    files.push(...(await walkFiles(AUDIO_DIR, extension)));
+  }
+  const sounds = files
+    .map((file) => "res://Audio/" + path.relative(AUDIO_DIR, file).split(path.sep).join("/"))
+    .sort();
+  res.json(sounds);
+});
+
+// Vocabulaires FERMÉS du combat. Ceux qui sont déclarés une fois pour toutes
+// dans le code Godot sont LUS LÀ-BAS plutôt que recopiés ici : deux listes qui
+// disent la même chose finissent par se contredire, et c'est précisément le
+// genre de divergence qui donne un son accroché à un moment qui n'existe pas.
+// Les autres (modes de ciblage, natures de dégâts, comportements) n'ont pas de
+// déclaration unique côté moteur — ils sont éparpillés dans des `match` — et
+// restent donc écrits ici, documentés dans les `_champs` des catalogues.
+// `String.raw` et pas un gabarit ordinaire : dans un gabarit, `\s` vaut « s »
+// et la classe de caractères disparaît sans erreur au moment de l'écriture —
+// elle n'explose qu'à la construction de la RegExp, à la première requête.
+function parseGdStringArray(content, name) {
+  const match = content.match(
+    new RegExp(String.raw`const\s+${name}[^=]*=\s*\[([\s\S]*?)\]`)
+  );
+  if (!match) return null;
+  const values = [...match[1].matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+  return values.length ? values : null;
+}
+
+function parseGdDictionaryKeys(content, name) {
+  const match = content.match(
+    new RegExp(String.raw`const\s+${name}[^=]*=\s*\{([\s\S]*?)\n\}`)
+  );
+  if (!match) return null;
+  const keys = [...match[1].matchAll(/"([^"]+)"\s*:/g)].map((m) => m[1]);
+  return keys.length ? keys : null;
+}
+
+async function readGd(filePath) {
+  try {
+    return await fs.readFile(filePath, "utf-8");
+  } catch {
+    return "";
+  }
+}
+
+app.get("/api/battle/vocabulary", async (req, res) => {
+  const [assault, rhythm] = await Promise.all([
+    readGd(BATTLE_ASSAULT_PATH),
+    readGd(RHYTHM_BAR_PATH),
+  ]);
+  // Un repli est prévu pour chaque liste lue dans le code : si un refactor
+  // renomme la constante, la page continue de fonctionner sur la dernière
+  // valeur connue, et le champ `parsed` dit ce qui a réellement été lu — un
+  // éditeur qui tombe en panne muette serait pire que la divergence qu'on
+  // cherche à éviter.
+  const moments = parseGdStringArray(assault, "SOUND_MOMENTS");
+  const notes = parseGdDictionaryKeys(rhythm, "NOTE_ACTIONS");
+  res.json({
+    moments: moments || ["announce", "rhythm", "approach", "gesture", "hit", "return"],
+    notes: notes || ["cross", "circle", "square", "triangle", "up", "down", "left", "right"],
+    targets: ["enemy", "enemies", "ally", "allies", "self"],
+    damage_types: ["direct", "injury"],
+    behaviours: ["random", "aggressive", "defensive", "focused"],
+    parsed: { moments: Boolean(moments), notes: Boolean(notes) },
+  });
 });
 
 // ---------- Systèmes : catalogue auto-détecté à partir de Scripts/ ----------

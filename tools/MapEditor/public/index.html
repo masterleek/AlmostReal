@@ -12,6 +12,7 @@
       <button id="menu-maps" class="menu-item">Maps</button>
       <button id="menu-systems" class="menu-item">Systèmes</button>
       <button id="menu-texts" class="menu-item">Textes</button>
+      <button id="menu-battle" class="menu-item">Combat</button>
     </nav>
     <div id="status"></div>
   </header>
@@ -184,6 +185,23 @@
       <p id="texts-empty-hint" class="hint hidden"></p>
       <div id="texts-list"></div>
       <button id="texts-add-btn">+ Ajouter un texte</button>
+    </div>
+  </div>
+
+  <div id="battle-modal-overlay" class="hidden">
+    <div id="battle-modal" class="crud-modal">
+      <header>
+        <h2>Combat</h2>
+        <button id="battle-modal-close" class="icon-btn" title="Fermer">✕</button>
+      </header>
+      <nav id="battle-section-tabs">
+        <button class="battle-tab selected" data-section="units">Unités</button>
+        <button class="battle-tab" data-section="ekos">Ekos</button>
+        <button class="battle-tab" data-section="items">Objets</button>
+      </nav>
+      <p id="battle-hint" class="hint"></p>
+      <div id="battle-list"></div>
+      <button id="battle-add-btn">+ Ajouter</button>
     </div>
   </div>
 

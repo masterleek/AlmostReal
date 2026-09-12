@@ -440,6 +440,7 @@ button:hover { border-color: var(--accent); }
 #modal-new-map-btn { width: 100%; }
 
 /* Modal Gestion des tuiles / props */
+#battle-modal-overlay,
 #tiles-modal-overlay,
 #atlas-picker-overlay,
 #props-modal-overlay,
@@ -457,6 +458,7 @@ button:hover { border-color: var(--accent); }
 #atlas-picker-overlay,
 #rect-picker-overlay { z-index: 110; }
 
+#battle-modal-overlay.hidden,
 #tiles-modal-overlay.hidden,
 #atlas-picker-overlay.hidden,
 #props-modal-overlay.hidden,
@@ -948,3 +950,174 @@ button:hover { border-color: var(--accent); }
   line-height: 1;
   pointer-events: none;
 }
+
+/* ---------- Page « Combat » : les trois catalogues de Battle/ ---------- */
+/* Plus large que les autres modales : une action porte une dizaine de champs,
+   plus sa séquence et ses sons, et les empiler dans 480 px les rendrait
+   illisibles. */
+#battle-modal { width: 820px; max-width: 92vw; }
+
+#battle-section-tabs { display: flex; gap: 4px; }
+
+.battle-tab {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: #9aa0ab;
+  padding: 4px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.battle-tab.selected { color: var(--text); border-color: var(--accent); }
+
+#battle-list {
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 40px;
+}
+
+#battle-add-btn { width: 100%; }
+
+.battle-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  border-radius: 4px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+}
+
+.battle-row-head { display: flex; align-items: center; gap: 8px; }
+
+.battle-id {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: monospace;
+}
+
+.battle-badge {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #ffb4a2;
+  border: 1px solid #6b3b32;
+  border-radius: 3px;
+  padding: 1px 5px;
+}
+
+.battle-sub-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #9aa0ab;
+  margin-top: 4px;
+}
+
+.battle-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 6px;
+}
+
+.battle-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 11px;
+  color: #9aa0ab;
+}
+
+.battle-input {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 4px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+  width: 100%;
+}
+
+.battle-block {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+}
+
+.battle-block-title { font-size: 12px; font-weight: 600; margin: 0; }
+
+.battle-sequence,
+.battle-checks {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.battle-note,
+.battle-sound-file { display: flex; align-items: center; gap: 2px; }
+
+.battle-note-static {
+  font-family: monospace;
+  font-size: 11px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 2px 6px;
+}
+
+.battle-chip-remove {
+  background: none;
+  border: none;
+  color: #9aa0ab;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 2px;
+}
+
+.battle-chip-remove:hover { color: #ff6b6b; }
+
+.battle-chip-add {
+  background: var(--panel);
+  border: 1px dashed var(--border);
+  color: #9aa0ab;
+  border-radius: 4px;
+  padding: 3px 8px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.battle-chip-add:hover { border-color: var(--accent); color: var(--text); }
+
+.battle-sounds { display: flex; flex-direction: column; gap: 6px; }
+
+.battle-sound-row {
+  display: grid;
+  grid-template-columns: 120px 1fr auto;
+  align-items: start;
+  gap: 6px;
+}
+
+.battle-sound-files {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.battle-sound-files .battle-input { min-width: 340px; }
+
+.battle-check { display: flex; align-items: center; gap: 4px; font-size: 12px; }
+
+.battle-name-line,
+.battle-inline-hint { font-size: 11px; color: #9aa0ab; }
+
+.battle-warning { font-size: 11px; color: #ffb4a2; }
