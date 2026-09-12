@@ -269,8 +269,58 @@
         "sequence": [
           "circle",
           "circle"
+        ],
+        "sounds": [
+          {
+            "at": "hit",
+            "sound": [
+              "res://Audio/Battle/Voices/iris_att1.wav",
+              "res://Audio/Battle/Voices/iris_att2.wav",
+              "res://Audio/Battle/Voices/iris_att3.wav"
+            ]
+          },
+          {
+            "at": "rhythm",
+            "sound": [
+              "res://Audio/Battle/Voices/iris_lets_go.wav",
+              "res://Audio/Battle/Voices/iris_lets_go2.wav"
+            ]
+          }
         ]
-      }
+      },
+      "sounds": [
+        {
+          "at": "turn",
+          "sound": "res://Audio/Battle/Voices/iris_its_my_turn.wav"
+        },
+        {
+          "at": "hurt",
+          "sound": [
+            "res://Audio/Battle/Voices/iris_hit.wav",
+            "res://Audio/Battle/Voices/iris_hit2.wav",
+            "res://Audio/Battle/Voices/iris_hit3.wav"
+          ]
+        },
+        {
+          "at": "menu_attack",
+          "sound": [
+            "res://Audio/Battle/Voices/iris_lets_start.wav",
+            "res://Audio/Battle/Voices/iris_lets_start2.wav"
+          ]
+        },
+        {
+          "at": "menu_eko",
+          "sound": "res://Audio/Battle/Voices/iris_chance_now.wav"
+        },
+        {
+          "at": "menu_items",
+          "sound": "res://Audio/Battle/Voices/iris_let_me_take_care_of_it.wav"
+        },
+        {
+          "at": "menu_guard",
+          "sound": "res://Audio/Battle/Voices/iris_be_cautious.wav"
+        }
+      ]
     },
     "cactoon": {
       "portrait": "",
