@@ -122,14 +122,23 @@ const FOCUS_BODY_RISE := 40
 ## recadrage de 12 % ne se voit pas.
 const BACKGROUND_OVERSCAN := (float(DESIGN_SIZE.x) + 2.0 * FIELD_SHIFT) / float(DESIGN_SIZE.x)
 
-## PENDANT L'ASSAUT, la bande basse REMONTE pour dégager la barre de rythme.
-## Mesuré entre mockup_preparation.png et la première vignette de
-## mockup_assault_allies : 48 px exactement, sur les 22 colonnes où aucun décor
-## ne vient masquer le bord. La bande HAUTE, elle, ne bouge pas — le HUD reste
-## dégagé sur les deux maquettes.
+## PENDANT L'ASSAUT, les deux bandes se resserrent sur l'action.
+##
+## La basse REMONTE pour dégager la barre de rythme : 48 px, mesuré entre
+## mockup_preparation.png et la première vignette de mockup_assault_allies, sur
+## les 22 colonnes où aucun décor ne vient masquer le bord.
+##
+## La haute DESCEND. Ces 12 px-là ne sont PAS relevés : les deux maquettes
+## posent la bande haute au même endroit, c'est une demande venue après elles.
+## La valeur est donc un choix — le quart de la course de la bande basse, assez
+## pour se voir (le noir passe de 21 à 33 px) sans atteindre les plaques d'état,
+## qui commencent à y = 21 et se dessinent de toute façon PAR-DESSUS la bande
+## (montées après elle, cf. _ready).
 const DARK_LINE_ASSAULT_RISE := 48
-## Le temps que la bande met à monter. Rien ne le fixe sur les maquettes, qui
-## ne montrent que les deux états ; assez court pour ne pas retarder l'assaut.
+const DARK_LINE_ASSAULT_DROP := 12
+## Le temps que les bandes mettent à se déplacer. Rien ne le fixe sur les
+## maquettes, qui ne montrent que les deux états ; assez court pour ne pas
+## retarder l'assaut.
 const DARK_LINE_SLIDE := 0.25
 
 ## Les deux moitiés se recouvrent de 2 px (41→240 et 239→438) : le
@@ -386,6 +395,7 @@ var _background_home := Vector2.ZERO
 var _field_tween: Tween
 ## Bande noire du bas, gardée sous la main : elle remonte pendant l'assaut.
 var _dark_bottom: Sprite2D
+var _dark_top: Sprite2D
 var _dark_tween: Tween
 var _shake_tween: Tween
 ## Allié dont c'est le tour. Vaut le nombre d'alliés quand ils ont tous choisi
@@ -563,10 +573,11 @@ func _spawn_unit(
 	return sprite
 
 ## Les deux bandes noires, montées APRÈS la plateforme et les combattants pour
-## passer devant eux. Ce n'est pas un détail de goût : la bande du bas remonte
-## de 48 px pendant l'assaut (cf. DARK_LINE_ASSAULT_RISE) et vient alors
-## recouvrir le bas du terrain — derrière les unités, elle se glisserait sous
-## leurs pieds au lieu de les masquer, et le cadrage de l'écran se déchirerait.
+## passer devant eux. Ce n'est pas un détail de goût : pendant l'assaut elles se
+## resserrent sur l'action (cf. DARK_LINE_ASSAULT_RISE et _DROP) et viennent
+## alors recouvrir le haut et le bas du terrain — derrière les unités, la bande
+## basse se glisserait sous leurs pieds au lieu de les masquer, et le cadrage de
+## l'écran se déchirerait.
 func _build_dark_lines() -> void:
 	_dark_bottom = Sprite2D.new()
 	_dark_bottom.texture = DARK_LINES
@@ -574,12 +585,12 @@ func _build_dark_lines() -> void:
 	_dark_bottom.position = DARK_LINE_BOTTOM
 	stage.add_child(_dark_bottom)
 
-	var top := Sprite2D.new()
-	top.texture = DARK_LINES
-	top.centered = false
-	top.flip_v = true
-	top.position = DARK_LINE_TOP
-	stage.add_child(top)
+	_dark_top = Sprite2D.new()
+	_dark_top.texture = DARK_LINES
+	_dark_top.centered = false
+	_dark_top.flip_v = true
+	_dark_top.position = DARK_LINE_TOP
+	stage.add_child(_dark_top)
 
 ## L'assaut est un nœud comme un autre : il a besoin de l'arbre pour ses
 ## attentes (cf. BattleAssault._wait). Monté une fois, relancé à chaque tour.
@@ -689,14 +700,24 @@ func _move_field(zoom: float, at: Vector2, duration: float) -> void:
 	_field_tween.tween_property(_field, "scale", Vector2(zoom, zoom), duration)
 	_field_tween.tween_property(_field, "position", at, duration)
 
-## Fait monter ou redescendre la bande basse. `raised` = pendant l'assaut.
-func _slide_dark_band(raised: bool) -> void:
+## Resserre ou rouvre le cadrage. `raised` = pendant l'assaut.
+##
+## Les deux bandes bougent ENSEMBLE, d'un seul tween : elles forment un cadre,
+## et deux animations séparées finiraient par se décaler le jour où l'une des
+## deux durées changerait.
+func _slide_dark_bands(raised: bool) -> void:
 	if _dark_tween != null and _dark_tween.is_valid():
 		_dark_tween.kill()
-	var target := DARK_LINE_BOTTOM - Vector2(0, DARK_LINE_ASSAULT_RISE if raised else 0)
+	var rise := DARK_LINE_ASSAULT_RISE if raised else 0
+	var drop := DARK_LINE_ASSAULT_DROP if raised else 0
 	_dark_tween = create_tween()
-	_dark_tween.tween_property(_dark_bottom, "position", target, DARK_LINE_SLIDE) \
-		.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	_dark_tween.set_parallel(true)
+	_dark_tween.tween_property(
+		_dark_bottom, "position", DARK_LINE_BOTTOM - Vector2(0, rise), DARK_LINE_SLIDE
+	).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	_dark_tween.tween_property(
+		_dark_top, "position", DARK_LINE_TOP + Vector2(0, drop), DARK_LINE_SLIDE
+	).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 
 func _combatants(units: Array[BattleUnit], sprites: Array[AnimatedSprite2D]) -> Array[Dictionary]:
 	var entries: Array[Dictionary] = []
@@ -1446,7 +1467,7 @@ func _finish_preparation() -> void:
 	_set_units_dimmed(false, false)
 	_refresh_allies()
 	_legend.visible = false
-	_slide_dark_band(true)
+	_slide_dark_bands(true)
 	preparation_finished.emit(_planned_actions())
 	_assault.run()
 
@@ -1484,7 +1505,7 @@ func _start_round() -> void:
 		return
 	_active_ally = first
 	_legend.visible = true
-	_slide_dark_band(false)
+	_slide_dark_bands(false)
 	_open_root_menu()
 
 ## ──────────────────────────────────────────────────────────────────────────

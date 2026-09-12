@@ -886,6 +886,13 @@ pas partir en guerre contre des choix déjà faits et documentés dans ce repo :
   posées sur l'image, qui ne reçoivent plus rien. Et un drapeau « ça a glissé »,
   lu au clic (qui arrive après le relâchement), évite qu'un déplacement de la
   planche ne se solde par une sélection involontaire.
+- **Une valeur « légère » que les maquettes ne montrent pas est un CHOIX, et
+  doit se dire comme tel.** Les 12 px dont la bande noire haute descend pendant
+  l'assaut ne sont relevés nulle part — les deux maquettes la posent au même
+  endroit. Écrire le commentaire à côté du constant, avec ce à quoi la valeur a
+  été rapportée (ici le quart de la course de la bande basse) et ce qu'elle
+  évite (atteindre les plaques d'état, qui commencent à y = 21), vaut mieux
+  qu'un nombre nu qui passera plus tard pour une mesure.
 - **Le panneau navigateur intégré bride `requestAnimationFrame` à ~3/s.** Une
   animation y paraît figée alors qu'elle tourne : vérifier qu'un canevas bouge
   demande d'échantillonner sur plusieurs SECONDES, ou de se synchroniser sur les
