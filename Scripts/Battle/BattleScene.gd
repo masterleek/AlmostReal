@@ -1554,6 +1554,10 @@ func _play_victory() -> void:
 		else:
 			unit.heal(REVIVE_HP)
 			create_tween().tween_property(sprite, "modulate", Color.WHITE, REVIVE_FADE)
+			# Un allié qui tient une planche de MORT ne s'est pas effacé : il
+			# faut le relever explicitement, sinon il fêterait la victoire
+			# couché — et resterait ainsi s'il n'a pas de planche de victoire.
+			sprite.play_sheet(BattleData.get_animation(_allies[i], ANIM_IDLE))
 		_play_win(sprite, _allies[i])
 	_refresh_allies()
 

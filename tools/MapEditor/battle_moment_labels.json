@@ -13,5 +13,18 @@
     "menu_items": "Choix : Items",
     "menu_guard": "Choix : Guard",
     "hurt": "Encaisse"
+  },
+  "animation_labels": {
+    "idle": "Repos",
+    "atkeff": "Visée (ciblage)",
+    "standby": "Attente (action retenue)",
+    "win_before": "Victoire — célébration",
+    "win": "Victoire — pose tenue",
+    "move_back": "Retour à l'emplacement",
+    "approach": "Déplacement vers la cible",
+    "attack": "Attaque (planche du personnage)",
+    "hurt": "Blessé (encaisse un coup)",
+    "dying": "Agonie",
+    "dead": "Mort (pose tenue)"
   }
 }

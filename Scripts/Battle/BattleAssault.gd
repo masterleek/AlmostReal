@@ -77,6 +77,31 @@ const RETURN_DURATION := 0.35
 ## déclarer l'animation suffira à la faire jouer.
 const ANIM_RETURN := "move_back"
 
+## Planche du DÉPLACEMENT vers la cible. Symétrique de `move_back`, et
+## facultative de la même façon : sans elle l'unité glisse jusqu'au contact sur
+## la planche qu'elle porte — son repos.
+const ANIM_APPROACH := "approach"
+
+## Planche du GESTE d'attaque, celle du PERSONNAGE. Une action peut nommer la
+## sienne (`animation` dans ekos.json / items.json / basic_attack), et c'est ce
+## qui permet à deux Ekos d'avoir deux gestes ; mais quand elle n'en nomme pas,
+## ou quand elle en nomme une que ce personnage-là ne déclare pas, on retombe
+## ici. Sans ce repli, un Eko partagé entre deux héros exige que tous deux aient
+## une planche du même nom — et le jour où l'un renomme la sienne, il attaque
+## sans geste, en silence.
+const ANIM_ATTACK := "attack"
+
+## Planche de DOULEUR, jouée par celui qui ENCAISSE. C'est la contrepartie
+## visuelle du cri `hurt` (cf. BattleData.UNIT_SOUNDS) : même mot, même
+## propriétaire — le personnage, pas le geste qui l'a touché.
+const ANIM_HURT := "hurt"
+
+## AGONIE puis MORT. `dying` se joue une fois, `dead` se tient. Sans `dead`, le
+## corps s'efface en fondu comme avant ; sans `dying` non plus, rien ne change
+## de ce que le combat faisait jusqu'ici.
+const ANIM_DYING := "dying"
+const ANIM_DEAD := "dead"
+
 ## Temps passé au contact quand l'unité n'a PAS de planche d'attaque — le
 ## cactoon n'a que des idles, sa page de rip n'en contient pas d'autre. Le
 ## déplacement tient alors lieu de geste : il n'invente aucun dessin, et dit
@@ -117,6 +142,13 @@ var _cursor: ActorCursor
 var _home: Dictionary = {}
 ## Un retour visuel par unité (éclat + jauge), monté une fois pour toutes.
 var _feedback: Dictionary = {}
+## Numéro du dernier coup encaissé par chaque unité (cf. _play_hurt) : il dit à
+## une restauration de repos si elle est encore d'actualité.
+var _hurt_ticket: Dictionary = {}
+## Unités déjà mises en terre. Le marqueur ne peut pas être l'opacité du sprite
+## comme avant : un personnage qui garde une planche de MORT reste visible, et
+## serait enterré à nouveau à chaque action suivante.
+var _buried: Dictionary = {}
 
 func setup(
 	allies: Array[Dictionary], enemies: Array[Dictionary], effects: Node2D,
@@ -350,8 +382,14 @@ func _sequence_of(unit: BattleUnit, action: Dictionary) -> PackedStringArray:
 ## sa propre planche et sa propre fourchette de frames. Une planche absente
 ## n'est pas une erreur : l'unité frappe sans geste (cf. _play_gesture).
 func _gesture_for(unit: BattleUnit, action: Dictionary) -> Dictionary:
-	var name := String(_definition_of(unit, action).get("animation", "atk"))
-	return BattleData.get_animation(unit.id, name)
+	var name := String(_definition_of(unit, action).get("animation", ANIM_ATTACK))
+	var sheet := BattleData.get_animation(unit.id, name)
+	# L'ACTION D'ABORD, LE PERSONNAGE ENSUITE. Une action qui nomme une planche
+	# que ce personnage-là n'a pas ne doit pas le laisser sans geste : il joue
+	# alors son attaque à lui.
+	if sheet.is_empty() and name != ANIM_ATTACK:
+		sheet = BattleData.get_animation(unit.id, ANIM_ATTACK)
+	return sheet
 
 ## Action de l'unité. Un allié joue celle qu'il a retenue ; un ennemi n'a pas de
 ## phase de préparation, il attaque.
@@ -494,6 +532,43 @@ func _apply(actor: BattleUnit, target: BattleUnit, effect: Dictionary) -> void:
 	# s'est rien passé qu'on puisse crier.
 	if amount > 0:
 		_cue_unit(target, "hurt")
+		# La planche de douleur ne se joue PAS sur un coup fatal : la mise en
+		# terre (`_bury_the_dead`) enchaîne aussitôt, et les deux se
+		# disputeraient le même sprite.
+		if target.is_alive():
+			_play_hurt(target)
+
+## Fait jouer à `unit` sa planche de douleur, puis la repose sur son repos.
+##
+## Lancé SANS ÊTRE ATTENDU : l'assaut continue son déroulé pendant que la cible
+## encaisse. C'est ce qui permet à une attaque de zone de faire réagir trois
+## personnages en même temps, et au frappeur de repartir sans les attendre.
+##
+## Personne d'autre ne repeint les poses pendant l'assaut (cf.
+## BattleScene._refresh_unit_visuals, qui s'abstient) : c'est donc à cette
+## fonction, et à elle seule, de rendre le repos.
+func _play_hurt(unit: BattleUnit) -> void:
+	var sheet := BattleData.get_animation(unit.id, ANIM_HURT)
+	if sheet.is_empty():
+		return
+	var sprite := _sprite_of(unit) as UnitSprite
+	if sprite == null:
+		return
+	# Un second coup pendant le premier relance la planche ET invalide la
+	# restauration du premier : sans ce jeton, elle couperait la seconde
+	# douleur au milieu pour reposer un repos que personne n'a demandé.
+	var ticket := int(_hurt_ticket.get(unit.id, 0)) + 1
+	_hurt_ticket[unit.id] = ticket
+	sprite.play_sheet(sheet)
+	await _wait(UnitSprite.duration_of(sheet))
+	if not is_instance_valid(sprite):
+		return
+	if int(_hurt_ticket.get(unit.id, 0)) != ticket:
+		return
+	# Tombée entre-temps : son corps appartient désormais à _bury_the_dead.
+	if not unit.is_alive():
+		return
+	sprite.play_sheet(BattleData.get_animation(unit.id, "idle"))
 
 ## Déclenche un son propre à l'unité (cf. BattleData.UNIT_SOUNDS).
 func _cue_unit(unit: BattleUnit, moment: String) -> void:
@@ -535,10 +610,18 @@ func _approach(entry: Dictionary, targets: Array[BattleUnit]) -> void:
 	# Arrondi : une position à virgule devient un demi-pixel flou une fois le
 	# Stage agrandi ×4.
 	var stop := Vector2(focus.x + side * APPROACH_DISTANCE, focus.y).round()
+	# Le trajet dure au moins la planche, exactement comme le retour : une
+	# planche de course qui se terminerait à mi-chemin laisserait le personnage
+	# figé sur sa dernière image le reste du déplacement.
+	var gesture := BattleData.get_animation(_unit_of(entry).id, ANIM_APPROACH)
+	var duration := APPROACH_DURATION
+	if not gesture.is_empty():
+		duration = maxf(duration, UnitSprite.duration_of(gesture))
+		sprite.play_sheet(gesture)
 	var tween := create_tween()
-	tween.tween_property(sprite, "position", stop, APPROACH_DURATION) \
+	tween.tween_property(sprite, "position", stop, duration) \
 		.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
-	await _wait(APPROACH_DURATION)
+	await _wait(duration)
 
 ## Ramène l'unité à son emplacement, sur sa planche de retour si elle en a une.
 ## Les deux durent le même temps : le déplacement dure au moins la planche, pour
@@ -618,17 +701,43 @@ func _lunge(entry: Dictionary, targets: Array[BattleUnit]) -> void:
 ## plutôt que fait cible par cible : une attaque de zone peut en coucher
 ## plusieurs, et elles doivent disparaître ensemble.
 func _bury_the_dead() -> void:
-	var falling: Array[Node2D] = []
+	var fallen: Array[Dictionary] = []
 	for entry in _allies + _enemies:
-		var unit: BattleUnit = entry["unit"]
-		var sprite := _node_of(entry)
-		if not unit.is_alive() and sprite.modulate.a > 0.0:
-			falling.append(sprite)
-	if falling.is_empty():
+		var unit := _unit_of(entry)
+		if unit.is_alive() or _buried.has(unit.id):
+			continue
+		_buried[unit.id] = true
+		fallen.append(entry)
+	if fallen.is_empty():
+		return
+
+	# L'AGONIE, jouée par tout le monde en même temps : les durées peuvent
+	# différer d'un personnage à l'autre, on attend la plus longue pour que le
+	# groupe disparaisse d'un seul tenant.
+	var agony := 0.0
+	for entry in fallen:
+		var dying := BattleData.get_animation(_unit_of(entry).id, ANIM_DYING)
+		if dying.is_empty():
+			continue
+		_node_of(entry).play_sheet(dying)
+		agony = maxf(agony, UnitSprite.duration_of(dying))
+	if agony > 0.0:
+		await _wait(agony)
+
+	# Puis la pose de MORT, tenue : le corps reste sur le terrain. Ceux qui n'en
+	# ont pas s'effacent, comme le combat le faisait jusqu'ici.
+	var fading: Array[Node2D] = []
+	for entry in fallen:
+		var dead := BattleData.get_animation(_unit_of(entry).id, ANIM_DEAD)
+		if dead.is_empty():
+			fading.append(_node_of(entry))
+		else:
+			_node_of(entry).play_sheet(dead)
+	if fading.is_empty():
 		return
 	var tween := create_tween()
 	tween.set_parallel(true)
-	for sprite in falling:
+	for sprite in fading:
 		tween.tween_property(sprite, "modulate:a", 0.0, DEATH_FADE)
 	await _wait(DEATH_FADE)
 
