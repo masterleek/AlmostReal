@@ -444,7 +444,8 @@ button:hover { border-color: var(--accent); }
 #atlas-picker-overlay,
 #props-modal-overlay,
 #systems-modal-overlay,
-#rect-picker-overlay {
+#rect-picker-overlay,
+#frame-picker-overlay {
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.5);
@@ -456,12 +457,16 @@ button:hover { border-color: var(--accent); }
 
 #atlas-picker-overlay,
 #rect-picker-overlay { z-index: 110; }
+/* Au-dessus de la page « Combat », qui n'est pas une fenêtre mais occupe tout
+   le plan de travail. */
+#frame-picker-overlay { z-index: 120; }
 
 #tiles-modal-overlay.hidden,
 #atlas-picker-overlay.hidden,
 #props-modal-overlay.hidden,
 #systems-modal-overlay.hidden,
-#rect-picker-overlay.hidden { display: none; }
+#rect-picker-overlay.hidden,
+#frame-picker-overlay.hidden { display: none; }
 
 #tiles-modal,
 .crud-modal {
@@ -965,8 +970,7 @@ button:hover { border-color: var(--accent); }
 
 #battle-page.hidden,
 #layout.hidden,
-#tab-strip.hidden,
-#battle-add-btn.hidden { display: none; }
+#tab-strip.hidden { display: none; }
 
 #battle-page-header { display: flex; align-items: center; gap: 12px; }
 #battle-page-header h2 { font-size: 15px; margin: 0; }
@@ -984,12 +988,13 @@ button:hover { border-color: var(--accent); }
 .text-btn:hover { color: var(--text); border-color: var(--accent); }
 .menu-item.selected { background: var(--panel); border-color: var(--accent); }
 
-/* Le contenu se centre sans s'étaler : au-delà, un formulaire à deux colonnes
-   oblige l'œil à traverser tout l'écran entre le libellé et son champ. */
+/* Le contenu se centre sans s'étaler : au-delà, l'œil doit traverser tout
+   l'écran entre un libellé et son champ. La borne a été relevée avec le
+   maître/détail : la colonne de gauche en prend 220, et ce qui reste doit
+   encore tenir une ligne de six statistiques. */
 #battle-hint,
 #battle-section-tabs,
-#battle-list,
-#battle-add-btn { width: 100%; max-width: 980px; }
+#battle-list { width: 100%; max-width: 1160px; }
 
 /* ---------- Section « Sons » ---------- */
 
@@ -1034,6 +1039,189 @@ button:hover { border-color: var(--accent); }
 }
 
 .battle-play:hover { border-color: var(--accent); }
+/* ---------- Planches d'animation ---------- */
+
+.battle-anims { display: flex; flex-direction: column; gap: 8px; }
+
+/* L'aperçu à gauche, les champs à droite : il répond à ce qu'on règle, il doit
+   rester sous les yeux pendant qu'on le règle. */
+/* Une valeur qui n'est pas dans le fichier, seulement le défaut du moteur : à
+   distinguer d'une valeur écrite, sinon on croit que le catalogue la porte. */
+.battle-input-default { color: #9aa0ab; font-style: italic; }
+
+.battle-anim-body { display: flex; gap: 12px; align-items: flex-start; }
+.battle-anim-settings { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+
+.sheet-preview {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+}
+
+.sheet-preview-canvas {
+  /* Même damier que le sélecteur de vignettes : les planches ont un fond
+     transparent, et une silhouette sombre s'y perdrait. */
+  background:
+    repeating-conic-gradient(#2a2e37 0% 25%, #23262e 0% 50%) 0 0 / 12px 12px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  display: block;
+}
+
+.battle-anim-frames {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Le libellé de la ligne des vignettes vit hors d'un .battle-field : il faut
+   donc lui redonner la taille des autres, sinon il passe pour un titre. */
+.battle-anim-frames > .battle-field-label { font-size: 11px; }
+
+/* ---------- Choix des vignettes sur l'image ---------- */
+
+#frame-picker { width: auto; max-width: 94vw; }
+
+/* La barre : réglages de vue à gauche, mesures à droite. Les mesures sont
+   poussées au bout par `margin-left: auto` — elles se lisent, elles ne se
+   cliquent pas, et les mettre au milieu séparerait deux outils. */
+#frame-picker-bar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding-bottom: 8px;
+}
+
+.frame-picker-zooms { display: flex; gap: 2px; }
+
+.frame-zoom {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: #9aa0ab;
+  font-size: 11px;
+  padding: 3px 9px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.frame-zoom:hover { color: var(--text); border-color: var(--accent); }
+
+.frame-zoom[aria-pressed="true"] {
+  color: var(--text);
+  border-color: var(--accent);
+  background: rgba(120, 200, 255, 0.16);
+}
+
+.frame-picker-switch {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: #9aa0ab;
+  cursor: pointer;
+}
+
+#frame-picker-info {
+  margin-left: auto;
+  font-size: 11px;
+  color: #9aa0ab;
+  font-variant-numeric: tabular-nums;
+}
+
+/* La scène a une taille FIXE, pas une taille qui suit l'image : sinon la
+   fenêtre saute à chaque zoom et à chaque planche, et « ajusté » n'aurait pas
+   de cadre stable à remplir. */
+#frame-picker-stage {
+  overflow: auto;
+  display: flex;
+  width: min(1100px, 86vw);
+  height: 62vh;
+  cursor: grab;
+  outline: none;
+  /* Damier : les planches ont un fond transparent, et une vignette sombre sur
+     fond sombre ne se distingue pas de la case vide d'à côté. */
+  background:
+    repeating-conic-gradient(#2a2e37 0% 25%, #23262e 0% 50%) 0 0 / 16px 16px;
+}
+
+#frame-picker-stage:focus-visible { box-shadow: inset 0 0 0 1px var(--accent); }
+#frame-picker-stage.panning { cursor: grabbing; }
+
+/* `margin: auto` sur l'élément flex, et non `place-content: center` : quand la
+   planche déborde, le centrage par le conteneur rogne son bord haut/gauche,
+   qu'aucun défilement ne rattrape ensuite. */
+.frame-picker-frame { position: relative; margin: auto; flex: 0 0 auto; }
+
+.frame-picker-image {
+  display: block;
+  image-rendering: pixelated;
+  user-select: none;
+  -webkit-user-drag: none;
+  /* L'image ne reçoit rien : les cases posées dessus sont les cibles, et une
+     image qui prend le clic empêcherait aussi de tirer la planche. */
+  pointer-events: none;
+}
+
+.frame-picker-cell {
+  position: absolute;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: rgba(255, 255, 255, 0.35);
+  font-size: 10px;
+  line-height: 1;
+  text-align: left;
+  padding: 2px;
+  cursor: pointer;
+}
+
+.frame-picker-cell:hover { border-color: var(--accent); color: var(--text); }
+
+.frame-picker-cell.selected {
+  border-color: var(--accent);
+  background: rgba(120, 200, 255, 0.18);
+  color: var(--text);
+}
+
+/* Le premier clic d'un intervalle : sans repère, on ne sait plus si on attend
+   la seconde borne ou si on a sélectionné une seule vignette. */
+.frame-picker-cell.anchor { border-color: var(--accent); border-style: dashed; }
+
+/* Grille masquée : on regarde le DESSIN, pas le découpage. Les cases restent
+   cliquables, et la sélection reste visible — c'est la réponse à « où en
+   suis-je », qui ne dépend pas de la grille. */
+.frame-picker-frame.no-grid .frame-picker-cell {
+  border-color: transparent;
+  color: transparent;
+}
+
+.frame-picker-frame.no-grid .frame-picker-cell:hover { border-color: var(--accent); }
+
+.frame-picker-frame.no-grid .frame-picker-cell.selected {
+  border-color: var(--accent);
+  color: transparent;
+}
+
+/* Vignettes minuscules : le numéro couvrirait le dessin qu'il annote. */
+.frame-picker-frame.tiny .frame-picker-cell { color: transparent; }
+
+#frame-picker-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+  padding-top: 8px;
+}
+
+#frame-picker-help { margin-right: auto; max-width: 54ch; }
+
+/* L'aperçu est aussi une porte vers la planche entière : le curseur le dit,
+   puisque rien dans le dessin ne l'annonce. */
+.sheet-preview-openable { cursor: zoom-in; }
+
 /* Même rouge pâle que .battle-warning : c'est la couleur « ça ne va pas » de la page. */
 .battle-play-failed { border-color: #ffb4a2; color: #ffb4a2; }
 
@@ -1057,9 +1245,113 @@ button:hover { border-color: var(--accent); }
   flex-direction: column;
   gap: 10px;
   min-height: 40px;
+  flex: 1;
 }
 
-#battle-add-btn { width: 100%; }
+/* MAÎTRE/DÉTAIL. Le catalogue se parcourt à gauche, l'entrée s'édite à droite.
+   Tout déplier d'un coup donnait une colonne de plusieurs milliers de pixels où
+   l'on perdait à la fois ce qu'on cherchait et ce qu'on venait de changer. */
+.battle-browser {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.battle-index {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  position: sticky;
+  top: 0;
+}
+
+.battle-index-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  background: none;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+}
+
+.battle-index-item:hover { background: var(--bg); }
+.battle-index-item.selected { background: var(--bg); border-color: var(--accent); }
+
+.battle-index-text { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.battle-index-name { font-size: 13px; }
+.battle-index-id { font-family: monospace; font-size: 10px; color: #9aa0ab; }
+
+/* La vignette se pose sur la ligne de sol, comme le personnage : alignées par
+   le bas, les unités se comparent — alignées par le centre, elles flottent. */
+.sheet-thumb { display: block; flex: none; image-rendering: pixelated; }
+
+.battle-detail { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+
+.battle-detail-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.battle-detail-titles { flex: 1; min-width: 0; }
+.battle-detail-name { font-size: 17px; margin: 0 0 2px; }
+.battle-detail-meta { display: flex; align-items: center; gap: 8px; }
+
+/* Un intertitre de section, pas un libellé de champ : sans le filet et la
+   graisse, « Statistiques » et « PV max » pesaient exactement pareil. */
+.battle-section-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 6px;
+  padding-bottom: 3px;
+  border-bottom: 1px solid var(--border);
+}
+
+.battle-section-title {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #9aa0ab;
+  margin: 0;
+}
+
+/* Une planche repliée garde son aperçu : c'est la galerie des animations. */
+.battle-anim-head { display: flex; align-items: center; gap: 8px; }
+
+.battle-anim-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: none;
+  color: var(--text);
+  cursor: pointer;
+  padding: 2px 0;
+  text-align: left;
+}
+
+.battle-anim-caret { color: #9aa0ab; font-size: 10px; width: 10px; }
+.battle-anim-fields { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.battle-anim:not(.open) .battle-anim-body { align-items: center; }
+/* Repliée, la ligne se lit d'un trait : nom puis résumé, collés. Étalés sur
+   toute la largeur, l'œil devait traverser le bloc pour apparier les deux. */
+.battle-anim:not(.open) .battle-anim-toggle { flex: none; }
+.battle-anim:not(.open) .battle-anim-head { justify-content: space-between; }
+.battle-anim-toggle .battle-id { font-size: 13px; }
+
+
+.battle-index-add { width: 100%; margin-top: 6px; }
 
 .battle-row {
   display: flex;
@@ -1103,6 +1395,10 @@ button:hover { border-color: var(--accent); }
   grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
   gap: 6px;
 }
+
+/* Six champs de statistiques : une grille régulière plutôt qu'un flux qui
+   laisse « Chance » seule sur sa ligne. */
+.battle-stats { grid-template-columns: repeat(6, minmax(0, 1fr)); }
 
 .battle-field {
   display: flex;

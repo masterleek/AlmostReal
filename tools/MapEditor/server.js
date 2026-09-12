@@ -206,6 +206,24 @@ app.get("/api/battle/sounds", async (req, res) => {
   res.json(sounds);
 });
 
+// Planches disponibles pour une animation d'unité. Elles vivent toutes sous
+// Sprites/Battle/ ; les servir en liste évite de taper un chemin `res://` à la
+// main, où une faute donne une unité invisible et aucune erreur avant le combat.
+//
+// La TAILLE en pixels n'est pas renvoyée : le client charge l'image de toute
+// façon pour la montrer, et `naturalWidth` la lui donne sans que le serveur ait
+// à décoder du PNG.
+app.get("/api/battle/sheets", async (req, res) => {
+  const dir = path.join(SPRITES_DIR, "Battle");
+  const files = await walkFiles(dir, ".png");
+  res.json(
+    files
+      .map((file) => path.relative(SPRITES_DIR, file).split(path.sep).join("/"))
+      .sort()
+      .map((rel) => ({ path: "res://Sprites/" + rel, url: "/sprites/" + rel }))
+  );
+});
+
 // Vocabulaires FERMÉS du combat. Ceux qui sont déclarés une fois pour toutes
 // dans le code Godot sont LUS LÀ-BAS plutôt que recopiés ici : deux listes qui
 // disent la même chose finissent par se contredire, et c'est précisément le

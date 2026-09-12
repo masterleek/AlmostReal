@@ -3,10 +3,13 @@ import {
   saveBattleCatalog,
   getBattleSounds,
   getBattleVocabulary,
+  getBattleSheets,
   getBattleMomentLabels,
   saveBattleMomentLabels,
   getTexts,
 } from "./api.js";
+import { pickFrames } from "./frame-picker.js";
+import { animationPreview, sheetSize, staticFrame } from "./sheet-preview.js";
 
 // Page « Combat » : les trois catalogues de Battle/ (unités, Ekos, objets).
 //
@@ -22,7 +25,6 @@ import {
 // d'écriture sur le même texte serait le meilleur moyen de les désynchroniser.
 
 const listEl = document.getElementById("battle-list");
-const addBtn = document.getElementById("battle-add-btn");
 const hintEl = document.getElementById("battle-hint");
 const tabsEl = document.getElementById("battle-section-tabs");
 
@@ -45,6 +47,7 @@ const ID_PATTERN = /^[a-z0-9_]+$/;
 let catalogs = { units: null, ekos: null, items: null };
 let texts = { texts: [], default_language: "en" };
 let sounds = [];
+let sheetFiles = [];
 let momentLabels = { labels: {} };
 let vocabulary = {
   moments: [],
@@ -58,6 +61,14 @@ let vocabulary = {
   parsed: {},
 };
 let activeSection = "units";
+// Entrée ouverte dans le panneau de droite, par section. La page est un
+// MAÎTRE/DÉTAIL : tout déplier d'un coup donnait une colonne de plusieurs
+// milliers de pixels (trois unités × six planches × une quarantaine de champs),
+// où l'on ne retrouvait ni ce qu'on cherchait ni ce qu'on venait de changer.
+const selection = { units: null, ekos: null, items: null };
+// Planches dépliées, par « section:unité:planche ». Hors du DOM parce que la
+// liste est reconstruite à chaque modification.
+const openSheets = new Set();
 
 function entriesOf(section) {
   return catalogs[section]?.[SECTIONS[section].container] || {};
@@ -76,6 +87,13 @@ function el(tag, className, text) {
   if (className) node.className = className;
   if (text !== undefined) node.textContent = text;
   return node;
+}
+
+function sectionTitle(text, note) {
+  const head = el("div", "battle-section-head");
+  head.appendChild(el("h4", "battle-section-title", text));
+  if (note) head.appendChild(el("span", "battle-inline-hint", note));
+  return head;
 }
 
 function field(labelText, control, title) {
@@ -111,6 +129,14 @@ function numberInput(value, onCommit, { min = null, step = 1 } = {}) {
   input.value = value ?? 0;
   input.onchange = () => onCommit(step < 1 ? parseFloat(input.value) : parseInt(input.value, 10));
   return input;
+}
+
+function checkboxInput(checked, onCommit) {
+  const box = el("input", "battle-check-input");
+  box.type = "checkbox";
+  box.checked = checked;
+  box.onchange = () => onCommit(box.checked);
+  return box;
 }
 
 // `empty` ajoute une entrée vide en tête : un champ FACULTATIF (un soin sur un
@@ -576,7 +602,7 @@ function nameLine(section, id) {
   const { textId, label } = localizedName(section, id);
   const line = el("span", "battle-name-line");
   if (label) {
-    line.textContent = `« ${label} » — ${textId}, à modifier depuis la page Textes.`;
+    line.textContent = `${textId} — le nom et la description se modifient depuis la page Textes.`;
   } else {
     line.className = "battle-warning";
     line.textContent = `Aucun texte ${textId} : l'entrée n'aura pas de nom en jeu. À créer depuis la page Textes.`;
@@ -588,10 +614,19 @@ function nameLine(section, id) {
 //  Rendu d'une entrée
 // ──────────────────────────────────────────────────────────────────────────
 
+// En-tête du panneau de droite. Le NOM DE JEU d'abord, en gros : c'est par lui
+// qu'on reconnaît une entrée, alors que l'identifiant n'est qu'une clé de
+// fichier — l'ancien en-tête ne montrait que celui-ci, en monospace.
 function rowHead(section, id, badge) {
-  const head = el("div", "battle-row-head");
-  head.appendChild(el("span", "battle-id", id));
-  if (badge) head.appendChild(el("span", "battle-badge", badge));
+  const head = el("div", "battle-detail-head");
+  const titles = el("div", "battle-detail-titles");
+  const { label } = localizedName(section, id);
+  titles.appendChild(el("h3", "battle-detail-name", label || id));
+  const meta = el("div", "battle-detail-meta");
+  meta.appendChild(el("code", "battle-id", id));
+  if (badge) meta.appendChild(el("span", "battle-badge", badge));
+  titles.appendChild(meta);
+  head.appendChild(titles);
 
   const del = el("button", "modal-map-delete", "🗑");
   del.type = "button";
@@ -615,12 +650,302 @@ const STAT_FIELDS = [
   ["luck", "Chance"],
 ];
 
+// ──────────────────────────────────────────────────────────────────────────
+//  Planches d'animation
+// ──────────────────────────────────────────────────────────────────────────
+
+// Les noms que le MOTEUR va chercher lui-même (cf. les constantes ANIM_* de
+// BattleScene et l'appel à « idle » de BattleAssault). Proposés en suggestion,
+// pas imposés : une action de catalogue peut nommer n'importe quelle planche
+// déclarée ici, et rien n'interdit d'en inventer une pour un Eko.
+const KNOWN_ANIMATIONS = [
+  "idle", "standby", "atkeff", "atk", "move_back", "win_before", "win",
+];
+
+// Ce qui se règle sur une planche, hors vignettes (choisies sur l'image) et
+// hors ancrage (qui a sa propre paire de champs).
+const SHEET_FIELDS = [
+  ["columns", "Colonnes", { min: 1 }],
+  ["rows", "Lignes", { min: 1 }],
+  ["fps", "Cadence (fps)", { min: 1 }],
+];
+
+function animationSummary(config) {
+  const count = Math.max(1, Number(config.frames || 1));
+  const parts = [
+    `${count} vignette${count > 1 ? "s" : ""}`,
+    `${Number(config.fps || 6)} fps`,
+    config.loop === false ? "une fois" : "en boucle",
+  ];
+  if (config.hit_frame !== undefined) parts.push(`impact ${config.hit_frame}`);
+  return parts.join(" · ");
+}
+
+function sheetUrl(path) {
+  return sheetFiles.find((f) => f.path === path)?.url || null;
+}
+
+function animationsEditor(unit, onChanged) {
+  const wrap = el("div", "battle-anims");
+  if (!unit.animations) unit.animations = {};
+  const names = Object.keys(unit.animations);
+
+  if (names.length === 0) {
+    wrap.appendChild(
+      el("span", "battle-warning", "Aucune planche : l'unité n'a rien à afficher en combat.")
+    );
+  }
+  for (const name of names) {
+    wrap.appendChild(animationBlock(unit, name, onChanged));
+  }
+
+  const add = el("button", "battle-chip-add", "+ planche");
+  add.type = "button";
+  add.onclick = () => {
+    const name = prompt(
+      `Nom de la planche (reconnus par le moteur : ${KNOWN_ANIMATIONS.join(", ")}) :`
+    );
+    if (!name) return;
+    if (!ID_PATTERN.test(name)) {
+      alert("Nom invalide : minuscules, chiffres et « _ » seulement.");
+      return;
+    }
+    if (unit.animations[name]) {
+      alert(`« ${name} » existe déjà.`);
+      return;
+    }
+    // Grille 1×1 par défaut : c'est le seul découpage vrai pour une planche
+    // qu'on n'a pas encore mesurée, et il se corrige en deux champs.
+    unit.animations[name] = {
+      sheet: sheetFiles[0]?.path || "",
+      columns: 1, rows: 1, frames: 1, fps: 6,
+    };
+    onChanged();
+  };
+  wrap.appendChild(add);
+  return wrap;
+}
+
+// Une planche REPLIÉE garde son aperçu et son résumé : c'est la galerie des
+// animations de l'unité, qui se parcourt à l'œil. Dépliée, elle ouvre ses dix
+// champs — six planches dépliées d'un coup faisaient l'essentiel du mur.
+function animationBlock(unit, name, onChanged) {
+  const config = unit.animations[name];
+  const key = `units:${selection.units}:${name}`;
+  const open = openSheets.has(key);
+  const block = el("div", "battle-block battle-anim");
+  if (open) block.classList.add("open");
+
+  const body = el("div", "battle-anim-body");
+  const preview = animationPreview(config, sheetUrl(config.sheet), open);
+  if (config.sheet) {
+    preview.classList.add("sheet-preview-openable");
+    preview.title = "Voir la planche entière";
+    preview.onclick = () => openSheet(config, name, onChanged);
+  }
+  body.appendChild(preview);
+
+  const column = el("div", "battle-anim-settings");
+  body.appendChild(column);
+  block.appendChild(body);
+
+  const head = el("div", "battle-anim-head");
+  const toggle = el("button", "battle-anim-toggle");
+  toggle.type = "button";
+  toggle.appendChild(el("span", "battle-anim-caret", open ? "▾" : "▸"));
+  toggle.appendChild(el("span", "battle-id", name));
+  toggle.appendChild(el("span", "battle-inline-hint", animationSummary(config)));
+  toggle.onclick = () => {
+    if (open) openSheets.delete(key);
+    else openSheets.add(key);
+    onChanged();
+  };
+  head.appendChild(toggle);
+  const drop = el("button", "modal-map-delete", "🗑");
+  drop.type = "button";
+  drop.title = "Retirer cette planche";
+  drop.onclick = () => {
+    if (!confirm(`Retirer la planche « ${name} » de cette unité ?`)) return;
+    delete unit.animations[name];
+    openSheets.delete(key);
+    onChanged();
+  };
+  head.appendChild(drop);
+  column.appendChild(head);
+
+  if (!open) return block;
+  const settings = el("div", "battle-anim-fields");
+  column.appendChild(settings);
+
+  settings.appendChild(
+    field(
+      "Fichier",
+      selectInput(
+        sheetFiles.map((f) => f.path), config.sheet || "",
+        (value) => {
+          config.sheet = value;
+          onChanged();
+        },
+        { labelOf: (path) => path.split("/").pop() }
+      )
+    )
+  );
+
+  const grid = el("div", "battle-grid");
+  for (const [key, label, options] of SHEET_FIELDS) {
+    grid.appendChild(
+      objectNumberField(config, key, label, { ...options, onCommit: onChanged })
+    );
+  }
+  settings.appendChild(grid);
+
+  settings.appendChild(framesLine(config, name, onChanged));
+
+  const options = el("div", "battle-grid");
+  // Le bouclage est une propriété de la PLANCHE : un repos tourne en rond, un
+  // geste se joue une fois. Absent = vrai, comme dans le moteur.
+  options.appendChild(
+    field(
+      "En boucle",
+      checkboxInput(config.loop !== false, (checked) => {
+        if (checked) delete config.loop;
+        else config.loop = false;
+        onChanged();
+      }),
+      "Décoché : la planche se joue une seule fois (un geste d'attaque, une intro de victoire)."
+    )
+  );
+  // `hit_frame` ne vaut que pour une planche de GESTE : c'est la vignette où le
+  // coup porte. Facultatif — à défaut, le moteur prend le milieu.
+  options.appendChild(
+    objectNumberField(config, "hit_frame", "Vignette d'impact", {
+      optional: true, min: 0, onCommit: onChanged,
+      title: "Vignette où le coup porte, comptée dans l'extrait. Vide = le milieu du geste.",
+    })
+  );
+  settings.appendChild(options);
+
+  settings.appendChild(anchorLine(config, onChanged));
+  return block;
+}
+
+// Les vignettes se choisissent SUR L'IMAGE : `first_frame` et `frames`
+// décrivent un extrait d'une grille qu'on ne voit pas, et les régler de tête
+// demande de compter les cases sur l'image ouverte à côté.
+function framesLine(config, name, onChanged) {
+  const line = el("div", "battle-anim-frames");
+  const first = Number(config.first_frame || 0);
+  const count = Number(config.frames || 1);
+  const last = first + count - 1;
+  line.appendChild(el("span", "battle-field-label", "Vignettes"));
+  line.appendChild(
+    el("span", "battle-note-static", count === 1 ? `${first}` : `${first} → ${last}`)
+  );
+  line.appendChild(el("span", "battle-inline-hint", `${count} vignette${count > 1 ? "s" : ""}`));
+
+  const url = sheetUrl(config.sheet);
+  const choose = el("button", "text-btn", "Voir la planche…");
+  choose.type = "button";
+  choose.disabled = !url;
+  choose.title = url
+    ? "Ouvrir la planche en grand : s'y déplacer, et y choisir l'extrait."
+    : "Aucune image : choisis d'abord un fichier.";
+  choose.onclick = () => openSheet(config, name, onChanged);
+  line.appendChild(choose);
+  return line;
+}
+
+// La fenêtre de planche s'ouvre de DEUX endroits — le bouton de la ligne des
+// vignettes, et l'aperçu lui-même. Le second n'est pas un doublon : quand on
+// veut voir une pose en grand, on regarde déjà l'aperçu, et aller chercher un
+// bouton trois lignes plus bas est un détour.
+async function openSheet(config, name, onChanged) {
+  const url = sheetUrl(config.sheet);
+  if (!url) return;
+  const picked = await pickFrames(url, {
+    columns: Number(config.columns || 1),
+    rows: Number(config.rows || 1),
+    first: Number(config.first_frame || 0),
+    count: Number(config.frames || 1),
+    name,
+  });
+  if (!picked) return;
+  // `first_frame` à 0 est le cas courant : on ne l'écrit pas, comme le moteur
+  // qui le lit avec ce défaut (cf. objectNumberField).
+  // Retenir la vignette 0 EFFACE la clé (cf. objectNumberField), et la
+  // réécrire plus tard la remet en fin d'objet : un aller-retour par zéro
+  // déplace `first_frame` dans le fichier sans rien changer à la donnée.
+  if (picked.first_frame) config.first_frame = picked.first_frame;
+  else delete config.first_frame;
+  config.frames = picked.frames;
+  onChanged();
+}
+
+// L'ancrage est le point de la CELLULE qui se pose sur l'emplacement au sol. Il
+// se relève sur l'ellipse d'ombre, à l'atelier — d'où deux champs et pas un
+// choix sur l'image : le sélecteur de vignettes ne mesure rien.
+//
+// QUAND RIEN N'EST DÉCLARÉ, les champs montrent le défaut du MOTEUR (le
+// centre-bas de la cellule), pas zéro. Afficher 0/0 était un piège : l'auteur
+// qui corrigeait l'ordonnée d'un pixel écrivait du même coup une abscisse de 0
+// et déplaçait le personnage d'une demi-cellule — exactement le saut que
+// l'ancrage existe pour éviter.
+function anchorLine(config, onChanged) {
+  const line = el("div", "battle-grid");
+  const declared = Array.isArray(config.anchor) ? config.anchor : null;
+  const inputs = [];
+  const commit = (index, value) => {
+    // La paire est écrite ENTIÈRE : la valeur de l'autre champ est celle qui
+    // est affichée, donc le défaut quand rien n'était déclaré.
+    const pair = inputs.map((input) => parseInt(input.value, 10) || 0);
+    pair[index] = value;
+    config.anchor = pair;
+    onChanged();
+  };
+  for (const [index, label] of [[0, "Ancrage X"], [1, "Ancrage Y"]]) {
+    const input = numberInput(declared ? declared[index] : 0, (v) => commit(index, v), {});
+    inputs.push(input);
+    line.appendChild(
+      field(
+        label,
+        input,
+        index === 0
+          ? "Point de la cellule posé sur l'emplacement au sol, relevé sur l'ellipse d'ombre. Sans valeur déclarée, c'est le centre-bas de la cellule."
+          : null
+      )
+    );
+  }
+  if (!declared) {
+    // La taille de la cellule n'est connue qu'une fois l'image chargée : les
+    // champs partent donc à 0 et se corrigent, plutôt que de retarder toute la
+    // ligne pour deux nombres.
+    sheetSize(sheetUrl(config.sheet)).then((size) => {
+      if (!size) return;
+      const columns = Math.max(1, Number(config.columns || 1));
+      const rows = Math.max(1, Number(config.rows || 1));
+      inputs[0].value = String(Math.floor(size[0] / columns / 2));
+      inputs[1].value = String(Math.floor(size[1] / rows));
+      for (const input of inputs) input.classList.add("battle-input-default");
+    });
+  }
+  const clear = el("button", "text-btn", "Défaut (centre-bas)");
+  clear.type = "button";
+  clear.disabled = !declared;
+  clear.title = "Retire l'ancrage déclaré : le moteur reprend le centre-bas de la cellule.";
+  clear.onclick = () => {
+    delete config.anchor;
+    onChanged();
+  };
+  line.appendChild(clear);
+  return line;
+}
+
 function renderUnit(id, unit, refresh) {
   const row = el("div", "battle-row");
   row.appendChild(rowHead("units", id, unit.behaviour ? "ennemi" : null));
   row.appendChild(nameLine("units", id));
 
-  const stats = el("div", "battle-grid");
+  const stats = el("div", "battle-grid battle-stats");
   if (!unit.stats) unit.stats = {};
   for (const [key, label] of STAT_FIELDS) {
     stats.appendChild(
@@ -634,7 +959,7 @@ function renderUnit(id, unit, refresh) {
       )
     );
   }
-  row.appendChild(el("span", "battle-sub-label", "Statistiques"));
+  row.appendChild(sectionTitle("Statistiques"));
   row.appendChild(stats);
 
   // Les planches sont en LECTURE SEULE : leur grille, leur ancrage et leur
@@ -642,19 +967,10 @@ function renderUnit(id, unit, refresh) {
   // qu'un formulaire web ne peut pas faire — proposer de les saisir à la main
   // inviterait à poser des valeurs plausibles et fausses.
   const sheets = Object.keys(unit.animations || {});
-  row.appendChild(el("span", "battle-sub-label", "Planches"));
-  if (sheets.length === 0) {
-    row.appendChild(
-      el("span", "battle-warning", "Aucune planche : l'unité n'a rien à afficher en combat.")
-    );
-  } else {
-    const chips = el("div", "battle-sequence");
-    for (const name of sheets) chips.appendChild(el("span", "battle-note-static", name));
-    chips.appendChild(
-      el("span", "battle-inline-hint", "Lecture seule — grille et ancrage se relèvent sur l'image.")
-    );
-    row.appendChild(chips);
-  }
+  row.appendChild(
+    sectionTitle("Planches", "grille et ancrage se relèvent à l'atelier")
+  );
+  row.appendChild(animationsEditor(unit, refresh));
 
   if (!unit.basic_attack) unit.basic_attack = {};
   row.appendChild(
@@ -667,7 +983,7 @@ function renderUnit(id, unit, refresh) {
   // d'attaque et ceux qui lui appartiennent en propre. Elle est posée au niveau
   // de l'unité et non dans le bloc « Attaque de base », qui n'en porte que la
   // moitié — c'est le moment choisi, et lui seul, qui dit de quoi il s'agit.
-  row.appendChild(el("span", "battle-sub-label", "Sons"));
+  row.appendChild(sectionTitle("Sons", "geste de l'attaque et voix du personnage"));
   row.appendChild(
     soundsEditor([actionFamily(unit.basic_attack), unitFamily(unit)], refresh)
   );
@@ -675,7 +991,7 @@ function renderUnit(id, unit, refresh) {
   // Ekos connus : des cases à cocher sur le catalogue réel, jamais une saisie
   // d'identifiant — un id qui n'existe pas ne produirait qu'une entrée de menu
   // vide, découverte en jeu.
-  row.appendChild(el("span", "battle-sub-label", "Ekos connus"));
+  row.appendChild(sectionTitle("Ekos connus"));
   const ekos = el("div", "battle-checks");
   const known = unit.ekos || [];
   for (const ekoId of Object.keys(entriesOf("ekos"))) {
@@ -792,7 +1108,7 @@ function renderAction(section, id, action, refresh) {
 
 const HINTS = {
   units:
-    "Statistiques, attaque de base, Ekos connus et — pour un ennemi — son comportement. Les planches d'animation sont en lecture seule.",
+    "Statistiques, planches d'animation, attaque de base, Ekos connus et — pour un ennemi — son comportement. Une planche se découpe en vignettes sur l'image elle-même ; sa grille et son ancrage, eux, se relèvent à l'atelier sur les gouttières d'alpha.",
   ekos: "Compétences, partagées par les deux camps : un mode de ciblage se lit relativement à celui qui lance.",
   items: "Mêmes champs que les Ekos, sans coût en PA.",
   sounds:
@@ -899,34 +1215,71 @@ function renderList() {
   listEl.innerHTML = "";
   hintEl.textContent = HINTS[activeSection];
   if (momentLabels.stale) listEl.appendChild(staleServerBanner());
-  // Le bouton n'a pas de sens sur « Sons » : la liste des moments est celle du
-  // moteur, et les fichiers s'ajoutent en les posant dans Audio/.
-  addBtn.classList.toggle("hidden", activeSection === SOUNDS_SECTION);
   if (activeSection === SOUNDS_SECTION) return renderSounds();
 
   const entries = entriesOf(activeSection);
   const ids = Object.keys(entries);
-  if (ids.length === 0) {
-    listEl.appendChild(el("p", "hint", "Catalogue vide."));
-    return;
-  }
 
   // Un changement quelconque redessine la liste ET sauvegarde : les entrées
-  // s'influencent (cocher un Eko ajoute une case ailleurs, vider une séquence
-  // fait apparaître un avertissement de son injouable), et redessiner seulement
-  // la ligne touchée laisserait les autres mentir.
+  // s'influencent (cocher un Eko ajoute une case ailleurs, changer le moment
+  // d'un son le déplace de liste), et redessiner seulement le champ touché
+  // laisserait le reste mentir.
   const refresh = async () => {
     renderList();
     await persist(activeSection);
   };
 
-  for (const id of ids) {
-    listEl.appendChild(
-      activeSection === "units"
-        ? renderUnit(id, entries[id], refresh)
-        : renderAction(activeSection, id, entries[id], refresh)
-    );
+  const browser = el("div", "battle-browser");
+  const index = el("nav", "battle-index");
+  browser.appendChild(index);
+  const detail = el("div", "battle-detail");
+  browser.appendChild(detail);
+  listEl.appendChild(browser);
+
+  if (ids.length === 0) {
+    detail.appendChild(el("p", "hint", "Catalogue vide."));
+    index.appendChild(addButton());
+    return;
   }
+  // La sélection survit aux redessins, mais pas à la suppression de l'entrée
+  // sélectionnée : on retombe alors sur la première, plutôt que sur un panneau
+  // vide qui ferait croire à une page cassée.
+  if (!ids.includes(selection[activeSection])) selection[activeSection] = ids[0];
+
+  for (const id of ids) index.appendChild(indexEntry(id, entries[id]));
+  index.appendChild(addButton());
+
+  const current = selection[activeSection];
+  detail.appendChild(
+    activeSection === "units"
+      ? renderUnit(current, entries[current], refresh)
+      : renderAction(activeSection, current, entries[current], refresh)
+  );
+}
+
+// Une ligne de la colonne de gauche : de quoi RECONNAÎTRE l'entrée, pas de quoi
+// la juger — sa vignette, son nom tel qu'il sortira en jeu, et son identifiant.
+function indexEntry(id, entry) {
+  const item = el("button", "battle-index-item");
+  item.type = "button";
+  if (id === selection[activeSection]) item.classList.add("selected");
+  if (activeSection === "units") {
+    const idle = entry.animations?.idle || Object.values(entry.animations || {})[0];
+    if (idle) item.appendChild(staticFrame(idle, sheetUrl(idle.sheet), 32));
+  }
+  const text = el("span", "battle-index-text");
+  const { label } = localizedName(activeSection, id);
+  text.appendChild(el("span", "battle-index-name", label || id));
+  text.appendChild(el("span", "battle-index-id", id));
+  item.appendChild(text);
+  if (activeSection === "units" && entry.behaviour) {
+    item.appendChild(el("span", "battle-badge", "ennemi"));
+  }
+  item.onclick = () => {
+    selection[activeSection] = id;
+    renderList();
+  };
+  return item;
 }
 
 function defaultEntry(section) {
@@ -944,31 +1297,43 @@ function defaultEntry(section) {
   return entry;
 }
 
-addBtn.onclick = async () => {
+// Construit à chaque rendu, en pied de la colonne de gauche : il appartient au
+// catalogue qu'on parcourt, pas à la page. Le déplacer depuis le HTML le faisait
+// détruire par le vidage de la liste, et disparaître sur l'onglet « Sons ».
+function addButton() {
   const singular = SECTIONS[activeSection].singular;
-  const id = prompt(`Identifiant de la nouvelle ${singular} (minuscules, chiffres, _) :`);
-  if (!id) return;
-  if (!ID_PATTERN.test(id)) {
-    alert("Identifiant invalide : minuscules, chiffres et « _ » seulement.");
-    return;
-  }
-  if (entriesOf(activeSection)[id]) {
-    alert(`« ${id} » existe déjà.`);
-    return;
-  }
-  entriesOf(activeSection)[id] = defaultEntry(activeSection);
-  renderList();
-  await persist(activeSection);
-};
+  const button = el(
+    "button",
+    "battle-index-add",
+    `+ Ajouter ${singular === "unité" ? "une unité" : "un " + singular}`
+  );
+  button.type = "button";
+  button.onclick = async () => {
+    const id = prompt(`Identifiant de la nouvelle ${singular} (minuscules, chiffres, _) :`);
+    if (!id) return;
+    if (!ID_PATTERN.test(id)) {
+      alert("Identifiant invalide : minuscules, chiffres et « _ » seulement.");
+      return;
+    }
+    if (entriesOf(activeSection)[id]) {
+      alert(`« ${id} » existe déjà.`);
+      return;
+    }
+    entriesOf(activeSection)[id] = defaultEntry(activeSection);
+    // L'entrée qu'on vient de créer s'ouvre : c'est pour l'éditer qu'on l'a
+    // créée, et la laisser fermée obligerait à la chercher dans la liste.
+    selection[activeSection] = id;
+    renderList();
+    await persist(activeSection);
+  };
+  return button;
+}
 
 for (const tab of tabsEl.querySelectorAll(".battle-tab")) {
   tab.onclick = () => {
     tabsEl.querySelectorAll(".battle-tab").forEach((t) => t.classList.remove("selected"));
     tab.classList.add("selected");
     activeSection = tab.dataset.section;
-    if (SECTIONS[activeSection]) {
-      addBtn.textContent = `+ Ajouter ${SECTIONS[activeSection].singular === "unité" ? "une unité" : "un " + SECTIONS[activeSection].singular}`;
-    }
     renderList();
   };
 }
@@ -978,26 +1343,28 @@ export async function openBattleManager() {
   // visible : ils se citent l'un l'autre (les Ekos connus d'une unité, la cible
   // d'un `focus`, les planches disponibles pour une action), et une section
   // rendue sans les autres afficherait des listes déroulantes vides.
-  const [units, ekos, items, catalogTexts, soundList, vocab, labels] = await Promise.all([
-    getBattleCatalog("units"),
-    getBattleCatalog("ekos"),
-    getBattleCatalog("items"),
-    getTexts(),
-    getBattleSounds(),
-    getBattleVocabulary(),
-    getBattleMomentLabels(),
-  ]);
+  const [units, ekos, items, catalogTexts, soundList, vocab, labels, sheetList] =
+    await Promise.all([
+      getBattleCatalog("units"),
+      getBattleCatalog("ekos"),
+      getBattleCatalog("items"),
+      getTexts(),
+      getBattleSounds(),
+      getBattleVocabulary(),
+      getBattleMomentLabels(),
+      getBattleSheets(),
+    ]);
   catalogs = { units, ekos, items };
   texts = catalogTexts;
   sounds = soundList;
   vocabulary = vocab;
   momentLabels = labels;
+  sheetFiles = sheetList;
   if (!momentLabels.labels) momentLabels.labels = {};
 
   activeSection = "units";
   tabsEl
     .querySelectorAll(".battle-tab")
     .forEach((t) => t.classList.toggle("selected", t.dataset.section === "units"));
-  addBtn.textContent = "+ Ajouter une unité";
   renderList();
 }

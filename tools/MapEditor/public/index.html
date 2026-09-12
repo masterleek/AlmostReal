@@ -127,7 +127,6 @@
     </nav>
     <p id="battle-hint" class="hint"></p>
     <div id="battle-list"></div>
-    <button id="battle-add-btn">+ Ajouter</button>
   </section>
 
   <div id="modal-overlay" class="hidden">
@@ -218,6 +217,37 @@
       <div id="text-preview-frame">
         <img id="text-preview-image" alt="Capture du jeu" />
         <div id="text-preview-text"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="frame-picker-overlay" class="hidden">
+    <div id="frame-picker" class="crud-modal">
+      <header>
+        <h2 id="frame-picker-title">Planche</h2>
+        <button id="frame-picker-close" class="icon-btn" title="Fermer">✕</button>
+      </header>
+      <div id="frame-picker-bar">
+        <div class="frame-picker-zooms">
+          <button class="frame-zoom" data-zoom="fit">Ajusté</button>
+          <button class="frame-zoom" data-zoom="1">100 %</button>
+          <button class="frame-zoom" data-zoom="2">200 %</button>
+          <button class="frame-zoom" data-zoom="4">400 %</button>
+        </div>
+        <label class="frame-picker-switch">
+          <input type="checkbox" id="frame-picker-grid" checked />
+          <span>Grille</span>
+        </label>
+        <span id="frame-picker-info"></span>
+      </div>
+      <div id="frame-picker-stage" tabindex="0"></div>
+      <div id="frame-picker-actions">
+        <span class="hint" id="frame-picker-help">
+          Clic sur la première vignette puis sur la dernière. Glisser pour se
+          déplacer, flèches pour défiler, + et − pour zoomer.
+        </span>
+        <button id="frame-picker-all" class="text-btn">Toute la planche</button>
+        <button id="frame-picker-apply">Appliquer la sélection</button>
       </div>
     </div>
   </div>

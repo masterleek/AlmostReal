@@ -112,6 +112,18 @@ export async function getBattleSounds() {
   return res.json();
 }
 
+// Planches disponibles sous Sprites/Battle/, avec l'URL qui les sert : le choix
+// d'une planche est une LISTE, et l'éditeur peut montrer l'image.
+export async function getBattleSheets() {
+  const res = await fetch("/api/battle/sheets");
+  if (!res.ok) return [];
+  try {
+    return await res.json();
+  } catch {
+    return [];
+  }
+}
+
 export async function getBattleVocabulary() {
   const res = await fetch("/api/battle/vocabulary");
   return res.json();

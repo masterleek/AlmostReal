@@ -42,6 +42,27 @@ Repo git, remote `origin` → github.com/masterleek/AlmostReal, branche `main`.
 
 ### Page « Combat » (`public/battle.js`)
 
+- **Un catalogue s'édite en MAÎTRE/DÉTAIL, pas en accordéon géant.** Les trois
+  unités dépliées d'un bloc donnaient une colonne de plusieurs milliers de
+  pixels — on n'y retrouvait ni ce qu'on cherchait ni ce qu'on venait de
+  changer. Une colonne d'index à gauche (vignette + nom de jeu + identifiant),
+  l'entrée sélectionnée à droite. Corollaire indispensable : la liste est
+  reconstruite à CHAQUE modification, donc la sélection et les blocs dépliés
+  vivent dans des variables de module, pas dans le DOM.
+- **Ce qui se relit d'un coup d'œil doit être hiérarchisé.** « Statistiques » et
+  « PV max » avaient exactement le même poids typographique : un intertitre de
+  section prend un filet et des capitales, un libellé de champ reste discret. Et
+  l'en-tête d'une entrée montre son NOM DE JEU en gros, l'identifiant n'étant
+  qu'une clé de fichier.
+- **Ne pas déplacer dans le DOM un nœud déclaré en HTML** vers une zone que le
+  code vide (`innerHTML = ""`) : le bouton « Ajouter » y était détruit au
+  premier redessin, puis ressuscité par sa référence JS — et absent du document
+  sur l'onglet qui ne le réinsère pas. Un élément qui appartient à une liste se
+  construit avec elle.
+- **Surveiller l'ORDRE des règles CSS à spécificité égale.** `.battle-stats`
+  écrit avant `.battle-grid` ne s'appliquait pas : deux sélecteurs de même poids,
+  c'est le dernier qui gagne. La règle particulière se pose après la générale.
+
 - **Un vocabulaire fermé partagé avec le moteur se LIT dans le `.gd`, il ne se
   recopie pas.** `/api/battle/vocabulary` extrait `SOUND_MOMENTS` de
   `BattleAssault.gd` et les clés de `NOTE_ACTIONS` de `RhythmBar.gd` — deux
@@ -804,6 +825,53 @@ pas partir en guerre contre des choix déjà faits et documentés dans ce repo :
   régler depuis l'éditeur. `loop` vit maintenant dans `units.json` (vrai par
   défaut) et `UnitSprite` le lit. Règle générale : ce qu'un appelant passe
   TOUJOURS de la même façon pour une donnée donnée appartient à la donnée.
+- **Une grille de spritesheet se mesure à l'atelier, un EXTRAIT se choisit à
+  l'œil.** Les deux ne vont pas dans le même outil : `columns`/`rows` se
+  relèvent sur les gouttières d'alpha (cf. plus haut) et restent deux champs,
+  alors que `first_frame`/`frames` décrivent un extrait d'une grille qu'on ne
+  voit pas — sur `noah_atkeff` (3 × 7), l'auteur veut « la pose d'apprêt », pas
+  « l'index 5 ». D'où une fenêtre qui pose la grille DÉCLARÉE sur l'image et
+  laisse cliquer les deux bouts. Elle ne mesure rien : lui faire deviner le
+  découpage reproduirait l'erreur que la mesure évite.
+- **Un aperçu se bâtit une fois, un clic ne fait que rafraîchir.** Reconstruire
+  la grille à chaque clic rechargeait l'image, la faisait clignoter, et —
+  plus insidieux — remplaçait le nœud qu'on venait de cliquer par un autre au
+  même endroit : un test qui garde une référence de case échoue alors sans que
+  l'interface soit fautive pour un humain.
+- **Un aperçu de planche se joue, il ne se regarde pas.** « 3 colonnes, 7
+  lignes, extrait 5, 1 vignette, 6 fps, en boucle » ne dit rien de ce qu'on
+  verra : un canevas qui joue vraiment répond d'un coup au découpage, à
+  l'extrait, à la cadence et au bouclage. Y dessiner l'ANCRAGE en croix vaut le
+  détour — c'est le réglage le plus facile à rater, et sa faute (un personnage
+  qui saute en changeant de planche) ne se voit qu'en jeu.
+- **Un champ qui affiche 0 pour « non déclaré » est un piège**, dès que le
+  moteur a un autre défaut. L'ancrage absent vaut le centre-bas de la CELLULE
+  (34, 74 sur `noah_idle`) : montrer 0/0 faisait qu'une correction d'un pixel en
+  ordonnée écrivait aussi une abscisse de 0, et déplaçait le personnage d'une
+  demi-cellule. Afficher la valeur que le moteur applique VRAIMENT, dans un
+  style qui dit qu'elle n'est pas dans le fichier, et écrire la paire entière.
+- **Regarder une planche et y choisir un extrait, c'est UNE fenêtre.** Chercher
+  une pose et la retenir sont le même geste à un instant d'écart : une
+  visionneuse séparée du sélecteur montrerait la même image deux fois, avec deux
+  zooms qui divergent, et obligerait à retrouver dans l'une ce qu'on vient de
+  repérer dans l'autre. Même règle pour la porte d'entrée : l'aperçu animé ouvre
+  la planche au clic, parce que c'est LUI qu'on regarde quand l'envie de voir en
+  grand arrive.
+- **« Ajusté » ne doit jamais AGRANDIR du pixel-art.** Les paliers de zoom sont
+  entiers (100 / 200 / 400 %) : un facteur fractionnaire double une colonne de
+  pixels sur deux et on juge une pose qui n'existe pas. L'ajustement automatique
+  est donc plafonné à 1 — il sert à embrasser une planche trop large
+  (`iris_win_before` fait 1017 px), jamais à remplir la fenêtre.
+- **Glisser pour se déplacer : capturer le pointeur APRÈS le seuil, pas au
+  premier appui.** Une capture prise au `pointerdown` détourne le clic des cases
+  posées sur l'image, qui ne reçoivent plus rien. Et un drapeau « ça a glissé »,
+  lu au clic (qui arrive après le relâchement), évite qu'un déplacement de la
+  planche ne se solde par une sélection involontaire.
+- **Le panneau navigateur intégré bride `requestAnimationFrame` à ~3/s.** Une
+  animation y paraît figée alors qu'elle tourne : vérifier qu'un canevas bouge
+  demande d'échantillonner sur plusieurs SECONDES, ou de se synchroniser sur les
+  images réelles (`await new Promise(r => requestAnimationFrame(r))`) plutôt que
+  sur l'horloge. Une mesure sur 700 ms conclut « rien ne bouge » à tort.
 - **Reconstruire une liste de nœuds : `remove_child()` AVANT `queue_free()`.**
   La libération est différée à la fin de la frame, donc les anciens nœuds
   restent enfants — et donc affichés par-dessus les nouveaux — le temps d'une
