@@ -57,6 +57,30 @@
           ],
           "_comment": "Geste d'attaque. L'auteur n'en retient que les frames 1 a 4 comptees a partir de 1, soit first_frame 0 et frames 4 : l'animation s'arrete la, elle ne joue pas la planche entiere (20 frames). hit_frame 2 : l'arc de lame apparait a cette frame, c'est la que le coup porte. anchor releve sur l'ellipse d'ombre de la PREMIERE frame, par recalage du gabarit d'ombre de idle.",
           "first_frame": 0
+        },
+        "win_before": {
+          "sheet": "res://Sprites/Battle/noah_win_before.png",
+          "columns": 3,
+          "rows": 6,
+          "frames": 17,
+          "fps": 15,
+          "anchor": [
+            19,
+            89
+          ],
+          "_comment": "Celebration de victoire, jouee UNE fois : Noah saute et retombe mains sur les hanches. 17 cases pleines sur 18 (grille 3x6, cellule 53x89), la derniere est vide. anchor relevee sur l'ellipse d'ombre de la DERNIERE frame (centre 26,5 / 75,5), celle qui enchaine sur 'win' : l'ombre ne derive que d'un pixel sur toute la planche. Le decalage ombre -> ancre (-7,5 / +13,5) est celui de idle, verifie identique sur atkeff et atk. fps 15 comme les planches de geste ; rien ne le fixe, c'est a l'auteur."
+        },
+        "win": {
+          "sheet": "res://Sprites/Battle/noah_win.png",
+          "columns": 3,
+          "rows": 2,
+          "frames": 4,
+          "fps": 6,
+          "anchor": [
+            18,
+            70
+          ],
+          "_comment": "Pose de victoire tenue EN BOUCLE apres 'win_before'. 4 cases pleines sur 6 (grille 3x2, cellule 52x70). Meme recalage d'ombre : la frame 0 d'ici et la derniere de 'win_before' ont la meme ombre au pixel pres, la transition ne saute pas. fps 6 comme idle - c'est une respiration, pas un geste."
         }
       },
       "ekos": [
@@ -135,6 +159,30 @@
           ],
           "_comment": "Planche d'attaque complete (26 frames) dont l'auteur ne retient que les frames 4 a 10 comptees a partir de 1, soit first_frame 3 et frames 7. hit_frame 0 : le coup de feu part des la premiere frame de la plage (lueur de bouche visible, orientee vers la gauche donc vers les ennemis). anchor relevee sur l'ellipse d'ombre de la frame 3 — la PREMIERE de la plage jouee, pas de la planche : c'est elle qui doit coincider avec l'emplacement de l'unite. L'ombre derive ensuite de 57 px vers la droite au fil des 7 frames, c'est le recul du tir ; parti du point de contact (cible + 30) il reste a l'ecran, alors que la plage complete depuis l'emplacement d'Iris l'en faisait sortir.",
           "first_frame": 3
+        },
+        "win_before": {
+          "sheet": "res://Sprites/Battle/iris_win_before.png",
+          "columns": 3,
+          "rows": 12,
+          "frames": 34,
+          "fps": 15,
+          "anchor": [
+            273,
+            94
+          ],
+          "_comment": "Celebration de victoire, jouee UNE fois : Iris fete la victoire avec sa mascotte, qui s'en va, puis elle prend la pose au fusil. 34 cases pleines sur 36 (grille 3x12, cellule 339x103). La cellule est TRES large parce que la mascotte traverse tout le cadre aux frames 24-26 ; le personnage, lui, occupe le tiers droit. anchor relevee sur l'ombre SEULE d'Iris aux frames 31-33 (centre 281,5 / 82,5) et pas sur la frame 0, ou l'ombre fusionne avec celle de la mascotte et decale le centre de 17 px. Ecart residuel : Iris demarre 3 px a droite de son emplacement et s'y recale en marchant."
+        },
+        "win": {
+          "sheet": "res://Sprites/Battle/iris_win.png",
+          "columns": 3,
+          "rows": 2,
+          "frames": 6,
+          "fps": 6,
+          "anchor": [
+            14,
+            68
+          ],
+          "_comment": "Pose de victoire tenue EN BOUCLE apres 'win_before'. 6 cases pleines sur 6 (grille 3x2, cellule 46x68). L'ombre de la frame 0 est identique (36x12, meme nombre de pixels) a celle des dernieres frames de 'win_before' : la transition ne saute pas."
         }
       },
       "ekos": [

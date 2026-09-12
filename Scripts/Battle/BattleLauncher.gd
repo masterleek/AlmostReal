@@ -26,6 +26,11 @@ static func open(host: Node, context: Dictionary = {}) -> CanvasLayer:
 
 	var battle: CanvasLayer = BATTLE_SCENE.instantiate()
 	battle.setup(context)
+	# Le combat ne sait pas ce qui l'a ouvert : il annonce que le joueur a fermé
+	# son écran de fin, et c'est ici qu'on sait comment rendre la main. Branché
+	# AVANT l'entrée dans l'arbre — `_ready()` peut déjà tout décider si le
+	# combat s'ouvre sur une équipe déjà à terre.
+	battle.exit_requested.connect(close.bind(battle))
 	# Ajouté à la racine de l'arbre, PAS sous `host` : ce dernier est mis en
 	# PROCESS_MODE_DISABLED juste au-dessus, ce qui gèlerait aussi ses enfants.
 	# L'ordre d'affichage ne dépend pas de la place dans l'arbre — un

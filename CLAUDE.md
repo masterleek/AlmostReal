@@ -589,6 +589,35 @@ pas partir en guerre contre des choix déjà faits et documentés dans ce repo :
   horloge.** Viser « 2,70 s après le lancement » rate l'instant une fois sur
   deux — la cadence du debug est irrégulière. Un `signal impact` connecté à la
   capture tombe juste à tous les coups.
+- **Une grille de spritesheet se MESURE, elle ne se devine pas par division.**
+  Les bords de cellule tombent dans une bande d'alpha nul : lister les colonnes
+  et les lignes entièrement transparentes, puis retenir le découpage dont tous
+  les bords y tombent. Corollaire rencontré sur `iris_win_before` : une cellule
+  peut être 5× plus large que le personnage (339 px pour 70) parce qu'un
+  familier traverse le cadre — une largeur « aberrante » n'est pas une erreur
+  d'export.
+- **Valider une méthode de relevé sur les valeurs DÉJÀ dans le fichier avant de
+  s'en servir.** Les ancres des planches de victoire ont été déduites du
+  décalage ombre → ancre d'`idle` ; la méthode a d'abord été rejouée sur les
+  quatre ancres existantes, qu'elle redonne au pixel (seule exception :
+  `noah/standby`, que son commentaire annonce comme délibérément remonté d'un
+  pixel). Sans ce contrôle, une méthode fausse pose une valeur plausible.
+- **Ancrer une planche sur la frame qui ENCHAÎNE, pas systématiquement sur la
+  première.** `iris_win_before` se termine sur la pose que `win` tient en
+  boucle : c'est là que l'ancrage doit coïncider, sinon le personnage saute à la
+  transition — que le joueur regarde. Et sur ses premières frames, l'ombre du
+  personnage FUSIONNE avec celle de son familier : le centre de la boîte est
+  alors décalé de 17 px, et le relevé silencieusement faux.
+- **Deux planches enchaînées se vérifient par leur OMBRE, pas à l'œil** : celle
+  de la dernière frame de `win_before` et celle de la frame 0 de `win` doivent
+  avoir la même taille et le même nombre de pixels. Sur Iris : 36×12 et 298
+  pixels des deux côtés — la transition ne peut pas sauter.
+- **Une phase qui pose ses propres planches doit faire taire les
+  rafraîchissements**, et l'état qui le dit se pose AVANT de l'appeler.
+  `_refresh_ally_poses` et `_refresh_unit_visuals` s'abstiennent sur `ASSAULT`
+  et sur `FINISHED` : sans ça la célébration de victoire est écrasée par la
+  planche de repos, et le fondu de retour d'un allié ranimé par un `modulate`
+  remis à blanc d'un coup.
 - **Reconstruire une liste de nœuds : `remove_child()` AVANT `queue_free()`.**
   La libération est différée à la fin de la frame, donc les anciens nœuds
   restent enfants — et donc affichés par-dessus les nouveaux — le temps d'une

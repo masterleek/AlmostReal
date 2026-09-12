@@ -614,6 +614,17 @@
       "style": {
         "font_size": 15
       }
+    },
+    {
+      "id": "battle.game_over",
+      "category": "ui",
+      "translations": {
+        "en": "Game Over",
+        "fr": "Game Over"
+      },
+      "style": {
+        "font_size": 24
+      }
     }
   ]
 }

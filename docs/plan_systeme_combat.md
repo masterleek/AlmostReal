@@ -494,7 +494,7 @@ passer devant.
 | 6 | Phase d'assaut : ordre par agilité, exécution des actions, dégâts, morts | **fait** |
 | 7 | Barre de rythme : défilement des notes, fenêtres Perfect/Great/Good/Miss, bonus de dégâts | **fait** |
 | 8 | Jauge de synergie (remplissage, 4 niveaux) | **fait**, sauf la compétence qu'elle débloque |
-| 9 | Victoire / défaite, transition worldmap ↔ combat, animations `win` / `dying` / `dead` | |
+| 9 | Victoire / défaite, transition worldmap ↔ combat, animations `win` / `dying` / `dead` | **fait** pour la victoire, le retour au worldmap et le « Game Over » ; reste `dying`/`dead`, l'écran de récompense et le déclenchement d'un combat en jeu |
 | 10 | Page « Combat » de MapEditor : unités (stats, comportement ennemi, Ekos connus), Ekos, objets | |
 
 ---
@@ -1583,6 +1583,96 @@ Remplissage réel par le rythme, toutes notes jouées en Perfect :
  9.66  niveau 1, 0.25    un cactoon, 1 note
 12.71  niveau 1, 0.50    l autre cactoon
 ```
+
+---
+
+## 5 decies. Résultat du Lot 9 — fin de combat
+
+### Victoire
+
+Tous les ennemis à terre : le HUD, les menus, la légende, la barre de rythme et
+la pastille d'action disparaissent — ils proposent des choix qu'on ne peut plus
+faire — et chaque allié joue sa célébration. **Un allié tombé est ranimé à
+1 PV** et revient en fondu de 0,4 s : son sprite est à alpha 0, hérité de
+`BattleAssault._bury_the_dead`.
+
+**Deux planches par personnage, pas une.** `win_before` est un geste qui se
+termine (Noah saute et retombe mains sur les hanches, 17 frames ; Iris fête avec
+sa mascotte qui s'en va, 34 frames), `win` est une respiration qui ne se termine
+pas (4 et 6 frames, en boucle). Les fondre en une seule obligerait soit à figer
+le personnage sur sa dernière image, soit à lui faire rejouer son saut sans fin.
+
+**La séquence est PAR PERSONNAGE**, pas globale : les deux célébrations n'ont
+pas la même longueur (1,13 s contre 2,27 s à 15 fps), les attendre ensemble
+ferait patienter le premier arrivé sur sa dernière image. Mesuré en jeu : Noah
+bascule sur `win` à t≈4,8 s, Iris à t≈5,6 s.
+
+Une validation (`battle_confirm`) rend la main au worldmap. Le combat ne sait
+pas ce qui l'a ouvert : il émet `exit_requested`, et c'est `BattleLauncher` qui
+y branche son `close()`. Lancée seule (F6), la scène reste simplement en place.
+
+### Grilles et ancrages des planches de victoire
+
+| Planche | Grille | Cellule | Frames | `anchor` |
+|---|---|---|---|---|
+| `noah_win_before` | 3×6 | 53×89 | 17 / 18 | (19, 89) |
+| `noah_win` | 3×2 | 52×70 | 4 / 6 | (18, 70) |
+| `iris_win_before` | 3×12 | 339×103 | 34 / 36 | (273, 94) |
+| `iris_win` | 3×2 | 46×68 | 6 / 6 | (14, 68) |
+
+Les grilles sont relevées sur les gouttières transparentes, pas devinées : tous
+les bords de cellule tombent dans une bande d'alpha nul.
+
+**Les ancres viennent de l'ellipse d'ombre**, comme toutes les autres
+(cf. `CLAUDE.md`). Le décalage ombre → ancre est celui d'`idle` : (−7,5 / +13,5)
+pour Noah, vérifié identique sur `atkeff` et `atk`, et (−8,5 / +12) pour Iris.
+La méthode a été validée AVANT de s'en servir, en recalculant les quatre ancres
+déjà dans le fichier — elle les redonne au pixel, à l'exception connue de
+`noah/standby`, que l'auteur du champ avait délibérément remonté d'un pixel.
+
+**Deux pièges sur ces planches précises :**
+
+1. **La cellule d'`iris_win_before` fait 339 px de large** pour un personnage
+   qui en occupe 70. Ce n'est pas une erreur d'export : la mascotte traverse
+   tout le cadre aux frames 24-26.
+2. **Son ancre se relève sur les frames 31-33, pas sur la frame 0.** Au début de
+   la planche, l'ombre d'Iris et celle de la mascotte fusionnent en une seule
+   boîte, dont le centre est décalé de 17 px. Les dernières frames donnent une
+   ombre solitaire de 36×12 px, au pixel identique à celle de la frame 0 de
+   `win` — c'est ce qui garantit que la transition entre les deux planches ne
+   saute pas. Écart résiduel assumé : Iris démarre 3 px à droite de son
+   emplacement et s'y recale en marchant.
+
+### Défaite
+
+Voile noir plein écran et « Game Over » en blanc, monté DANS le `Stage` et après
+tout le reste : un CanvasItem se dessine dans l'ordre de l'arbre, le voile
+recouvre donc décor, combattants et bandes noires sans toucher au `z_index` de
+qui que ce soit, et le fond capturé — posé hors du `Stage` — passe dessous pour
+la même raison. Mesuré sur la capture : **99,50 % de noir pur, 0,50 % de blanc
+pur, zéro pixel d'une autre couleur**. Le libellé est le seul texte de combat
+SANS contour ni ombre : les deux servent à détacher un texte d'un décor chargé,
+et il n'y a ici que du noir.
+
+### État `FINISHED`, et pourquoi il vient en premier
+
+`_finish_battle()` pose l'état AVANT de masquer quoi que ce soit : `_hide_interface`
+et la célébration passent tous deux par des rafraîchissements qui lisent `_state`
+pour décider s'ils ont le droit de reposer une planche ou une teinte. Les appeler
+avant le basculement leur ferait écraser ce qu'on vient de mettre en place — c'est
+exactement l'incident `_close_sublist` du Lot 4, et `_refresh_ally_poses` /
+`_refresh_unit_visuals` s'abstiennent désormais sur `FINISHED` comme sur `ASSAULT`.
+
+### Ce que le Lot 9 n'a pas
+
+- **L'écran de récompense** (argent, expérience) : toujours sans maquette.
+- **Les planches `dying` et `dead`** existent dans `_assets` et ne sont pas
+  branchées : une unité tombée disparaît encore en fondu.
+- **Le déclenchement d'un combat en jeu** (rencontre aléatoire) : la touche Z
+  reste l'entrée de test.
+- **La suite du « Game Over »** : l'écran s'affiche et ne mène nulle part, la
+  validation n'y répond pas. C'est conforme à ce qui a été demandé, mais il faut
+  trancher — recommencer le combat ? revenir au worldmap ? un écran-titre ?
 
 ---
 

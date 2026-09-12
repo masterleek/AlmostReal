@@ -235,6 +235,28 @@ const ANIM_AIMING := "atkeff"
 ## Pose d'attente, une fois son action retenue.
 const ANIM_STANDBY := "standby"
 
+## VICTOIRE. La célébration se joue UNE fois, puis la pose est tenue en boucle.
+## Deux planches et pas une : `win_before` est un geste qui se termine, `win`
+## une respiration qui ne se termine pas — les mélanger obligerait à figer le
+## personnage sur la dernière image ou à lui faire rejouer son saut sans fin.
+const ANIM_WIN_BEFORE := "win_before"
+const ANIM_WIN := "win"
+
+## Un allié tombé est RANIMÉ pour fêter la victoire : il est mort pendant le
+## combat, pas après. 1 PV — de quoi être debout, pas de quoi être soigné
+## gratuitement.
+const REVIVE_HP := 1
+## Son sprite est à alpha 0 (cf. BattleAssault._bury_the_dead) : il revient en
+## fondu plutôt que d'apparaître d'un coup au milieu des autres.
+const REVIVE_FADE := 0.4
+
+## ÉCRAN DE DÉFAITE : voile noir plein écran et « Game Over » en blanc.
+const GAME_OVER_SIZE := 24
+## Ligne de base du libellé, en unités de design. Un peu au-dessus du milieu
+## exact (135) : un texte centré optiquement se pose plus haut que le centre
+## géométrique.
+const GAME_OVER_Y := 124
+
 ## Modes de ciblage qui retiennent tout un camp d'un bloc, sans choix
 ## individuel (cf. TargetSelector). « self » en fait partie : il n'y a rien à
 ## choisir, mais la cible s'allume quand même pour dire sur qui ça porte.
@@ -270,7 +292,9 @@ const DEFAULT_ALLIES: PackedStringArray = ["noah", "iris"]
 ## courant — il faut pouvoir y revenir sur « Back », et la pastille de l'action
 ## retenue reste affichée à côté de la cible : c'est le drapeau `active` de
 ## chaque composant, arbitré ici, qui décide lequel écoute.
-enum State { MENU, SUBLIST, TARGETING, ASSAULT }
+## FINISHED : le combat est joué. Plus aucun choix n'est offert — l'écran tient
+## la célébration ou le « Game Over », et n'attend qu'une validation.
+enum State { MENU, SUBLIST, TARGETING, ASSAULT, FINISHED }
 
 ## Émis quand tous les alliés vivants ont retenu une action : la phase de
 ## préparation est finie et l'assaut commence. Porte les actions dans l'ordre
@@ -279,6 +303,10 @@ signal preparation_finished(actions: Array)
 ## Fin du combat, `victory` disant de quel côté. Le Lot 9 en fera un écran de
 ## résultat ; d'ici là l'écran reste en place, figé sur la dernière image.
 signal battle_finished(victory: bool)
+## Le joueur a fermé l'écran de fin et demande à rendre la main au worldmap.
+## Le combat ne connaît pas ce qui l'a ouvert : c'est `BattleLauncher` qui y
+## branche sa fermeture. Lancée seule (F6), la scène reste simplement en place.
+signal exit_requested
 
 var _enemies: PackedStringArray = DEFAULT_ENEMIES
 var _allies: PackedStringArray = DEFAULT_ALLIES
@@ -340,6 +368,12 @@ var _legend_cancel_label: RichTextLabel
 ## touche n'y répond, une invite affichée serait un mensonge.
 var _legend: Node2D
 var _pending_background: Texture2D
+## Groupe incliné du HUD (blocs d'état + synergie), gardé pour le masquer d'un
+## bloc à la fin du combat.
+var _hud: Node2D
+## La validation ne rend la main au worldmap que sur une VICTOIRE : l'écran de
+## défaite n'a pas encore de suite (cf. docs/plan_systeme_combat.md).
+var _can_exit := false
 var _sfx_move: AudioStreamPlayer
 var _sfx_confirm: AudioStreamPlayer
 var _sfx_cancel: AudioStreamPlayer
@@ -626,6 +660,7 @@ func _tilted_group(pivot: Vector2, degrees: float) -> Node2D:
 
 func _build_hud() -> void:
 	var hud := _tilted_group(HUD_PIVOT, HUD_TILT_DEG)
+	_hud = hud
 	for i in mini(_allies.size(), STATUS_PANEL_POS.size()):
 		var panel: UnitStatusPanel = UnitStatusPanel.new()
 		panel.position = Vector2(STATUS_PANEL_POS[i])
@@ -1067,6 +1102,11 @@ func _refresh_unit_visuals() -> void:
 			continue
 		_enemy_sprites[i].modulate = faded if _dim_enemies else Color.WHITE
 	for i in mini(_ally_sprites.size(), _ally_units.size()):
+		# Combat joué : la célébration pose elle-même les teintes, fondu de
+		# retour d'un allié ranimé compris. Les réécrire ici le ferait
+		# réapparaître d'un coup au milieu de son propre fondu.
+		if _state == State.FINISHED:
+			break
 		if not _ally_units[i].is_alive():
 			continue
 		if _state != State.ASSAULT and _ally_units[i].has_action():
@@ -1119,7 +1159,10 @@ func _is_aiming() -> bool:
 ## pilote les planches (geste d'attaque, retour au repos), et elle a besoin de
 ## les tenir plus longtemps qu'un rafraîchissement d'écran.
 func _refresh_ally_poses() -> void:
-	if _state == State.ASSAULT:
+	# Deux phases posent leurs planches elles-mêmes : l'assaut (gestes) et la
+	# fin de combat (célébration). Repasser derrière elles rendrait les alliés
+	# à leur planche de repos au milieu du mouvement.
+	if _state == State.ASSAULT or _state == State.FINISHED:
 		return
 	for i in mini(_ally_sprites.size(), _ally_units.size()):
 		var config: Dictionary = BattleData.get_animation(_allies[i], _ally_animation(i))
@@ -1259,7 +1302,9 @@ func _on_assault_finished(outcome: int) -> void:
 		unit.end_turn()
 	if outcome != BattleAssault.Outcome.ONGOING:
 		_refresh_allies()
-		battle_finished.emit(outcome == BattleAssault.Outcome.VICTORY)
+		var victory := outcome == BattleAssault.Outcome.VICTORY
+		battle_finished.emit(victory)
+		_finish_battle(victory)
 		return
 	_start_round()
 
@@ -1275,11 +1320,104 @@ func _start_round() -> void:
 		# Plus un allié debout pour jouer : l'assaut l'aurait déjà vu, mais on
 		# ne rouvre pas un menu sur personne.
 		battle_finished.emit(false)
+		_finish_battle(false)
 		return
 	_active_ally = first
 	_legend.visible = true
 	_slide_dark_band(false)
 	_open_root_menu()
+
+## ──────────────────────────────────────────────────────────────────────────
+##  FIN DE COMBAT
+## ──────────────────────────────────────────────────────────────────────────
+
+## L'ÉTAT EST POSÉ EN PREMIER : `_hide_interface` et la célébration passent tous
+## deux par des rafraîchissements qui lisent `_state` pour décider s'ils ont le
+## droit de reposer une planche ou une teinte. Les appeler avant le basculement
+## reviendrait à leur faire écraser ce qu'on vient de mettre en place.
+func _finish_battle(victory: bool) -> void:
+	_state = State.FINISHED
+	_can_exit = victory
+	_hide_interface()
+	if victory:
+		_play_victory()
+	else:
+		_show_game_over()
+
+## HUD et menus disparaissent dans LES DEUX cas : ils proposent des choix qu'on
+## ne peut plus faire. Désactivés autant que masqués — un composant invisible
+## qui écoute encore les touches consommerait la validation de sortie.
+func _hide_interface() -> void:
+	_menu.active = false
+	_menu.visible = false
+	_sublist.active = false
+	_sublist.visible = false
+	_target_selector.close()
+	_description.visible = false
+	_hud.visible = false
+	_menu_frame.visible = false
+	_legend.visible = false
+	_rhythm.rest()
+	_banner.hide_action()
+
+## Célébration : chaque allié joue sa planche de victoire, les tombés étant
+## d'abord ranimés. La séquence est PAR PERSONNAGE et non globale — les deux
+## planches n'ont pas la même longueur (17 frames pour Noah, 34 pour Iris), les
+## attendre ensemble ferait patienter le premier arrivé sur sa dernière image.
+func _play_victory() -> void:
+	for i in mini(_ally_sprites.size(), _ally_units.size()):
+		var unit := _ally_units[i]
+		var sprite: UnitSprite = _ally_sprites[i]
+		if unit.is_alive():
+			sprite.modulate = Color.WHITE
+		else:
+			unit.heal(REVIVE_HP)
+			create_tween().tween_property(sprite, "modulate", Color.WHITE, REVIVE_FADE)
+		_play_win(sprite, _allies[i])
+	_refresh_allies()
+
+## `win_before` une fois, puis `win` en boucle. L'attente se déduit de la
+## planche (`duration_of`) plutôt que d'un `animation_finished` : l'écran de
+## debug tourne à une cadence irrégulière, une attente en secondes est
+## reproductible là où un comptage de frames ne l'est pas.
+func _play_win(sprite: UnitSprite, unit_id: String) -> void:
+	var intro := BattleData.get_animation(unit_id, ANIM_WIN_BEFORE)
+	var hold := BattleData.get_animation(unit_id, ANIM_WIN)
+	if not intro.is_empty():
+		sprite.play_sheet(intro, false)
+		await get_tree().create_timer(UnitSprite.duration_of(intro)).timeout
+	if not hold.is_empty():
+		sprite.play_sheet(hold)
+
+## Écran de défaite. Le voile et le libellé sont montés DANS le Stage et après
+## tout le reste : un CanvasItem se dessine dans l'ordre de l'arbre, ils
+## recouvrent donc décor, combattants et bandes noires sans avoir à toucher au
+## z-index de qui que ce soit. Le fond capturé, posé hors du Stage, passe
+## dessous pour la même raison.
+func _show_game_over() -> void:
+	var veil := ColorRect.new()
+	veil.color = Color.BLACK
+	veil.size = Vector2(DESIGN_SIZE)
+	stage.add_child(veil)
+	# Sans contour ni ombre, contrairement au reste du texte de combat : les deux
+	# servent à détacher un libellé d'un décor chargé, et il n'y a ici que du
+	# noir. Le brun du contour ne ferait que salir le blanc demandé.
+	var label := BattleText.make(
+		"", GAME_OVER_SIZE, Color.WHITE, 0, BattleText.UI_OUTLINE_COLOR, false
+	)
+	label.size.x = DESIGN_SIZE.x * BattleText.SUPERSAMPLE
+	BattleText.set_centered_text(label, Localization.get_text("battle.game_over"))
+	label.position = Vector2(0, GAME_OVER_Y)
+	stage.add_child(label)
+
+## Seule touche encore écoutée une fois le combat joué. Les composants de
+## préparation sont désactivés plus haut, la validation arrive donc bien ici.
+func _unhandled_input(event: InputEvent) -> void:
+	if _state != State.FINISHED or not _can_exit:
+		return
+	if event.is_action_pressed("battle_confirm"):
+		get_viewport().set_input_as_handled()
+		exit_requested.emit()
 
 func _planned_actions() -> Array:
 	var actions: Array = []
