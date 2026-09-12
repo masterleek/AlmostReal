@@ -13,7 +13,7 @@ import {
 } from "./api.js";
 import { pickFrames } from "./frame-picker.js";
 import { animationPreview, forgetSheetSize, sheetSize, staticFrame } from "./sheet-preview.js";
-import { measureGrid, measureGround } from "./sheet-grid.js";
+import { forgetSheetPixels, measureGrid, measureGround } from "./sheet-grid.js";
 
 // Page « Combat » : les trois catalogues de Battle/ (unités, Ekos, objets).
 //
@@ -1136,9 +1136,13 @@ function importButton(unit, config, name, onChanged) {
       }
       sheetFiles = await getBattleSheets();
       config.sheet = result.path;
-      // Réimport PAR-DESSUS un nom existant : la taille mémorisée pour cette
-      // URL est celle de l'image d'avant.
+      // Réimport PAR-DESSUS un nom existant : tout ce qui est mémorisé sous
+      // cette URL décrit l'image d'AVANT. Le chemin, lui, n'a pas changé — donc
+      // rien ne se périme tout seul, et le contrôle d'ancrage afficherait le
+      // verdict rendu sur l'ancienne image.
       forgetSheetSize(result.url);
+      forgetSheetPixels(result.url);
+      anchorChecks.clear();
       const measured = await applyMeasuredGrid(unit, name, config, result.url, true);
       if (!result.imported) {
         alert(
@@ -1280,6 +1284,12 @@ const ANCHOR_TOLERANCE = 1;
 // ferait relire une dizaine de PNG à chaque caractère.
 const anchorChecks = new Map();
 
+// Assez pour toutes les planches de toutes les unités, et une borne quand même :
+// chaque réglage d'un champ d'ancrage crée une clé de plus, et une session
+// d'atelier en empile sans fin. Ce sont trois nombres par entrée — la borne est
+// là contre la fuite, pas contre le coût.
+const ANCHOR_CHECK_LIMIT = 200;
+
 function anchorCheckKey(unit, name, config) {
   const reference = unit.animations?.[ANCHOR_REFERENCE];
   return JSON.stringify([
@@ -1309,6 +1319,9 @@ async function anchorDrift(unit, name, config) {
     if (Math.abs(dx) <= ANCHOR_TOLERANCE && Math.abs(dy) <= ANCHOR_TOLERANCE) return null;
     return { dx, dy, measured, declared, implicit: !Array.isArray(config.anchor) };
   })();
+  if (anchorChecks.size >= ANCHOR_CHECK_LIMIT) {
+    anchorChecks.delete(anchorChecks.keys().next().value);
+  }
   anchorChecks.set(key, pending);
   return pending;
 }
@@ -2028,7 +2041,6 @@ async function checkForStaleCatalogs() {
     location.reload();
     return;
   }
-  // Refus assumé : on ne redemande pas, mais on laisse le verrou du serveur
-  // faire son office à la première sauvegarde.
-  staleNoticeShown = true;
+  // Refus assumé : le drapeau est déjà posé plus haut, on ne redemande pas —
+  // et le verrou du serveur fera son office à la première sauvegarde.
 }

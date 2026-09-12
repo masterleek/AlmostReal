@@ -96,7 +96,71 @@ export async function measureGround(url, columns, rows, frame = 0) {
   return { x: (left + right) / 2, bottom };
 }
 
-async function pixelsOf(url) {
+// Pixels déjà décodés, par URL.
+//
+// POURQUOI UN CACHE. Un relevé d'ancrage lit DEUX images — la planche et celle
+// de repos, qui sert de référence — et la page en relève un par planche. Ouvrir
+// Iris décodait 38 fois `iris_idle.png`. Ce sont des promesses qui sont mises
+// en cache, pas des résultats : les relevés d'une unité partent TOUS EN MÊME
+// TEMPS au même rendu, et ne garder que le résultat laisserait les sept
+// premiers décoder la même référence avant que le premier ait fini.
+//
+// BORNÉ EN OCTETS, jamais en nombre d'entrées : ce sont des ImageData, et leur
+// taille va de 12 Ko à 800 Ko pour les planches en service — mais un export
+// brut oublié dans Sprites/Battle en pèse 158 Mo à lui seul, et compter les
+// entrées aurait laissé passer celui-là.
+const PIXEL_BUDGET = 8 * 1024 * 1024;
+const pixelCache = new Map();
+const pixelBytes = new Map();
+
+// À appeler quand le FICHIER a changé sous une URL inchangée — un import qui
+// écrase une planche existante. Pendant du `forgetSheetSize` de l'aperçu.
+export function forgetSheetPixels(url) {
+  pixelCache.delete(url);
+  pixelBytes.delete(url);
+}
+
+function remember(url, pixels) {
+  // Une lecture qui a échoué ne se garde PAS : l'échec est transitoire (image
+  // pas encore écrite sur disque, requête perdue), et le mémoriser condamnerait
+  // la planche pour toute la durée de la page.
+  if (pixels === null) {
+    pixelCache.delete(url);
+    return;
+  }
+  const bytes = pixels.data.length;
+  // Plus gros que le budget entier : on ne le garde pas du tout, plutôt que de
+  // vider le cache pour une seule image qui n'y tiendra pas.
+  if (bytes > PIXEL_BUDGET) {
+    pixelCache.delete(url);
+    return;
+  }
+  let held = 0;
+  for (const n of pixelBytes.values()) held += n;
+  // Les entrées encore en vol n'ont pas de taille connue : l'éviction les
+  // saute, elles sont de toute façon en train d'être attendues par quelqu'un.
+  for (const old of pixelCache.keys()) {
+    if (held + bytes <= PIXEL_BUDGET) break;
+    if (old === url || !pixelBytes.has(old)) continue;
+    held -= pixelBytes.get(old);
+    pixelCache.delete(old);
+    pixelBytes.delete(old);
+  }
+  pixelBytes.set(url, bytes);
+}
+
+function pixelsOf(url) {
+  const held = pixelCache.get(url);
+  if (held) return held;
+  const pending = decode(url).then((pixels) => {
+    remember(url, pixels);
+    return pixels;
+  });
+  pixelCache.set(url, pending);
+  return pending;
+}
+
+async function decode(url) {
   const image = await new Promise((resolve) => {
     const img = new Image();
     img.onload = () => resolve(img);

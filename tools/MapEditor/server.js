@@ -476,7 +476,19 @@ app.get("/api/battle/vocabulary", async (req, res) => {
   const animationStates = [
     ...(parseGdAnimationStates(battleScene) || []),
     ...(parseGdAnimationStates(assault) || []),
-  ];
+  ].reduce((kept, state) => {
+    // DÉDOUBLONNAGE PAR ÉTAT, pas par constante. Un même état peut être
+    // déclaré dans les DEUX fichiers — `idle` l'est, parce que l'écran et la
+    // phase d'assaut le jouent tous les deux et qu'aucun ne peut lire les
+    // constantes de l'autre. Sans ça, la liste déroulante proposait deux fois
+    // « Repos » et l'auteur se demandait laquelle choisir.
+    const seen = kept.find((s) => s.key === state.key);
+    if (!seen) kept.push(state);
+    // À doublon, on garde le commentaire le plus fourni : il n'y a aucune
+    // raison que ce soit toujours le premier fichier lu qui l'explique le mieux.
+    else if (state.note.length > seen.note.length) seen.note = state.note;
+    return kept;
+  }, []);
   const actionDefault = parseGdActionAnimationDefault(assault, animationStates);
 
   res.json({
