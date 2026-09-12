@@ -23,6 +23,7 @@ extends Node2D
 const BattleRules = preload("res://Scripts/Battle/BattleRules.gd")
 const BattleText = preload("res://Scripts/Battle/UI/BattleText.gd")
 const PixelScale = preload("res://Scripts/Battle/UI/PixelScale.gd")
+const SfxBank = preload("res://Scripts/Audio/SfxBank.gd")
 
 ## EN PNG, ET C'EST MESURÉ. Ces trois-là sont les seuls assets de la barre à
 ## être restés en raster : leur SVG passe toute sa lueur par des `<filter>`
@@ -140,6 +141,20 @@ const GREAT_COLOR := Color8(0xFF, 0xE8, 0x00)
 const GOOD_COLOR := Color8(0x5C, 0xFF, 0x2D)
 const MISS_COLOR := Color8(0xFF, 0x3A, 0x1F)
 
+## Un son par verdict, indexé par le verdict lui-même : la barre n'a alors
+## aucune correspondance à tenir à jour, et ajouter un cran de jugement ne peut
+## pas laisser un son derrière lui.
+##
+## Ils partent sur MASTER, avec les sons de menu et non avec les voix : ce sont
+## des accusés de réception, ils doivent claquer par-dessus la musique sans la
+## faire plonger à chaque note (cf. BattleScene._build_audio).
+const JUDGEMENT_SOUNDS := {
+	BattleRules.Judgement.PERFECT: preload("res://Audio/Battle/rhythm_perfect.wav"),
+	BattleRules.Judgement.GREAT: preload("res://Audio/Battle/rhythm_great.wav"),
+	BattleRules.Judgement.GOOD: preload("res://Audio/Battle/rhythm_good.wav"),
+	BattleRules.Judgement.MISS: preload("res://Audio/Battle/rhythm_miss.wav"),
+}
+
 ## ──────────────────────────────────────────────────────────────────────────
 ##  RÉGLAGE DE DIFFICULTÉ (rien de relevé : c'est ici qu'on dose)
 ## ──────────────────────────────────────────────────────────────────────────
@@ -180,6 +195,11 @@ var _glow: Sprite2D
 var _glow_pulse: Tween
 var _judgement: RichTextLabel
 var _judgement_tween: Tween
+## Un lecteur DÉDIÉ par verdict — leur flux ne change jamais, et les prendre
+## dans le pool les exposerait à se faire voler leur tour par une voix (cf.
+## SfxBank). Vide tant que `setup_audio` n'a pas été appelé : la barre reste
+## alors muette au lieu de planter, ce qui la garde utilisable hors combat.
+var _judgement_players: Dictionary = {}
 var _side: int = Side.NONE
 
 ## Notes en vol : {"id", "action", "node", "time"} — `time` étant l'instant
@@ -244,6 +264,13 @@ func _ready() -> void:
 
 	visible = false
 	set_process(false)
+
+## Branche la barre sur la banque de sons de l'écran. Séparé de la construction
+## parce que la banque n'existe pas encore quand la barre est montée (cf.
+## BattleScene._ready : l'assaut est bâti avant l'audio).
+func setup_audio(bank: SfxBank) -> void:
+	for judgement: int in JUDGEMENT_SOUNDS:
+		_judgement_players[judgement] = bank.player(JUDGEMENT_SOUNDS[judgement])
 
 ## Allume la barre du côté de celui qui agit. À NONE elle reste montée mais
 ## éteinte : c'est l'état « début / fin de tour » de la planche de référence.
@@ -448,6 +475,21 @@ func _resolve(judgement: int) -> void:
 	_judgements.append(judgement)
 	_pending += 1
 	_show_judgement(judgement)
+	_play_judgement(judgement)
+
+## Le son accompagne le VERDICT, d'où qu'il vienne — une touche tombée à côté
+## comme une note laissée passer. Le libellé MISS s'affiche déjà dans les deux
+## cas ; le laisser muet dans le second ferait croire à un bug de la manette
+## plutôt qu'à une note manquée.
+func _play_judgement(judgement: int) -> void:
+	var player: AudioStreamPlayer = _judgement_players.get(judgement)
+	if player == null:
+		return
+	# `play()` REJOUE depuis le début, il n'empile pas : deux verdicts identiques
+	# coup sur coup se remplacent. C'est voulu — un son de verdict dure jusqu'à
+	# 1,9 s pour des notes espacées de 0,55, et les laisser se superposer
+	# transformerait une série de Perfect en bouillie.
+	player.play()
 
 func _show_judgement(judgement: int) -> void:
 	if _judgement_tween != null and _judgement_tween.is_valid():

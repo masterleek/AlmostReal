@@ -886,6 +886,10 @@ func _build_audio() -> void:
 	_sfx_move = _audio.player(SFX_MOVE)
 	_sfx_confirm = _audio.player(SFX_CONFIRM)
 	_sfx_cancel = _audio.player(SFX_CANCEL)
+	# La barre de rythme prend ici ses quatre sons de verdict, et pas à sa
+	# construction : elle est montée avec l'assaut, donc avant que la banque
+	# existe (cf. _ready). Ils restent sur Master, comme les sons de menu.
+	_rhythm.setup_audio(_audio)
 	# Le pool sert les sons portés par les ACTIONS, qui sont des voix aujourd'hui
 	# (cf. units.json). Un bruitage non vocal — un impact, un sort — devra avoir
 	# son propre bus le jour où il arrivera : il n'a pas de raison d'effacer la

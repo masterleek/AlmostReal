@@ -897,6 +897,14 @@ pas partir en guerre contre des choix déjà faits et documentés dans ce repo :
   image. Visible seulement en rouvrant une liste, ce qui en fait un bug facile
   à ne pas voir en test manuel.
 
+- **Piloter la barre de rythme en test : frapper la touche de la NOTE en
+  attente, pas « valider ».** Un pilote qui martèle Entrée pour traverser les
+  menus tombe sur une action quelconque — un Eko dont la séquence commence par
+  `circle` ou `triangle` — et toutes ses frappes comptent alors pour des ratés,
+  y compris à 2 px de l'anneau. Le symptôme ressemble trait pour trait à un bug
+  de jugement. Lire `_notes[_pending]["id"]` et envoyer la touche correspondante
+  (cross=Entrée, circle=Échap, square=A, triangle=E, directions=flèches).
+
 ## Workflow de vérification (avant de considérer une tâche terminée)
 
 1. Check de syntaxe headless (`--quit-after 3`).
