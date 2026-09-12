@@ -148,6 +148,17 @@ Repo git, remote `origin` → github.com/masterleek/AlmostReal, branche `main`.
 - **Un contrôle automatique doit se taire sur les exceptions assumées**, sinon
   on apprend à l'ignorer : la tolérance est d'1 px parce que deux ancrages du
   projet sont posés exprès un pixel à côté du relevé.
+- **`BattleUnit.id` N'IDENTIFIE PAS UNE UNITÉ, il identifie une ENTRÉE DU
+  CATALOGUE.** Trois cactoons sur le terrain sont trois `BattleUnit` qui portent
+  tous « cactoon ». Tout état par unité s'indexe donc sur l'OBJET — c'est ce que
+  font `_home` et `_feedback` depuis toujours. Indexer sur `.id` a coûté un bug
+  visible : le premier cactoon tombé marquait les trois comme enterrés, et les
+  deux autres restaient debout sur le terrain une fois le combat gagné.
+- **Godot bufferise sa sortie quand elle est redirigée** : une sonde qui tourne
+  longtemps n'affiche rien jusqu'à ce que le processus se termine, et on croit
+  qu'elle ne fait rien. La faire écrire dans un FICHIER pour la suivre en
+  direct — et toujours capturer la sortie, une erreur de parse y est le premier
+  suspect quand une sonde reste muette.
 
 ## Qualité de code attendue
 
