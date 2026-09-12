@@ -325,6 +325,16 @@ pas partir en guerre contre des choix déjà faits et documentés dans ce repo :
   asset est déjà à la résolution de l'écran : le poser avec
   `PixelScale.upscaled()`/`sprite()` l'agrandirait une seconde fois pour
   rien — utiliser `PixelScale.sprite_native()` à la place.
+- **Remplacer un asset : chercher ses références dans les SCÈNES aussi, pas
+  seulement dans le code.** Un `.tscn` cite une ressource par `uid` ET par
+  chemin dans son `ext_resource` ; changer le `preload()` du script laisse
+  l'autre écran sur l'ancien fichier, et supprimer l'ancien fichier casse la
+  scène — sans que rien ne le dise avant l'ouverture. `validation.wav` et
+  `error.wav` étaient dans ce cas : cités par `BattleScene.gd` ET par
+  `Scenes/Main.tscn` (curseur du worldmap, validation du héros). Le réflexe est
+  `grep -rl <nom du fichier> --exclude-dir=.godot .` avant de toucher à quoi que
+  ce soit, puis de reporter le nouvel `uid` (lu dans le `.import` après
+  réimport) dans chaque `ext_resource`.
 - **Après un remplacement PNG → SVG natif, auditer CHAQUE usage de
   `texture.get_width()`/`get_height()`/`get_size()` sur cet asset** — pas
   seulement le `preload()`. Avant le remplacement, ces appels renvoyaient la

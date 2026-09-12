@@ -44,8 +44,8 @@ const MINI_CIRCLE := preload("res://UI/Battle/mini_btn_circle.svg")
 const MINI_CROSS := preload("res://UI/Battle/mini_btn_cross.svg")
 
 const SFX_MOVE := preload("res://Audio/move.wav")
-const SFX_CONFIRM := preload("res://Audio/validation.wav")
-const SFX_CANCEL := preload("res://Audio/error.wav")
+const SFX_CONFIRM := preload("res://Audio/validation.ogg")
+const SFX_CANCEL := preload("res://Audio/back.ogg")
 
 ## Bus de mixage. La musique et les voix sont séparées pour qu'un compresseur
 ## posé sur MUSIC et écouté depuis VOICE baisse le thème pendant une réplique
