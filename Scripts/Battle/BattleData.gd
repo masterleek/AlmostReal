@@ -135,11 +135,27 @@ static func get_unit_ekos(unit_id: String) -> PackedStringArray:
 ## qui porte), qui n'est pas le premier de sa liste, et le déduire changerait en
 ## silence le sens des entrées déjà écrites. Vide = pas de défaut, l'entrée est
 ## alors écartée avec un avertissement.
+##
+## UN SON PEUT NE VALOIR QUE POUR CERTAINS LANCEURS. Une entrée qui déclare
+## `units: ["noah"]` n'est retenue que quand c'est Noah qui agit ; sans ce champ,
+## elle vaut pour tout le monde. C'est ce qui permet à deux personnages de
+## partager un Eko sans partager le cri qu'ils poussent en le lançant — la
+## puissance et la séquence restent communes, la voix non.
+##
+## LES ENTRÉES NOMMÉES PASSENT DEVANT. `pick()` s'arrête à la première entrée qui
+## porte le moment demandé : ranger celles qui nomment le lanceur en tête suffit
+## à leur donner le dernier mot, sans inventer une règle de priorité que le
+## fichier ne montrerait pas. Un personnage sans entrée à lui retombe donc sur
+## celle de l'action, qui reste le défaut partagé.
+##
+## `performer` vide = pas de filtrage : c'est le cas des sons d'une UNITÉ, qui ne
+## sont lancés par personne d'autre qu'elle.
 static func sounds_of(
 	definition: Dictionary, allowed: PackedStringArray, owner: String,
-	fallback: String = "",
+	fallback: String = "", performer: String = "",
 ) -> Array:
-	var sounds: Array = []
+	var shared: Array = []
+	var named: Array = []
 	for raw: Variant in definition.get("sounds", []):
 		if typeof(raw) != TYPE_DICTIONARY:
 			push_warning("Entrée de son mal formée sur %s : %s" % [owner, str(raw)])
@@ -152,6 +168,9 @@ static func sounds_of(
 		if not allowed.has(moment):
 			push_warning("Moment de son inconnu « %s » sur %s" % [moment, owner])
 			continue
+		var only: PackedStringArray = _performers_of(entry)
+		if not only.is_empty() and (performer == "" or not only.has(performer)):
+			continue
 		var paths := PackedStringArray()
 		var declared: Variant = entry.get("sound", "")
 		for path: Variant in (declared if typeof(declared) == TYPE_ARRAY else [declared]):
@@ -159,8 +178,23 @@ static func sounds_of(
 				paths.append(String(path))
 		if paths.is_empty():
 			continue
-		sounds.append({"at": moment, "paths": paths})
-	return sounds
+		if only.is_empty():
+			shared.append({"at": moment, "paths": paths})
+		else:
+			named.append({"at": moment, "paths": paths})
+	named.append_array(shared)
+	return named
+
+## Les lanceurs auxquels une entrée de son est réservée. Vide = tout le monde.
+## Accepte un id seul comme une liste, exactement comme `sound` accepte un
+## chemin seul : c'est la même commodité de lecture à la main.
+static func _performers_of(entry: Dictionary) -> PackedStringArray:
+	var only := PackedStringArray()
+	var declared: Variant = entry.get("units", [])
+	for id: Variant in (declared if typeof(declared) == TYPE_ARRAY else [declared]):
+		if String(id) != "":
+			only.append(String(id))
+	return only
 
 ## Les sons propres à une unité, par opposition à ceux de ses actions.
 static func unit_sounds(unit_id: String) -> Array:

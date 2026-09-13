@@ -525,8 +525,11 @@ func _camp_for(entry: Dictionary, kind: String) -> Array[Dictionary]:
 ## La normalisation est commune aux deux familles de sons du combat, elle vit
 ## donc dans BattleData ; ici on ne fournit que le vocabulaire qui s'applique.
 func _sounds_of(unit: BattleUnit, action: Dictionary) -> Array:
+	# `unit.id` sert deux fois et pour deux raisons : il nomme le propriétaire
+	# dans les avertissements, et il dit QUI LANCE — ce qui départage les entrées
+	# réservées à un personnage (cf. BattleData.sounds_of).
 	return BattleData.sounds_of(
-		_definition_of(unit, action), SOUND_MOMENTS, unit.id, SOUND_DEFAULT_MOMENT
+		_definition_of(unit, action), SOUND_MOMENTS, unit.id, SOUND_DEFAULT_MOMENT, unit.id
 	)
 
 ## Déclenche les sons accrochés à `moment`. Une entrée à plusieurs chemins tire
