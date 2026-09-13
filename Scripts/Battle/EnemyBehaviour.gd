@@ -73,6 +73,18 @@ static func choose(
 		"targets": _targets_for("enemy", unit, allies, foes, kind, behaviour),
 	}
 
+## CIBLE DE REMPLACEMENT, quand celle retenue à l'ouverture de l'assaut est
+## tombée avant que l'ennemi ait joué. C'est la MÊME règle que le choix initial
+## — un « aggressive » achève toujours le plus entamé, un « focused » cherche
+## toujours son obsession — appliquée au terrain tel qu'il est maintenant.
+##
+## Elle vit ici et pas dans l'assaut : c'est une décision de comportement, et
+## l'assaut n'a pas à savoir qu'un cactoon s'acharne sur Noah. Rend [] si plus
+## personne n'est debout ; l'appelant en fait ce qu'il veut.
+static func retarget(unit: BattleUnit, candidates: Array[BattleUnit]) -> Array[BattleUnit]:
+	var behaviour: Dictionary = BattleData.get_unit(unit.id).get("behaviour", {})
+	return _one(candidates, _kind_of(behaviour, unit.id), behaviour)
+
 ## ──────────────────────────────────────────────────────────────────────────
 
 static func _kind_of(behaviour: Dictionary, unit_id: String) -> String:

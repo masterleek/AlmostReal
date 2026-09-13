@@ -431,10 +431,13 @@ func _action_of(entry: Dictionary) -> Dictionary:
 ## remplacée par une autre du même camp plutôt que de faire perdre son tour à
 ## l'unité : le joueur a choisi une action, pas un cadavre.
 ##
-## Une action SANS cible retenue est celle d'un ennemi, qui n'a pas de phase de
-## préparation : elle est tirée au hasard parmi les alliés debout, ce qui
-## répartit les coups sur l'équipe au lieu de s'acharner sur le premier de la
-## liste. C'est aussi le repli quand toutes les cibles choisies sont tombées.
+## LA MÊME RÈGLE POUR LES DEUX CAMPS, parce que les deux retiennent leur action
+## à l'avance : un allié au menu, un ennemi à l'ouverture de l'assaut
+## (cf. `_commit_enemy_actions`). Celui qui frappe en second ne doit pas rester
+## planté parce que celui qui frappe en premier a abattu leur cible commune.
+##
+## Une action SANS cible retenue tombe dans le même repli : c'est le cas d'un
+## ennemi dont le comportement n'a trouvé personne à viser au moment du choix.
 func _living_targets(entry: Dictionary, action: Dictionary) -> Array[BattleUnit]:
 	var alive: Array[BattleUnit] = []
 	for target: BattleUnit in action.get("targets", []):
@@ -442,10 +445,40 @@ func _living_targets(entry: Dictionary, action: Dictionary) -> Array[BattleUnit]
 			alive.append(target)
 	if not alive.is_empty():
 		return alive
-	var standing := _standing(_camp_for(entry, String(action.get("target", "enemy"))))
-	if not standing.is_empty():
-		alive.append(standing[randi() % standing.size()])
-	return alive
+	return _retarget(entry, action)
+
+## Cible de remplacement quand tout ce qui était visé est à terre. Elle est
+## reprise SELON LE MODE DE CIBLAGE de l'action, et non arbitrairement : un soin
+## de groupe qui se rabattrait sur un seul allié, ou un « elan » sur soi qui
+## irait renforcer le voisin, feraient de la substitution un autre sort que
+## celui qui a été lancé.
+##
+## Trois cas, et le dernier est celui qui compte :
+##   - « self » ne se remplace pas, l'unité se vise elle-même ;
+##   - un ciblage de GROUPE reprend tout le camp encore debout ;
+##   - un ciblage UNITAIRE reprend une seule unité — et c'est là que les deux
+##     camps se séparent. L'ennemi repasse par SON comportement
+##     (cf. EnemyBehaviour.retarget) : un « aggressive » achève le plus entamé,
+##     un « focused » retrouve son obsession si elle est encore debout. L'allié,
+##     lui, n'a plus de choix de joueur à honorer — le sien vient de tomber —
+##     donc une unité au hasard parmi celles qui restent.
+func _retarget(entry: Dictionary, action: Dictionary) -> Array[BattleUnit]:
+	var unit := _unit_of(entry)
+	var mode := String(action.get("target", "enemy"))
+	if mode == "self":
+		var alone: Array[BattleUnit] = []
+		if unit.is_alive():
+			alone.append(unit)
+		return alone
+	var standing := _standing(_camp_for(entry, mode))
+	if standing.is_empty():
+		return []
+	if BattleData.targets_whole_camp(mode):
+		return standing
+	if not _allies.has(entry):
+		return EnemyBehaviour.retarget(unit, standing)
+	var picked: Array[BattleUnit] = [standing[randi() % standing.size()]]
+	return picked
 
 ## Unités encore debout d'un camp.
 func _standing(camp: Array[Dictionary]) -> Array[BattleUnit]:
