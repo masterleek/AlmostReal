@@ -261,6 +261,16 @@ var _focus_position: Vector2 = Vector2.ZERO
 var _shine: TextureRect
 var _cursor: Sprite2D
 
+## Le curseur se montre-t-il ? Il se tait pendant un ciblage de GROUPE : là-bas
+## chaque cible porte le sien (cf. TargetSelector), et celui de la pastille en
+## ferait un de plus, posé au milieu de personne. Remis d'office par
+## `restore()` : sortir du mode réduit, c'est retrouver un menu ordinaire.
+var cursor_visible: bool = true:
+	set(value):
+		cursor_visible = value
+		if _cursor != null:
+			_cursor.visible = value
+
 ## `entries` = un dictionnaire par ligne, dans l'ordre d'affichage :
 ##   id          identifiant rendu par get_selected_id() ;
 ##   text_id     id Localization du libellé ;
@@ -392,6 +402,7 @@ func focus_selection(at: Vector2) -> void:
 	_refresh()
 
 func restore() -> void:
+	cursor_visible = true
 	if not _focused:
 		return
 	_focused = false

@@ -331,6 +331,12 @@ const PROMPT_CANCEL := "battle.prompt.cancel"
 ## Ce décalage est en coordonnées d'ÉCRAN ; le menu étant incliné, il faut le
 ## repasser dans son repère (cf. _menu_local).
 const FOCUS_PILL_OFFSET := Vector2(23, -107)
+## Ce dont la pastille monte EN PLUS sur un ciblage de groupe. Elle se pose
+## alors au barycentre des cibles, c'est-à-dire pile sur le curseur de celle du
+## milieu — elle masquerait justement ce que le ciblage de groupe vient de
+## montrer. Relevé à l'écran : 14 px — une hauteur de pastille — suffisent à la
+## poser à côté du curseur du milieu plutôt que dessus, sans aller cogner le HUD.
+const GROUP_PILL_RISE := 14
 
 ## Composition par défaut, utilisée quand la scène est lancée seule (F6) sans
 ## passer par setup(). Elle reproduit le mockup.
@@ -1147,7 +1153,13 @@ func _open_targeting(pending: Dictionary, list: CommandMenu) -> bool:
 	# Première cible vivante par défaut, comme les listes s'ouvrent sur leur
 	# première entrée : une sélection par défaut stable vaut mieux qu'une
 	# sélection « intelligente » qui changerait d'un tour à l'autre.
-	_target_selector.open(targets, BattleData.targets_whole_camp(kind))
+	# Le curseur de la pastille se tait sur un ciblage de GROUPE : là-bas chaque
+	# cible porte le sien (cf. TargetSelector), et celui-ci se poserait au
+	# barycentre, c'est-à-dire au-dessus d'un ennemi qui n'est pas plus visé que
+	# ses voisins. `CommandMenu.restore()` le rallume en sortant.
+	var group := BattleData.targets_whole_camp(kind)
+	list.cursor_visible = not group
+	_target_selector.open(targets, group)
 	# APRÈS l'ouverture, jamais avant : c'est elle qui fixe la cible courante, et
 	# la lire plus tôt cadrerait sur la sélection du ciblage PRÉCÉDENT — ou sur
 	# l'origine de l'écran au tout premier.
@@ -1194,7 +1206,10 @@ func _living(
 ## raison de grossir avec le zoom.
 func _follow_target() -> void:
 	var feet := _field.transform * _target_selector.get_selected_feet()
-	_focus_list.focus_selection(_focus_list.to_flat(feet + FOCUS_PILL_OFFSET))
+	var rise := Vector2.ZERO
+	if BattleData.targets_whole_camp(String(_pending.get("target", "enemy"))):
+		rise = Vector2(0, -GROUP_PILL_RISE)
+	_focus_list.focus_selection(_focus_list.to_flat(feet + FOCUS_PILL_OFFSET + rise))
 
 func _on_target_moved(_index: int) -> void:
 	_sfx_move.play()

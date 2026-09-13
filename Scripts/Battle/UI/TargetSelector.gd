@@ -38,6 +38,7 @@ const UnitSprite = preload("res://Scripts/Battle/Stage/UnitSprite.gd")
 const BattleText = preload("res://Scripts/Battle/UI/BattleText.gd")
 const PixelScale = preload("res://Scripts/Battle/UI/PixelScale.gd")
 const HpBar = preload("res://Scripts/Battle/UI/HpBar.gd")
+const ActorCursor = preload("res://Scripts/Battle/UI/ActorCursor.gd")
 
 ## Le même shader que la tuile de révélation du worldmap : blanchir un sprite
 ## sans toucher à sa transparence est exactement le besoin ici, il n'y a pas
@@ -97,8 +98,6 @@ var active: bool = false
 ## (cf. UnitSprite), donc son sommet se déduit sans relire units.json.
 var _targets: Array[Dictionary] = []
 var _selected: int = 0
-var _name_label: RichTextLabel
-var _bar: HpBar
 var _material: ShaderMaterial
 ## Sprites actuellement blanchis. Un seul en mode unitaire, toute la liste en
 ## mode groupe — le matériau, lui, reste unique et partagé.
@@ -116,8 +115,26 @@ var _visual_order: PackedInt32Array = PackedInt32Array()
 ## la nouvelle cible s'allume franchement à l'instant où on la désigne. Lue
 ## sur l'horloge absolue, le battement partirait d'une phase quelconque.
 var _pulse_origin_msec: int = 0
-## Porte le nom et la jauge de la cible, à l'échelle de design (cf. _ready).
-var _plate: Node2D
+## UNE PLAQUE PAR CIBLE — nom, jauge et curseur — montées à la demande et
+## gardées d'une ouverture à l'autre. En ciblage unitaire une seule s'affiche,
+## celle de la cible courante ; en ciblage de GROUPE elles s'affichent toutes.
+##
+## POURQUOI TOUTES. Un Eko qui prend tout un camp ne vise pas « le milieu » : il
+## vise trois ennemis nommés, chacun avec ses PV. Les blanchir tous en ne
+## nommant personne demandait au joueur de deviner ce qu'il allait toucher, et
+## le curseur unique posé au barycentre se retrouvait au-dessus d'un ennemi qui
+## n'était pas plus visé que ses voisins.
+##
+## Les trois listes sont parallèles et indexées comme `_targets` : une plaque,
+## son libellé, sa jauge, son curseur.
+var _plates: Array[Node2D] = []
+var _name_labels: Array[RichTextLabel] = []
+var _bars: Array[HpBar] = []
+## Les curseurs vivent HORS de la plaque, dans le repère du terrain : la plaque
+## annule le zoom du cadrage pour garder son texte net à l'échelle de design,
+## alors que le curseur se pose au-dessus d'une TÊTE, dont la hauteur, elle,
+## grandit avec le zoom.
+var _cursors: Array[ActorCursor] = []
 ## Échelle globale du sélecteur au montage, avant tout cadrage.
 var _design_scale := Vector2.ONE
 
@@ -129,25 +146,10 @@ func _ready() -> void:
 	# comme sa jauge sont calibrés pour cette échelle-là : les laisser grossir
 	# avec le zoom les éloignait de la cible et rendait le texte flou, son
 	# suréchantillonnage tombant sur un facteur non entier.
-	_plate = Node2D.new()
-	add_child(_plate)
 	# Relevée au montage, avant tout cadrage : c'est l'échelle du Stage, la
-	# seule que la plaque doit conserver. La lire plutôt que d'écrire 4 en dur
-	# évite d'avoir à connaître ici la composition de l'arbre au-dessus.
+	# seule que les plaques doivent conserver. La lire plutôt que d'écrire 4 en
+	# dur évite d'avoir à connaître ici la composition de l'arbre au-dessus.
 	_design_scale = get_global_transform().get_scale()
-
-	# Les deux éléments se posent par leur coin haut-gauche : les centrer sur
-	# l'origine de la plaque revient à reculer chacun de la moitié de SA
-	# largeur. Division entière — les deux largeurs sont paires, et un
-	# demi-pixel de design devient 2 px de flou une fois le Stage agrandi ×4.
-	_name_label = BattleText.make_centered("", NAME_BOX_WIDTH, NAME_SIZE, NAME_COLOR)
-	_name_label.position = Vector2(-NAME_BOX_WIDTH / 2, NAME_Y)
-	_plate.add_child(_name_label)
-
-	_bar = HpBar.new()
-	_bar.design_width = BAR_WIDTH
-	_bar.position = Vector2(-BAR_WIDTH / 2, BAR_Y)
-	_plate.add_child(_bar)
 
 	_material = ShaderMaterial.new()
 	_material.shader = WHITE_TINT
@@ -177,6 +179,8 @@ func close() -> void:
 	set_process(false)
 	_group = false
 	_clear_tint()
+	for cursor in _cursors:
+		cursor.hide_now()
 	# Réassignation plutôt que `clear()` : le tableau appartient à l'appelant,
 	# le sélecteur n'a fait que le garder sous la main.
 	_targets = []
@@ -260,27 +264,63 @@ func select(index: int) -> void:
 func _refresh() -> void:
 	_pulse_origin_msec = Time.get_ticks_msec()
 	_clear_tint()
-	for i in _targets.size():
-		if _group or i == _selected:
-			var target: CanvasItem = _targets[i]["sprite"]
-			target.material = _material
-			_tinted.append(target)
-
-	# La plaque nomme UNE cible : elle n'a pas de sens sur un groupe.
-	_plate.visible = not _group
-	if _group:
-		return
-
-	var entry: Dictionary = _targets[_selected]
-	var unit: BattleUnit = entry["unit"]
-	var sprite: UnitSprite = entry["sprite"]
-	BattleText.set_centered_text(_name_label, Localization.get_text(unit.name_text_id()))
-	# Même lecture que le HUD : le vert s'arrête aux PV acquis, le segment rayé
-	# occupe la part mise en jeu par une blessure (cf. BattleUnit, HpBar).
-	_bar.set_ratio(unit.solid_ratio(), unit.hp_ratio())
-
-	_plate.position = _plate_anchor(sprite)
+	_mount_plates(_targets.size())
+	for i in _plates.size():
+		# Une cible est DÉSIGNÉE si elle est la cible courante, ou si le ciblage
+		# prend tout le camp — les deux cas montrent exactement la même chose.
+		var aimed := i < _targets.size() and (_group or i == _selected)
+		_plates[i].visible = aimed
+		if not aimed:
+			_cursors[i].hide_now()
+			continue
+		var entry: Dictionary = _targets[i]
+		var unit: BattleUnit = entry["unit"]
+		var sprite: UnitSprite = entry["sprite"]
+		sprite.material = _material
+		_tinted.append(sprite)
+		BattleText.set_centered_text(
+			_name_labels[i], Localization.get_text(unit.name_text_id())
+		)
+		# Même lecture que le HUD : le vert s'arrête aux PV acquis, le segment
+		# rayé occupe la part mise en jeu par une blessure (cf. BattleUnit,
+		# HpBar).
+		_bars[i].set_ratio(unit.solid_ratio(), unit.hp_ratio())
+		_plates[i].position = _plate_anchor(sprite)
+		# LE CURSEUR N'EST À NOUS QUE SUR UN GROUPE. En ciblage unitaire c'est
+		# celui de la pastille d'action qui désigne la cible, posé par le menu
+		# réduit (cf. CommandMenu._place_cursor) : en ajouter un second le
+		# doublerait au même endroit.
+		if _group:
+			_cursors[i].show_above(sprite)
+		else:
+			_cursors[i].hide_now()
 	_hold_plate_scale()
+
+## Monte ce qu'il manque de plaques pour `count` cibles. Montées à la demande et
+## jamais démontées : un combat rejoue le même ciblage des dizaines de fois, et
+## reconstruire un RichTextLabel à chaque ouverture pour trois lignes de texte
+## coûterait plus cher que de les garder.
+func _mount_plates(count: int) -> void:
+	while _plates.size() < count:
+		var plate := Node2D.new()
+		add_child(plate)
+		# Les deux éléments se posent par leur coin haut-gauche : les centrer
+		# sur l'origine de la plaque revient à reculer chacun de la moitié de SA
+		# largeur. Division entière — les deux largeurs sont paires, et un
+		# demi-pixel de design devient 2 px de flou une fois le Stage agrandi ×4.
+		var label := BattleText.make_centered("", NAME_BOX_WIDTH, NAME_SIZE, NAME_COLOR)
+		label.position = Vector2(-NAME_BOX_WIDTH / 2, NAME_Y)
+		plate.add_child(label)
+		var bar := HpBar.new()
+		bar.design_width = BAR_WIDTH
+		bar.position = Vector2(-BAR_WIDTH / 2, BAR_Y)
+		plate.add_child(bar)
+		var cursor: ActorCursor = ActorCursor.new()
+		add_child(cursor)
+		_plates.append(plate)
+		_name_labels.append(label)
+		_bars.append(bar)
+		_cursors.append(cursor)
 
 ## Point sur lequel la plaque vient se poser, dans le repère du terrain.
 ##
@@ -320,12 +360,14 @@ func _process(_delta: float) -> void:
 ## sélecteur. À chaque image et pas une fois pour toutes : le cadrage est un
 ## tween, l'échelle du terrain change pendant toute sa durée.
 func _hold_plate_scale() -> void:
-	if _plate == null:
+	if _plates.is_empty():
 		return
 	var current := get_global_transform().get_scale()
 	if is_zero_approx(current.x) or is_zero_approx(current.y):
 		return
-	_plate.scale = _design_scale / current
+	var held := _design_scale / current
+	for plate in _plates:
+		plate.scale = held
 
 func _clear_tint() -> void:
 	for sprite in _tinted:

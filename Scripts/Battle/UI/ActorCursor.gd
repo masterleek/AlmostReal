@@ -67,6 +67,16 @@ func hide_above() -> void:
 	# Le nœud reste monté : il resservira à l'unité suivante.
 	_tween.tween_callback(func() -> void: visible = false)
 
+## Retire le curseur SANS fondu. Sert quand ce qui l'affichait disparaît d'un
+## coup — un ciblage qu'on referme, un groupe qui laisse la place à une cible
+## unique : le fondu de sortie le ferait survivre deux dixièmes de seconde à
+## l'écran qu'il désignait.
+func hide_now() -> void:
+	if _tween != null and _tween.is_valid():
+		_tween.kill()
+	modulate.a = 0.0
+	visible = false
+
 func _fade(to: float, duration: float) -> void:
 	if _tween != null and _tween.is_valid():
 		_tween.kill()
