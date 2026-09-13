@@ -1116,6 +1116,29 @@ button:hover { border-color: var(--accent); }
    change de nature. */
 .battle-field-ignored { opacity: 0.45; }
 
+/* Nom et description, une ligne par langue : la langue en tête, le champ du nom,
+   puis la description qu'on ne fait que lire. */
+.battle-texts { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
+
+.battle-text-line {
+  display: grid;
+  grid-template-columns: 70px 220px 1fr;
+  align-items: center;
+  gap: 8px;
+}
+
+.battle-text-line-short { grid-template-columns: 70px 220px; }
+
+.battle-text-lang { font-size: 11px; color: #9aa0ab; }
+
+.battle-text-desc {
+  font-size: 12px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .battle-field-ignored-mark {
   display: inline-block;
   margin-left: 6px;

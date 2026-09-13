@@ -11,6 +11,7 @@ import {
   getBattleMomentLabels,
   saveBattleMomentLabels,
   getTexts,
+  saveTexts,
 } from "./api.js";
 import { pickFrames } from "./frame-picker.js";
 import { animationPreview, forgetSheetSize, sheetSize, staticFrame } from "./sheet-preview.js";
@@ -157,6 +158,18 @@ function numberInput(value, onCommit, { min = null, step = 1 } = {}) {
   if (min !== null) input.min = String(min);
   input.value = value ?? 0;
   input.onchange = () => onCommit(step < 1 ? parseFloat(input.value) : parseInt(input.value, 10));
+  return input;
+}
+
+// Champ texte d'une ligne. `onchange` et non `oninput` : on valide en sortant du
+// champ, comme les nombres — écrire à chaque frappe redessinerait la page (donc
+// perdrait le focus) et sauvegarderait une fois par lettre.
+function textInput(value, onCommit, { placeholder = "" } = {}) {
+  const input = el("input", "battle-input");
+  input.type = "text";
+  input.value = value ?? "";
+  if (placeholder) input.placeholder = placeholder;
+  input.onchange = () => onCommit(input.value.trim());
   return input;
 }
 
@@ -936,26 +949,113 @@ function actionBlock(
 //  Libellés : lecture seule, résolus depuis le catalogue de textes
 // ──────────────────────────────────────────────────────────────────────────
 
-function localizedName(section, id) {
-  const textId = `${SECTIONS[section].textPrefix}.${id}.name`;
-  const entry = texts.texts?.find((t) => t.id === textId);
-  if (!entry) return { textId, label: null };
-  return {
-    textId,
-    label: entry.translations?.[texts.default_language] || entry.translations?.en || "",
-  };
+// Le texte de jeu d'une entrée de catalogue. `suffix` est « name » ou « desc » :
+// ce sont les deux que le moteur va chercher — le nom pour la rangée de menu,
+// la description pour le cadre du bas (cf. BattleScene._show_description, qui
+// compose « <source>.<id>.desc »).
+function localizedText(section, id, suffix) {
+  const textId = `${SECTIONS[section].textPrefix}.${id}.${suffix}`;
+  const entry = texts.texts?.find((t) => t.id === textId) || null;
+  const label = entry
+    ? entry.translations?.[texts.default_language] || entry.translations?.en || ""
+    : null;
+  return { textId, entry, label };
 }
 
-function nameLine(section, id) {
-  const { textId, label } = localizedName(section, id);
-  const line = el("span", "battle-name-line");
-  if (label) {
-    line.textContent = `${textId} — le nom et la description se modifient depuis la page Textes.`;
-  } else {
-    line.className = "battle-warning";
-    line.textContent = `Aucun texte ${textId} : l'entrée n'aura pas de nom en jeu. À créer depuis la page Textes.`;
+function localizedName(section, id) {
+  const { textId, label } = localizedText(section, id, "name");
+  return { textId, label };
+}
+
+// Style des entrées de texte créées d'ici. LES MÊMES QUE LEURS VOISINES : deux
+// textes qui partagent un emplacement en jeu doivent partager leur style, et un
+// nom d'Eko créé ici s'affichera dans la rangée de menu où s'affichent déjà les
+// autres (cf. le rappel de la page Textes sur les styles partagés). Relevés sur
+// les entrées existantes : 15 pour un nom, 12 pour une description.
+const TEXT_FONT_SIZE = { name: 15, desc: 12 };
+
+// L'entrée de texte, créée à la volée si elle manque. Une entrée de catalogue
+// toute neuve n'a pas encore ses textes, et l'auteur qui tape son nom ici ne
+// doit pas avoir à aller le déclarer ailleurs d'abord.
+function ensureText(section, id, suffix) {
+  const { textId, entry } = localizedText(section, id, suffix);
+  if (entry) return entry;
+  const created = {
+    id: textId,
+    category: "ui",
+    translations: {},
+    style: { font_size: TEXT_FONT_SIZE[suffix] || 15 },
+  };
+  if (!texts.texts) texts.texts = [];
+  texts.texts.push(created);
+  return created;
+}
+
+// Sauvegarde du catalogue de TEXTES, à côté de celle des catalogues de combat.
+// Même traitement du conflit : le verrou du serveur refuse une page périmée, et
+// `watchForStaleCatalogs` a déjà prévenu — un second `alert` ferait deux
+// fenêtres pour un seul refus.
+async function persistTexts() {
+  try {
+    await saveTexts(texts);
+  } catch (err) {
+    if (!(err instanceof CatalogConflictError)) throw err;
   }
-  return line;
+}
+
+// NOM ET DESCRIPTION, sur la fiche même de l'entrée.
+//
+// Ils ne vivent PAS dans les catalogues de Battle/ : ce sont des textes de jeu,
+// rangés avec tous les autres dans Localization/texts.json sous l'id
+// `<préfixe>.<id>.name` (et `.desc`, que le moteur affiche dans le cadre du bas,
+// cf. BattleScene._show_description). Ils restent donc écrits là-bas — ce bloc
+// n'ouvre pas un second stockage, il ouvre une seconde PORTE sur le même. C'est
+// ce qu'il faut : on baptise une compétence en la réglant, pas trois pages plus
+// loin, et la page Textes garde la vue d'ensemble et les styles.
+//
+// UNE LIGNE PAR LANGUE. Ne proposer que la langue par défaut donnerait un nom
+// changé d'un côté et resté vieux de l'autre, sans que rien le signale — la
+// désynchronisation exacte que cette page doit éviter.
+//
+// La DESCRIPTION est en lecture seule ici : elle se rédige (avec ses styles, ses
+// sauts de ligne) sur la page Textes, mais on doit la VOIR en réglant l'action,
+// puisqu'elle promet au joueur ce que les champs du dessous font vraiment.
+function textLines(section, id, refresh) {
+  const block = el("div", "battle-texts");
+  const withDesc = section !== "units";
+  const { textId: nameId } = localizedText(section, id, "name");
+  const { textId: descId, entry: descEntry } = localizedText(section, id, "desc");
+  block.appendChild(
+    sectionTitle(
+      "Nom et description",
+      withDesc ? `${nameId} · ${descId} — partagés avec la page Textes` : `${nameId}`
+    )
+  );
+  for (const language of texts.languages || []) {
+    const code = language.code;
+    // Sans description — une unité n'en a pas — la ligne se resserre : garder la
+    // troisième colonne laisserait un vide large comme la page à droite du nom.
+    const line = el("div", withDesc ? "battle-text-line" : "battle-text-line battle-text-line-short");
+    line.appendChild(el("span", "battle-text-lang", language.label || code));
+    line.appendChild(
+      textInput(localizedText(section, id, "name").entry?.translations?.[code] || "", (value) => {
+        const entry = ensureText(section, id, "name");
+        if (value) entry.translations[code] = value;
+        else delete entry.translations[code];
+        renderList();
+        persistTexts();
+      }, { placeholder: "sans nom" })
+    );
+    if (withDesc) {
+      const description = descEntry?.translations?.[code] || "";
+      const text = el("span", "battle-text-desc", description || "aucune description");
+      if (!description) text.classList.add("battle-inline-hint");
+      text.title = `${descId} — se rédige depuis la page Textes`;
+      line.appendChild(text);
+    }
+    block.appendChild(line);
+  }
+  return block;
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -1786,7 +1886,7 @@ function anchorLine(unit, name, config, onChanged) {
 function renderUnit(id, unit, refresh) {
   const row = el("div", "battle-row");
   row.appendChild(rowHead("units", id, unit.behaviour ? "ennemi" : null));
-  row.appendChild(nameLine("units", id));
+  row.appendChild(textLines("units", id, refresh));
 
   const stats = el("div", "battle-grid battle-stats");
   if (!unit.stats) unit.stats = {};
@@ -2032,7 +2132,7 @@ function behaviourBlock(id, unit, refresh) {
 function renderAction(section, id, action, refresh) {
   const row = el("div", "battle-row");
   row.appendChild(rowHead(section, id, null));
-  row.appendChild(nameLine(section, id));
+  row.appendChild(textLines(section, id, refresh));
   const performers = performersOf(section, id);
   row.appendChild(el("p", "battle-action-summary", actionSummary(section, action)));
   if (section === "ekos") row.appendChild(knownByLine(id, performers));
