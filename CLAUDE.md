@@ -169,6 +169,9 @@ Repo git, remote `origin` → github.com/masterleek/AlmostReal, branche `main`.
   font `_home` et `_feedback` depuis toujours. Indexer sur `.id` a coûté un bug
   visible : le premier cactoon tombé marquait les trois comme enterrés, et les
   deux autres restaient debout sur le terrain une fois le combat gagné.
+- **Un `##` s'attache au membre QUI SUIT** : un préambule qui décrit un groupe
+  de constantes se retrouve donc recopié dans l'infobulle de la première. Le
+  préambule se met en `#`, la doc de chaque membre en `##`.
 - **Godot bufferise sa sortie quand elle est redirigée** : une sonde qui tourne
   longtemps n'affiche rien jusqu'à ce que le processus se termine, et on croit
   qu'elle ne fait rien. La faire écrire dans un FICHIER pour la suivre en
