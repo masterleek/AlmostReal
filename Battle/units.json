@@ -160,6 +160,10 @@
         {
           "at": "menu_eko",
           "sound": "res://Audio/Battle/Voices/noah_now_then.wav"
+        },
+        {
+          "at": "menu_items",
+          "sound": "res://Audio/Battle/Voices/noah_bring_it_on_2.wav"
         }
       ]
     },
@@ -223,7 +227,7 @@
           "columns": 3,
           "rows": 4,
           "frames": 3,
-          "fps": 6,
+          "fps": 15,
           "loop": false,
           "_comment": "Geste d'attaque par defaut, joue quand l'action ne nomme pas sa propre planche. Grille 3x4, cellule 105x98, 12 cases pleines ; l'animation n'en retient que les trois premieres, le coup de poing et sa lueur qui s'eteint. LA CELLULE EST BIEN PLUS HAUTE QUE LE DESSIN : elle est dimensionnee par les lignes 3 et 4, dont les etincelles du coup de pied descendent jusqu'au bord bas, et il reste 23 px de vide sous les pieds des trois premieres. D'ou un anchor explicite - laisse au centre-bas de la cellule, il faisait flotter Iris 18 px au-dessus du sol.",
           "anchor": [
