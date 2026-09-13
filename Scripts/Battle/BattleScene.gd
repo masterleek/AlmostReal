@@ -1271,15 +1271,17 @@ func _set_units_dimmed(dim_enemies: bool, dim_allies: bool) -> void:
 	_dim_allies = dim_allies
 	_refresh_unit_visuals()
 
-## Trois états possibles pour un combattant, du plus fort au plus faible :
-## action déjà retenue (assombrissement opaque), camp non regardé (simple
-## transparence), sinon pleine opacité. L'allié dont c'est le tour n'est jamais
-## estompé.
+## Deux traitements qui SE CUMULENT, parce qu'ils ne disent pas la même chose :
+## l'assombrissement dit « celui-là a fini de choisir » et se lit sur la teinte ;
+## l'estompage dit « ce n'est pas ce qu'on regarde en ce moment » et se lit sur
+## l'alpha. L'allié dont c'est le tour n'est jamais estompé.
 ##
-## Les deux traitements ne se confondent pas : l'estompage dit « ce n'est pas ce
-## qu'on regarde en ce moment » et rend translucide ; l'assombrissement dit
-## « celui-là a fini de choisir » et reste plein. Un allié qui a joué garde donc
-## sa présence sur le terrain, même pendant qu'un autre parcourt une liste.
+## LES DEUX À LA FOIS, et pas l'un OU l'autre. Tant que la teinte « action
+## retenue » gardait son opacité pleine, l'allié qui avait joué restait le seul
+## objet solide du terrain pendant que son voisin parcourait sa liste d'Ekos :
+## les ennemis passaient à 30 %, lui non, et l'œil allait sur lui plutôt que sur
+## la liste. Il garde sa teinte — elle dit quelque chose de vrai — mais il
+## recule avec le reste de ce qu'on ne regarde pas.
 ##
 ## UNE UNITÉ TOMBÉE N'EST PAS TOUCHÉE ICI : sa disparition est une animation en
 ## cours, portée par la phase d'assaut (cf. BattleAssault._bury_the_dead). La
@@ -1298,12 +1300,12 @@ func _refresh_unit_visuals() -> void:
 	for i in mini(_ally_sprites.size(), _ally_units.size()):
 		if not _ally_units[i].is_alive():
 			continue
+		var tint := Color.WHITE
 		if _state != State.ASSAULT and _ally_units[i].has_action():
-			_ally_sprites[i].modulate = CONFIRMED_SPRITE_MODULATE
-		elif _dim_allies and i != _active_ally:
-			_ally_sprites[i].modulate = faded
-		else:
-			_ally_sprites[i].modulate = Color.WHITE
+			tint = CONFIRMED_SPRITE_MODULATE
+		if _dim_allies and i != _active_ally:
+			tint.a = faded.a
+		_ally_sprites[i].modulate = tint
 	_refresh_ally_poses()
 
 ## Planche que doit jouer chaque allié :
