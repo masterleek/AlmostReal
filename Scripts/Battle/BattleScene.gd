@@ -66,6 +66,7 @@ const SOUND_MENU_ATTACK := "menu_attack"
 const SOUND_MENU_EKO := "menu_eko"
 const SOUND_MENU_ITEMS := "menu_items"
 const SOUND_MENU_GUARD := "menu_guard"
+const SOUND_VICTORY := "victory"
 
 const BUS_MUSIC := "Music"
 const BUS_VOICE := "Voice"
@@ -1546,6 +1547,9 @@ func _hide_interface() -> void:
 ## planches n'ont pas la même longueur (17 frames pour Noah, 34 pour Iris), les
 ## attendre ensemble ferait patienter le premier arrivé sur sa dernière image.
 func _play_victory() -> void:
+	# La voix part AVANT la boucle, qui ranime les tombés : un allié qu'on vient
+	# de ramasser n'a pas à lancer « c'était facile ».
+	_play_unit_sound(_victory_speaker(), SOUND_VICTORY)
 	for i in mini(_ally_sprites.size(), _ally_units.size()):
 		var unit := _ally_units[i]
 		var sprite: UnitSprite = _ally_sprites[i]
@@ -1560,6 +1564,26 @@ func _play_victory() -> void:
 			sprite.play_sheet(BattleData.get_animation(_allies[i], ANIM_IDLE))
 		_play_win(sprite, _allies[i])
 	_refresh_allies()
+
+## L'allié qui commente la victoire, ou null si l'équipe l'a emportée à terre.
+##
+## UN SEUL PARLE, tiré au sort parmi ceux qui tiennent encore debout. Les faire
+## tous crier ensemble superposerait deux voix sur la même seconde — c'est déjà
+## la raison pour laquelle une attaque de groupe ne joue qu'UN cri et non un par
+## cible (cf. le `_cue` unique de BattleAssault). Le tirage, lui, évite la même
+## réplique à chaque combat gagné, comme pour les variantes de `hurt`.
+##
+## Personne debout et pourtant la victoire : le cas existe, une blessure peut
+## emporter le dernier ennemi et le dernier allié dans le même souffle. On se
+## tait plutôt que de choisir un mort.
+func _victory_speaker() -> BattleUnit:
+	var standing: Array[BattleUnit] = []
+	for unit: BattleUnit in _ally_units:
+		if unit.is_alive():
+			standing.append(unit)
+	if standing.is_empty():
+		return null
+	return standing[randi() % standing.size()]
 
 ## `win_before` une fois, puis `win` en boucle. L'attente se déduit de la
 ## planche (`duration_of`) plutôt que d'un `animation_finished` : l'écran de

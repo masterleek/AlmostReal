@@ -44,6 +44,7 @@ const UNIT_SOUNDS: PackedStringArray = [
 	"menu_items",   # elle ouvre le sac
 	"menu_guard",   # elle se met en garde — retenu sans ciblage
 	"hurt",         # elle ENCAISSE des dégâts, quel que soit qui frappe
+	"victory",      # le dernier ennemi est tombé : elle commente la victoire
 ]
 
 const UNITS_PATH := "res://Battle/units.json"

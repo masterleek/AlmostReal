@@ -12,7 +12,8 @@
     "menu_eko": "Choix : Eko",
     "menu_items": "Choix : Items",
     "menu_guard": "Choix : Guard",
-    "hurt": "Encaisse"
+    "hurt": "Encaisse",
+    "victory": "Victoire — dernier ennemi tombé"
   },
   "animation_labels": {
     "idle": "Repos",

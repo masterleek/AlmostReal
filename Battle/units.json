@@ -137,6 +137,10 @@
           {
             "at": "rhythm",
             "sound": "res://Audio/Battle/Voices/noah_lets_go.wav"
+          },
+          {
+            "at": "hit",
+            "sound": []
           }
         ]
       },
@@ -164,6 +168,13 @@
         {
           "at": "menu_items",
           "sound": "res://Audio/Battle/Voices/noah_bring_it_on_2.wav"
+        },
+        {
+          "at": "victory",
+          "sound": [
+            "res://Audio/Battle/Voices/noah_its_over.wav",
+            "res://Audio/Battle/Voices/noah_good_fight.wav"
+          ]
         }
       ]
     },
@@ -289,6 +300,10 @@
               "res://Audio/Battle/Voices/iris_lets_go.wav",
               "res://Audio/Battle/Voices/iris_lets_go2.wav"
             ]
+          },
+          {
+            "at": "hit",
+            "sound": "res://Audio/Battle/Voices/iris_att1.wav"
           }
         ]
       },
@@ -323,6 +338,13 @@
         {
           "at": "menu_guard",
           "sound": "res://Audio/Battle/Voices/iris_be_cautious.wav"
+        },
+        {
+          "at": "victory",
+          "sound": [
+            "res://Audio/Battle/Voices/iris_that_was_easy.wav",
+            "res://Audio/Battle/Voices/iris_easy.wav"
+          ]
         }
       ]
     },
