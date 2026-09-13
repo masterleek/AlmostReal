@@ -410,6 +410,15 @@ var _field_tween: Tween
 ## Bande noire du bas, gardée sous la main : elle remonte pendant l'assaut.
 var _dark_bottom: Sprite2D
 var _dark_top: Sprite2D
+## Porte les deux bandes noires, et RIEN D'AUTRE. Sa seule raison d'être est de
+## défaire la secousse d'impact : elle bouge le Stage entier, ce porteur bouge
+## d'autant en sens inverse, et les bandes retrouvent leur place à l'écran.
+##
+## Un nœud intermédiaire plutôt que de corriger la position des bandes
+## elles-mêmes : celle-ci est déjà animée par le resserrement de l'assaut
+## (cf. _slide_dark_bands), et deux animations sur la même propriété se
+## marcheraient dessus.
+var _dark_fixed: Node2D
 var _dark_tween: Tween
 var _shake_tween: Tween
 ## Allié dont c'est le tour. Vaut le nombre d'alliés quand ils ont tous choisi
@@ -597,18 +606,24 @@ func _spawn_unit(
 ## basse se glisserait sous leurs pieds au lieu de les masquer, et le cadrage de
 ## l'écran se déchirerait.
 func _build_dark_lines() -> void:
+	# Le porteur prend la place que les bandes occupaient dans l'arbre : elles
+	# restent donc au-dessus du terrain et sous la barre de rythme, le menu et
+	# le HUD, montés après.
+	_dark_fixed = Node2D.new()
+	stage.add_child(_dark_fixed)
+
 	_dark_bottom = Sprite2D.new()
 	_dark_bottom.texture = DARK_LINES
 	_dark_bottom.centered = false
 	_dark_bottom.position = DARK_LINE_BOTTOM
-	stage.add_child(_dark_bottom)
+	_dark_fixed.add_child(_dark_bottom)
 
 	_dark_top = Sprite2D.new()
 	_dark_top.texture = DARK_LINES
 	_dark_top.centered = false
 	_dark_top.flip_v = true
 	_dark_top.position = DARK_LINE_TOP
-	stage.add_child(_dark_top)
+	_dark_fixed.add_child(_dark_top)
 
 ## L'assaut est un nœud comme un autre : il a besoin de l'arbre pour ses
 ## attentes (cf. BattleAssault._wait). Monté une fois, relancé à chaque tour.
@@ -637,22 +652,34 @@ func _build_assault() -> void:
 ## Stage. Les deux axes ont des fréquences différentes (l'un en sinus, l'autre en
 ## cosinus plus lent) — sur la même, le tremblement se réduirait à un
 ## va-et-vient en diagonale.
+##
+## LES BANDES NOIRES NE TREMBLENT PAS. Elles ne font pas partie de l'image, elles
+## l'encadrent : un cadre qui bouge avec ce qu'il cadre ne se lit plus comme un
+## cadre, il se lit comme un décor de plus qui glisse. Leur porteur reçoit donc
+## le déplacement en sens inverse, en unités de DESIGN — il est sous le Stage,
+## dont l'échelle multiplie déjà tout ce qu'il contient.
 func _shake() -> void:
 	var base := Vector2.ZERO
 	if _shake_tween != null and _shake_tween.is_valid():
 		_shake_tween.kill()
-		stage.position = base
+		_hold_shake(base, Vector2.ZERO)
 	_shake_tween = create_tween()
 	_shake_tween.tween_method(
 		func(t: float) -> void:
 			var decay := 1.0 - t
-			stage.position = base + Vector2(
+			_hold_shake(base, Vector2(
 				sin(t * TAU * SHAKE_CYCLES),
 				cos(t * TAU * SHAKE_CYCLES * 0.7),
-			) * SHAKE_AMPLITUDE * STAGE_SCALE * decay,
+			) * SHAKE_AMPLITUDE * decay),
 		0.0, 1.0, SHAKE_DURATION,
 	)
-	_shake_tween.tween_callback(func() -> void: stage.position = base)
+	_shake_tween.tween_callback(func() -> void: _hold_shake(base, Vector2.ZERO))
+
+## Applique un décalage de secousse : au Stage en pixels d'écran, aux bandes en
+## unités de design et en sens inverse, pour qu'elles ne bougent pas.
+func _hold_shake(base: Vector2, offset: Vector2) -> void:
+	stage.position = base + offset * STAGE_SCALE
+	_dark_fixed.position = -offset
 
 ## La qualité du rythme alimente la synergie de l'équipe (cf. SynergyMeter). Le
 ## gain est ANIMÉ — aperçu blanc puis remplissage — contrairement au réglage
