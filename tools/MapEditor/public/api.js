@@ -134,6 +134,33 @@ export async function getBattleSounds() {
   return res.json();
 }
 
+// Dépose un son dans Audio/Battle/Actions et rend le chemin `res://` qui en
+// découle. Jumeau de `uploadBattleSheet` : corps brut, pas de multipart, et un
+// `imported` qui dit si Godot a pu enchaîner sa passe — à faux, le fichier est
+// là mais le jeu ne saura pas le jouer tant que l'éditeur Godot n'aura pas été
+// ouvert une fois.
+export async function uploadBattleSound(file, name, { overwrite = false } = {}) {
+  const query = `?name=${encodeURIComponent(name)}${overwrite ? "&overwrite=1" : ""}`;
+  const res = await fetch("/api/battle/sounds" + query, {
+    method: "POST",
+    // Le type déclaré par le navigateur peut être vide (certains .wav) : on
+    // retombe alors sur un type générique que la route accepte, l'extension et
+    // la signature faisant foi côté serveur.
+    headers: { "Content-Type": file.type || "application/octet-stream" },
+    body: file,
+  });
+  let body = null;
+  try {
+    body = await res.json();
+  } catch {
+    body = null;
+  }
+  if (!res.ok) {
+    throw new Error(body?.error || `Import refusé (HTTP ${res.status}).`);
+  }
+  return body;
+}
+
 // Planches disponibles sous Sprites/Battle/, avec l'URL qui les sert : le choix
 // d'une planche est une LISTE, et l'éditeur peut montrer l'image.
 export async function getBattleSheets() {

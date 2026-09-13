@@ -7,6 +7,7 @@ import {
   getBattleVocabulary,
   getBattleSheets,
   uploadBattleSheet,
+  uploadBattleSound,
   getBattleMomentLabels,
   saveBattleMomentLabels,
   getTexts,
@@ -102,6 +103,18 @@ function el(tag, className, text) {
   const node = document.createElement(tag);
   if (className) node.className = className;
   if (text !== undefined) node.textContent = text;
+  return node;
+}
+
+// Un champ que le moteur NE LIRA PAS dans l'état courant de l'action. Estompé
+// et non désactivé : sa valeur reste visible et modifiable — elle redeviendra
+// vivante si l'action change de nature — mais l'œil voit qu'elle ne compte pas.
+function markIgnored(node, why) {
+  node.classList.add("battle-field-ignored");
+  node.title = why;
+  const mark = el("span", "battle-field-ignored-mark", "ignoré");
+  mark.title = why;
+  node.appendChild(mark);
   return node;
 }
 
@@ -220,6 +233,44 @@ function momentLabel(key) {
   return momentLabels.labels?.[key] || key;
 }
 
+// Le mode de ciblage en clair. Les clés du moteur (`enemy`, `enemies`, `ally`,
+// `allies`, `self`) se ressemblent trop pour se relire d'un coup d'œil — et le
+// piège n'est pas le pluriel, c'est que le mode se lit RELATIVEMENT à celui qui
+// lance : « ally » désigne son propre camp, y compris quand c'est un ennemi qui
+// s'en sert. Les libellés le disent.
+function targetLabel(key) {
+  return momentLabels.target_labels?.[key] || key;
+}
+
+// LECTURE EN CLAIR D'UNE ACTION, en une ligne : ce qu'elle coûte, ce qu'elle
+// fait, sur qui, et si elle fait jouer la barre. Sert à deux endroits — l'index,
+// où elle évite d'ouvrir six fiches pour retrouver « le soin de groupe », et le
+// haut de la fiche, où elle relit les champs qu'on vient de régler.
+//
+// Elle suit les règles du moteur, pas les champs : un `heal` positif rend
+// l'action non offensive (cf. BattleAssault._effect_of), sa puissance et sa
+// nature de dégâts ne servent alors plus à rien — la ligne dit « soigne », pas
+// « soigne et frappe ».
+function actionSummary(section, action) {
+  const parts = [];
+  if (section === "ekos") {
+    const cost = Number(action.ap_cost || 0);
+    parts.push(cost > 0 ? `${cost} PA` : "gratuit");
+  }
+  const heal = Number(action.heal || 0);
+  if (heal > 0) {
+    parts.push(`soigne ${heal}`);
+  } else {
+    const power = Number(action.power || 0);
+    const nature = action.damage_type || "direct";
+    parts.push(power > 0 ? `${power} ${nature}` : `sans puissance (${nature})`);
+  }
+  parts.push(targetLabel(action.target || "enemy"));
+  const notes = (action.sequence || []).length;
+  parts.push(notes > 0 ? `${notes} note${notes > 1 ? "s" : ""}` : "sans séquence");
+  return parts.join(" · ");
+}
+
 // L'explication, elle, vient des commentaires de SOUND_MOMENTS dans
 // BattleAssault.gd : elle décrit un point RÉEL du déroulé de l'assaut, et
 // doit donc suivre le code, pas les renommages de l'auteur.
@@ -334,6 +385,122 @@ function soundLabel(path) {
   return path.split("/").pop() || path;
 }
 
+// Le dossier d'un son, tel qu'il s'affiche en intertitre de la liste.
+function soundFolder(path) {
+  const rel = path.startsWith("res://Audio/") ? path.slice("res://Audio/".length) : path;
+  const cut = rel.lastIndexOf("/");
+  return cut < 0 ? "Audio" : "Audio/" + rel.slice(0, cut);
+}
+
+// LA LISTE DES SONS EST RANGÉE PAR DOSSIER. À plat, elle aligne soixante-dix
+// fichiers étiquetés de leur seul nom : trouver le fracas d'un Eko oblige à
+// faire défiler toutes les répliques de Noah. Le dossier est précisément
+// l'information qui manque pour s'y retrouver, et c'est déjà celle qui range
+// les fichiers sur le disque.
+//
+// `current` rejoint la liste s'il n'y est pas, sous un intertitre qui le dit :
+// un chemin dont le fichier a disparu doit rester VISIBLE et sélectionné, sinon
+// le menu se rabat sur du vide et la prochaine modification de la fiche efface
+// le chemin sans que personne l'ait demandé.
+function soundGroups(current) {
+  const byFolder = new Map();
+  const push = (folder, value) => {
+    if (!byFolder.has(folder)) byFolder.set(folder, []);
+    byFolder.get(folder).push(value);
+  };
+  for (const path of sounds) push(soundFolder(path), path);
+  const named = [...byFolder.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  if (current && !sounds.includes(current)) {
+    named.unshift(["Introuvable sur le disque", [current]]);
+  }
+  return named.map(([label, values]) => ({ label, values }));
+}
+
+// Nom proposé pour un son importé. Depuis la ligne d'une action,
+// <action>_<moment> — même convention que pour les planches
+// (<unité>_<planche>), et elle range le dossier toute seule. Depuis la
+// bibliothèque, où rien ne dit à quoi le fichier servira, son propre nom.
+// Proposé et pas imposé : l'auteur peut garder le nom de son export.
+function suggestedSoundName(moment, file) {
+  const extension = (file.name.split(".").pop() || "wav").toLowerCase();
+  const owner = selection[activeSection];
+  const stem = moment && owner
+    ? `${owner}_${moment}`
+    : (file.name.split(".").slice(0, -1).join(".") || "son");
+  return `${stem}.${extension}`.toLowerCase().replace(/[^a-z0-9_.-]/g, "_");
+}
+
+// Bouton d'import posé SUR LA LIGNE du fichier : importer un son, c'est
+// remplacer celui de cette variante-là, pas en ajouter une. Le fichier part
+// dans Audio/Battle/Actions, la liste se recharge, et le chemin retenu est
+// celui que le serveur rend — jamais celui qu'on croit avoir écrit.
+function soundImportButton(moment, assign, onChanged, { label = null } = {}) {
+  const button = el("button", "battle-sound-import", label || "⇧");
+  button.type = "button";
+  button.title = label
+    ? "Déposer un son dans Audio/Battle/Actions, sans l'affecter à une action"
+    : "Importer un son depuis le disque et l'affecter à cette variante";
+  const picker = el("input");
+  picker.type = "file";
+  picker.accept = "audio/wav,audio/ogg,audio/mpeg,.wav,.ogg,.mp3";
+  picker.hidden = true;
+  picker.onchange = async () => {
+    const file = picker.files && picker.files[0];
+    // Remis à zéro tout de suite : sans ça, réimporter DEUX FOIS le même
+    // fichier ne déclencherait pas de second `change`.
+    picker.value = "";
+    if (!file) return;
+    const wanted = prompt(
+      "Nom du fichier dans Audio/Battle/Actions :", suggestedSoundName(moment, file)
+    );
+    if (!wanted) return;
+    button.disabled = true;
+    button.textContent = "…";
+    try {
+      let result;
+      try {
+        result = await uploadBattleSound(file, wanted);
+      } catch (err) {
+        // 409 : le fichier existe. Seule erreur qui vaut une seconde chance, et
+        // elle se pose explicitement — écraser un son déjà employé par une
+        // autre action ne se devine pas.
+        if (!String(err.message).includes("existe déjà")) throw err;
+        if (!confirm(`${err.message} L'écraser ?`)) return;
+        result = await uploadBattleSound(file, wanted, { overwrite: true });
+      }
+      sounds = await getBattleSounds();
+      assign(result.path);
+      if (!result.imported) {
+        alert(
+          "Le fichier est en place, mais Godot ne l'a pas importé : ouvre "
+          + "l'éditeur Godot une fois pour qu'il se joue en jeu."
+        );
+      }
+      onChanged();
+    } catch (err) {
+      alert(`Import impossible : ${err.message}`);
+    } finally {
+      button.disabled = false;
+      button.textContent = label || "⇧";
+    }
+  };
+  button.onclick = () => picker.click();
+  const holder = el("span", "battle-sound-import-holder");
+  holder.appendChild(button);
+  holder.appendChild(picker);
+  return holder;
+}
+
+// Les lanceurs auxquels une entrée est réservée. Vide = tout le monde. Accepte
+// un id seul comme une liste, exactement comme `sound` accepte un chemin seul —
+// c'est la même commodité de lecture à la main, et le moteur en fait autant
+// (cf. BattleData._performers_of).
+function soundUnits(entry) {
+  const declared = entry.units;
+  if (Array.isArray(declared)) return declared.filter(Boolean);
+  return declared ? [declared] : [];
+}
+
 function soundPaths(entry) {
   if (Array.isArray(entry.sound)) return entry.sound;
   return entry.sound ? [entry.sound] : [];
@@ -359,13 +526,18 @@ function setSoundPaths(entry, paths) {
 // le moment d'une entrée la DÉPLACE donc d'une liste à l'autre, sans que
 // l'auteur ait à savoir qu'il y en a deux.
 // La famille des sons portés par une ACTION (attaque de base, Eko, objet).
-function actionFamily(action) {
+//
+// `performers` = les personnages qui peuvent la lancer. Une entrée peut leur
+// être RÉSERVÉE (champ `units`), ce qui permet à deux personnages de partager un
+// Eko sans partager le cri qu'ils poussent en le lançant.
+function actionFamily(action, performers = []) {
   return {
     owner: action,
     moments: vocabulary.moments,
     label: "Pendant le geste",
     fallback: "hit",
     unreachable: unreachableMoments(action),
+    performers,
   };
 }
 
@@ -439,24 +611,67 @@ function soundRow(family, entry, index, families, ctx) {
     }, { labelOf: momentLabel, titleOf: momentNote, groups })
   );
 
+  // POUR QUI. Un Eko est partagé par tous ceux qui l'ont appris, mais la voix
+  // ne l'est pas : cette liste réserve l'entrée à un personnage. Le moteur fait
+  // passer les entrées nommées DEVANT celles de tout le monde (cf.
+  // BattleData.sounds_of), donc un son réservé remplace le son commun pour ce
+  // personnage-là, et les autres gardent le commun.
+  //
+  // Seulement sur une action : les sons d'une unité n'ont pas de lanceur à
+  // départager, c'est elle.
+  if (family.performers && family.performers.length > 0) {
+    const reserved = soundUnits(entry);
+    const current = reserved[0] || "";
+    // Un id réservé à quelqu'un qui ne connaît plus l'action reste AFFICHÉ :
+    // sans ça, la liste se rabat sur « tout le monde » et la prochaine
+    // modification de la fiche élargirait le son sans que personne l'ait
+    // demandé.
+    const offered = family.performers.includes(current) || current === ""
+      ? family.performers
+      : [current, ...family.performers];
+    // La rangée passe à quatre colonnes : sans ça la corbeille, quatrième
+    // enfant d'une grille qui n'en attend que trois, tombe à la ligne.
+    row.classList.add("battle-sound-row-performer");
+    row.appendChild(
+      selectInput(offered, current, (value) => {
+        if (value) entry.units = [value];
+        else delete entry.units;
+        onChanged();
+      }, {
+        empty: "Tout le monde",
+        labelOf: (unitId) => localizedName("units", unitId).label || unitId,
+        titleOf: (unitId) => (unitId
+          ? `Seulement quand ${unitId} lance cette action`
+          : "Pour tous ceux qui lancent cette action"),
+      })
+    );
+  }
+
   // Plusieurs fichiers sur une entrée = des VARIANTES tirées au hasard, pas
   // deux sons joués ensemble. Le libellé le dit, parce que la distinction ne
   // se devine pas d'une liste.
   const files = el("div", "battle-sound-files");
   const paths = soundPaths(entry);
+  const moment = entry.at || family.fallback;
+  const setPath = (fileIndex, value) => {
+    const next = soundPaths(entry);
+    next[fileIndex] = value;
+    setSoundPaths(entry, next);
+  };
   paths.forEach((path, fileIndex) => {
     const line = el("div", "battle-sound-file");
     const picker = selectInput(sounds, path, (value) => {
-      const next = soundPaths(entry);
-      next[fileIndex] = value;
-      setSoundPaths(entry, next);
+      setPath(fileIndex, value);
       onChanged();
-    }, { labelOf: soundLabel });
+    }, { labelOf: soundLabel, titleOf: (value) => value, groups: soundGroups(path) });
     line.appendChild(picker);
     // Le bouton lit la valeur COURANTE du menu, pas celle capturée au montage :
     // changer de fichier puis écouter doit faire entendre le nouveau, et le
     // redessin de la liste n'arrive qu'après la sauvegarde.
     line.appendChild(playButton(() => picker.value));
+    // Choisir, écouter, importer : les trois gestes du même fichier, sur la
+    // même ligne. Importer AFFECTE aussitôt — c'est ce qu'on vient faire.
+    line.appendChild(soundImportButton(moment, (value) => setPath(fileIndex, value), onChanged));
     const remove = el("button", "battle-chip-remove", "×");
     remove.type = "button";
     remove.title = "Retirer ce fichier";
@@ -469,6 +684,18 @@ function soundRow(family, entry, index, families, ctx) {
     line.appendChild(remove);
     files.appendChild(line);
   });
+
+  // Une entrée SANS fichier reste importable : elle affiche la ligne d'import
+  // seule, plutôt qu'un « + variante » qui obligerait à passer par un son
+  // quelconque avant de déposer le sien.
+  if (paths.length === 0) {
+    const line = el("div", "battle-sound-file");
+    line.appendChild(el("span", "battle-inline-hint", "Aucun fichier."));
+    line.appendChild(
+      soundImportButton(moment, (value) => setSoundPaths(entry, [value]), onChanged)
+    );
+    files.appendChild(line);
+  }
 
   const addFile = el("button", "battle-chip-add", "+ variante");
   addFile.type = "button";
@@ -532,19 +759,24 @@ function actionFields(action, fields, animations, onChanged) {
         selectInput(vocabulary.targets, action.target || "enemy", (v) => {
           action.target = v;
           onChanged();
-        }),
+        }, { labelOf: targetLabel, titleOf: (key) => key }),
         "Lu RELATIVEMENT à celui qui agit : « ally » désigne son propre camp."
       )
     );
   }
 
-  grid.appendChild(
-    objectNumberField(action, "power", "Puissance", {
-      optional: true,
-      min: 0,
-      onCommit: onChanged,
-    })
-  );
+  // UN SOIN IGNORE LA PUISSANCE ET LA NATURE DES DÉGÂTS : le moteur bascule sur
+  // `heal` dès qu'il est positif (cf. BattleAssault._effect_of) et ne lit plus
+  // les deux autres. Les laisser vifs laissait croire à une action qui frappe ET
+  // soigne — un Eko à `heal: 18` et `power: 14` n'inflige rien du tout.
+  const heals = Number(action.heal || 0) > 0;
+  const powerField = objectNumberField(action, "power", "Puissance", {
+    optional: true,
+    min: 0,
+    onCommit: onChanged,
+  });
+  if (heals) markIgnored(powerField, "Ignorée : cette action soigne.");
+  grid.appendChild(powerField);
 
   if (fields.includes("heal")) {
     grid.appendChild(
@@ -557,17 +789,17 @@ function actionFields(action, fields, animations, onChanged) {
     );
   }
 
-  grid.appendChild(
-    field(
-      "Nature",
-      selectInput(vocabulary.damage_types, action.damage_type, (v) => {
-        if (v) action.damage_type = v;
-        else delete action.damage_type;
-        onChanged();
-      }, { empty: "(aucune)" }),
-      "direct retire les PV tout de suite, injury les met en attente. Choisit aussi l'icône de la rangée."
-    )
+  const natureField = field(
+    "Nature",
+    selectInput(vocabulary.damage_types, action.damage_type, (v) => {
+      if (v) action.damage_type = v;
+      else delete action.damage_type;
+      onChanged();
+    }, { empty: "(aucune)" }),
+    "direct retire les PV tout de suite, injury les met en attente. Choisit aussi l'icône de la rangée."
   );
+  if (heals) markIgnored(natureField, "Ignorée : cette action soigne.");
+  grid.appendChild(natureField);
 
   grid.appendChild(
     field(
@@ -690,10 +922,12 @@ function actionBlock(
   block.appendChild(sectionTitle("Séquence de rythme"));
   block.appendChild(sequenceEditor(action, onChanged));
   if (sounds) {
-    block.appendChild(sectionTitle("Sons", "aux six moments du geste"));
+    block.appendChild(
+      sectionTitle("Sons", "de CETTE action, aux six moments de son geste")
+    );
     const unreachable = unreachableLine(action);
     if (unreachable) block.appendChild(unreachable);
-    block.appendChild(soundsEditor([actionFamily(action)], onChanged));
+    block.appendChild(soundsEditor([actionFamily(action, performers)], onChanged));
   }
   return block;
 }
@@ -1624,9 +1858,97 @@ function renderUnit(id, unit, refresh) {
     ekos.appendChild(label);
   }
   row.appendChild(ekos);
+  row.appendChild(knownEkoSounds(id, unit));
 
   row.appendChild(behaviourBlock(id, unit, refresh));
   return row;
+}
+
+// Fichiers qu'une action fait entendre à un moment donné, POUR UN LANCEUR DONNÉ.
+//
+// Même règle que le moteur, et pas une approximation : les entrées réservées à
+// ce personnage passent devant celles de tout le monde, et `pick()` s'arrête à
+// la première qui porte le moment (cf. BattleData.sounds_of et pick). Ce qu'on
+// affiche ici est donc ce qu'on entendra, pas la liste de ce qui existe.
+function soundsAt(action, moment, performer = "") {
+  const matching = (action?.sounds || []).filter((entry) => (entry.at || "hit") === moment);
+  const applies = matching.filter((entry) => {
+    const only = soundUnits(entry);
+    return only.length === 0 || (performer !== "" && only.includes(performer));
+  });
+  const named = applies.filter((entry) => soundUnits(entry).length > 0);
+  const chosen = named.length > 0 ? named[0] : applies[0];
+  return chosen ? soundPaths(chosen) : [];
+}
+
+// CE QUE CHAQUE EKO CONNU FAIT ENTENDRE QUAND IL PART, vu depuis la fiche du
+// personnage — avec le raccourci pour aller le régler.
+//
+// POURQUOI ICI, alors que le réglage vit sur l'Eko. La question se pose dans ce
+// sens-là : « quand Noah lance Fulgura, qu'est-ce qu'on entend ? ». Y répondre
+// obligeait à ouvrir les Ekos un par un pour voir lequel porte un son, et rien
+// sur cette page ne disait que le son d'un Eko se règle sur l'Eko. Le tableau
+// le montre et le dit.
+//
+// Le son appartient À LA COMPÉTENCE et pas à celui qui la lance : Noah et Iris
+// qui connaissent le même Eko entendent le même fracas. C'est le même parti
+// pris que la puissance et la séquence, qui vivent aussi sur l'Eko.
+function knownEkoSounds(unitId, unit) {
+  const block = el("div", "battle-block");
+  const known = unit.ekos || [];
+  block.appendChild(
+    sectionTitle(
+      "Son du geste, par Eko",
+      "ce que CE personnage fait entendre : le son commun de l'Eko, ou le sien s'il en a un"
+    )
+  );
+  if (known.length === 0) {
+    block.appendChild(el("p", "battle-inline-hint", "Aucun Eko connu."));
+    return block;
+  }
+  const table = el("div", "battle-eko-sounds");
+  for (const ekoId of known) {
+    const eko = entriesOf("ekos")[ekoId];
+    const line = el("div", "battle-eko-sound");
+    const open = el("button", "battle-eko-link", localizedName("ekos", ekoId).label || ekoId);
+    open.type = "button";
+    open.title = `Ouvrir « ${ekoId} » pour régler ses sons`;
+    open.onclick = () => goToEntry("ekos", ekoId);
+    line.appendChild(open);
+    // L'ID À CÔTÉ DU NOM, comme dans l'index : les cases à cocher juste
+    // au-dessus cochent des ids (`tempeste`) et le nom affiché est celui du
+    // catalogue de textes (« Gale »). Sans le rappel, les deux listes ne se
+    // recoupent pas à la lecture.
+    line.appendChild(el("span", "battle-index-id", ekoId));
+    if (!eko) {
+      line.appendChild(el("span", "battle-warning", `« ${ekoId} » n'est pas au catalogue.`));
+    } else {
+      const paths = soundsAt(eko, "gesture", unitId);
+      if (paths.length === 0) {
+        line.appendChild(el("span", "battle-inline-hint", "aucun son au geste"));
+      } else {
+        for (const path of paths) {
+          const file = el("span", "battle-eko-sound-file");
+          file.appendChild(playButton(() => path));
+          const name = el("span", "battle-sound-path", soundLabel(path));
+          name.title = path;
+          file.appendChild(name);
+          line.appendChild(file);
+        }
+        if (paths.length > 1) {
+          line.appendChild(el("span", "battle-inline-hint", "variantes tirées au hasard"));
+        }
+        // Dire QUAND le son est réservé : sans ça, deux personnages affichent
+        // deux fichiers différents sans qu'on sache d'où vient la différence.
+        if (soundsAt(eko, "gesture", "").join() !== paths.join()) {
+          line.appendChild(el("span", "battle-badge", "à lui"));
+        }
+      }
+    }
+    table.appendChild(line);
+  }
+  block.appendChild(table);
+  return block;
 }
 
 // Le bloc `behaviour` ne concerne QUE les ennemis : il dit comment ils
@@ -1711,13 +2033,40 @@ function renderAction(section, id, action, refresh) {
   const row = el("div", "battle-row");
   row.appendChild(rowHead(section, id, null));
   row.appendChild(nameLine(section, id));
+  const performers = performersOf(section, id);
+  row.appendChild(el("p", "battle-action-summary", actionSummary(section, action)));
+  if (section === "ekos") row.appendChild(knownByLine(id, performers));
   const fields = section === "ekos" ? ["ap_cost", "target", "heal"] : ["target", "heal"];
   row.appendChild(
-    actionBlock("Effet", action, fields, allAnimationNames(), refresh, {
-      performers: performersOf(section, id),
-    })
+    actionBlock("Effet", action, fields, allAnimationNames(), refresh, { performers })
   );
   return row;
+}
+
+// QUI CONNAÎT CET EKO, et le chemin pour aller le voir. Le pendant exact du
+// tableau « Son du geste, par Eko » de la fiche d'unité : un Eko est partagé, et
+// la conséquence d'un réglage fait ici se lit chez ceux qui le lancent — sa
+// puissance, sa séquence et son son valent pour tous.
+//
+// Un Eko que personne ne connaît n'est pas une faute : il peut être en cours
+// d'écriture. Mais il ne se joue jamais, et il vaut mieux que ce soit dit.
+function knownByLine(id, performers) {
+  const line = el("p", "battle-known-by");
+  if (performers.length === 0) {
+    line.appendChild(
+      el("span", "battle-warning", "Personne ne connaît cet Eko : il ne se lancera jamais.")
+    );
+    return line;
+  }
+  line.appendChild(el("span", "battle-inline-hint", "Connu de"));
+  for (const unitId of performers) {
+    const open = el("button", "battle-eko-link", localizedName("units", unitId).label || unitId);
+    open.type = "button";
+    open.title = `Ouvrir « ${unitId} »`;
+    open.onclick = () => goToEntry("units", unitId);
+    line.appendChild(open);
+  }
+  return line;
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -1805,9 +2154,19 @@ function momentTable(keys) {
 }
 
 function renderSoundLibrary() {
-  listEl.appendChild(el("h3", "battle-subtitle", "Fichiers disponibles"));
+  const title = el("div", "battle-library-head");
+  title.appendChild(el("h3", "battle-subtitle", "Fichiers disponibles"));
+  // Importer DEPUIS LA BIBLIOTHÈQUE, en plus de la ligne d'un son : on ne
+  // prépare pas toujours dans le même ordre. Tantôt on part d'un Eko et on lui
+  // cherche un fracas, tantôt on rentre avec un dossier d'exports et on veut
+  // les déposer d'un bloc avant de décider à quoi ils serviront. Ici le fichier
+  // rejoint la liste, sans être affecté à quoi que ce soit.
+  title.appendChild(
+    soundImportButton(null, () => {}, () => renderList(), { label: "Importer un son…" })
+  );
+  listEl.appendChild(title);
   listEl.appendChild(
-    el("p", "hint", `${sounds.length} fichiers sous Audio/. Le bouton les joue tels quels, sans le mixage du jeu (ni volume de musique, ni atténuation).`)
+    el("p", "hint", `${sounds.length} fichiers sous Audio/. Le bouton les joue tels quels, sans le mixage du jeu (ni volume de musique, ni atténuation). Ce qu'on importe ici atterrit dans Audio/Battle/Actions.`)
   );
   const files = el("div", "battle-sound-library");
   for (const path of sounds) {
@@ -1895,6 +2254,12 @@ function indexEntry(id, entry) {
   const { label } = localizedName(activeSection, id);
   text.appendChild(el("span", "battle-index-name", label || id));
   text.appendChild(el("span", "battle-index-id", id));
+  // La lecture en clair sous le nom : l'index sert à RETROUVER une action, et
+  // « Rosee » ne dit pas que c'est le soin unitaire à 1 PA. Sans elle, chercher
+  // « le soin de groupe » revient à ouvrir les fiches une par une.
+  if (activeSection === "ekos" || activeSection === "items") {
+    text.appendChild(el("span", "battle-index-summary", actionSummary(activeSection, entry)));
+  }
   item.appendChild(text);
   if (activeSection === "units" && entry.behaviour) {
     item.appendChild(el("span", "battle-badge", "ennemi"));
@@ -1951,6 +2316,20 @@ function addButton() {
     await persist(activeSection);
   };
   return button;
+}
+
+// Ouvre une entrée d'une AUTRE section. Les catalogues se citent l'un l'autre —
+// une unité connaît des Ekos — et la question « qu'est-ce que ça fait entendre,
+// ça ? » se pose depuis la fiche qui cite, pas depuis celle qui porte le
+// réglage. L'onglet suit, sans quoi la page changerait de contenu sans dire
+// pourquoi.
+function goToEntry(section, id) {
+  activeSection = section;
+  selection[section] = id;
+  tabsEl
+    .querySelectorAll(".battle-tab")
+    .forEach((t) => t.classList.toggle("selected", t.dataset.section === section));
+  renderList();
 }
 
 for (const tab of tabsEl.querySelectorAll(".battle-tab")) {

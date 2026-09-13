@@ -24,6 +24,12 @@ const PREVIEWS_DIR = path.join(LOCALIZATION_DIR, "previews");
 const FONTS_DIR = path.join(PROJECT_ROOT, "Fonts");
 const BATTLE_DIR = path.join(PROJECT_ROOT, "Battle");
 const AUDIO_DIR = path.join(PROJECT_ROOT, "Audio");
+// Où atterrissent les sons déposés depuis la page « Combat ». Un dossier à part
+// des voix (`Audio/Battle/Voices`) et des verdicts de rythme (`Audio/Battle`) :
+// ce sont les sons que PORTE UNE ACTION — le fracas d'un Eko, le bruit d'un
+// objet qu'on débouche — et les mélanger aux répliques des personnages rendrait
+// les deux listes illisibles. Le dossier est créé au premier import.
+const BATTLE_SOUNDS_DIR = path.join(AUDIO_DIR, "Battle", "Actions");
 const BATTLE_ASSAULT_PATH = path.join(SCRIPTS_DIR, "Battle", "BattleAssault.gd");
 const RHYTHM_BAR_PATH = path.join(SCRIPTS_DIR, "Battle", "UI", "RhythmBar.gd");
 const BATTLE_DATA_PATH = path.join(SCRIPTS_DIR, "Battle", "BattleData.gd");
@@ -278,6 +284,73 @@ app.get("/api/battle/sounds", async (req, res) => {
     .sort();
   res.json(sounds);
 });
+
+// Nom de fichier acceptable pour un son. Mêmes règles que pour une planche, et
+// pour la même raison : un nom refusé se répare à la main, un nom silencieusement
+// transformé se retrouve dans `ekos.json` sans que personne ne l'ait voulu.
+function isValidSoundName(name) {
+  return /^[A-Za-z0-9_-]+\.(wav|ogg|mp3)$/.test(name);
+}
+
+// Signature du format, vérifiée sur les premiers octets. Un fichier mal choisi
+// — un MP3 renommé en .wav, un dossier d'export à moitié écrit — passerait
+// autrement jusque dans le catalogue et n'échouerait qu'au combat, sur un son
+// qui ne part pas.
+function hasSoundSignature(name, body) {
+  const head = body.subarray(0, 12);
+  if (name.endsWith(".wav")) {
+    return head.subarray(0, 4).toString("latin1") === "RIFF"
+      && head.subarray(8, 12).toString("latin1") === "WAVE";
+  }
+  if (name.endsWith(".ogg")) return head.subarray(0, 4).toString("latin1") === "OggS";
+  // MP3 : soit une étiquette ID3 en tête, soit directement une trame (onze bits
+  // à 1). Les deux existent dans la nature, un export sans tags n'a pas d'ID3.
+  return head.subarray(0, 3).toString("latin1") === "ID3"
+    || (head[0] === 0xff && (head[1] & 0xe0) === 0xe0);
+}
+
+// Import d'un SON depuis le disque de l'auteur, jumeau de celui des planches :
+// corps brut plutôt que multipart, même contrôle de nom, même 409 sur un
+// fichier déjà là, même passe d'import de Godot derrière — sans elle le fichier
+// est sur le disque mais le jeu ne sait pas le charger.
+app.post(
+  "/api/battle/sounds",
+  express.raw({ type: ["audio/*", "application/ogg", "application/octet-stream"], limit: "24mb" }),
+  async (req, res) => {
+    const name = String(req.query.name || "").toLowerCase();
+    if (!isValidSoundName(name)) {
+      return res.status(400).json({
+        error: "Nom de son invalide : lettres, chiffres, _ et -, extension .wav, .ogg ou .mp3.",
+      });
+    }
+    const body = req.body;
+    if (!Buffer.isBuffer(body) || body.length === 0) {
+      return res.status(400).json({ error: "Corps vide : envoie le fichier en audio/*." });
+    }
+    if (!hasSoundSignature(name, body)) {
+      return res.status(400).json({
+        error: `Ce fichier ne ressemble pas à un ${name.split(".").pop().toUpperCase()}.`,
+      });
+    }
+    const target = path.join(BATTLE_SOUNDS_DIR, name);
+    if (fsSync.existsSync(target) && req.query.overwrite !== "1") {
+      return res.status(409).json({ error: `« ${name} » existe déjà.` });
+    }
+    try {
+      await fs.mkdir(BATTLE_SOUNDS_DIR, { recursive: true });
+      await fs.writeFile(target, body);
+    } catch (err) {
+      return res.status(500).json({ error: String(err) });
+    }
+    const imported = await importWithGodot();
+    const rel = path.relative(AUDIO_DIR, target).split(path.sep).join("/");
+    res.json({
+      path: "res://Audio/" + rel,
+      url: "/audio/" + rel,
+      imported: imported && fsSync.existsSync(target + ".import"),
+    });
+  }
+);
 
 // Planches disponibles pour une animation d'unité. Elles vivent toutes sous
 // Sprites/Battle/ ; les servir en liste évite de taper un chemin `res://` à la

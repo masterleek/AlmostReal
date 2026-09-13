@@ -1039,6 +1039,90 @@ button:hover { border-color: var(--accent); }
 }
 
 .battle-play:hover { border-color: var(--accent); }
+
+/* Le bouton d'import d'un son vit sur la même ligne que le choix et l'écoute :
+   même gabarit qu'eux, pour que les trois gestes du même fichier se lisent
+   comme une seule commande. L'accent le distingue : il TOUCHE AU DISQUE, là où
+   ses voisins ne font que lire. */
+.battle-sound-import {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--accent);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 1;
+  padding: 4px 7px;
+  flex: none;
+}
+
+.battle-sound-import:hover { border-color: var(--accent); }
+.battle-sound-import:disabled { color: #9aa0ab; cursor: progress; }
+.battle-sound-import-holder { display: inline-flex; }
+
+/* Le titre de la bibliothèque et son bouton d'import sur la même ligne : le
+   bouton agit sur la liste qui suit, il doit se lire avec elle. */
+.battle-library-head { display: flex; align-items: center; gap: 12px; }
+
+/* Ce que chaque Eko connu fait entendre au geste, vu depuis la fiche du
+   personnage : une ligne par Eko, le nom cliquable à gauche, le fichier et son
+   bouton d'écoute à droite. */
+.battle-eko-sounds { display: flex; flex-direction: column; gap: 4px; }
+
+.battle-eko-sound {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Cliquable, donc souligné : c'est une NAVIGATION vers une autre fiche, pas une
+   commande — un bouton plein le ferait passer pour une action sur celle-ci. */
+.battle-eko-link {
+  background: none;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 0;
+  text-decoration: underline;
+  min-width: 90px;
+  text-align: left;
+}
+
+.battle-eko-sound-file { display: inline-flex; align-items: center; gap: 4px; }
+
+/* La lecture en clair d'une action, sous son nom dans l'index : plus discrète
+   que l'id, qu'elle ne doit pas concurrencer. */
+.battle-index-summary {
+  display: block;
+  color: #9aa0ab;
+  font-size: 10px;
+  margin-top: 2px;
+}
+
+/* La même lecture en tête de fiche, en pleine taille : c'est le résumé de ce
+   qu'on va régler juste en dessous. */
+.battle-action-summary {
+  color: var(--text);
+  font-size: 12px;
+  margin: 0 0 6px;
+}
+
+.battle-known-by { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 0 0 8px; }
+
+/* Un champ que le moteur ne lira pas dans l'état courant : estompé, pas
+   désactivé — la valeur reste modifiable, elle redeviendra vivante si l'action
+   change de nature. */
+.battle-field-ignored { opacity: 0.45; }
+
+.battle-field-ignored-mark {
+  display: inline-block;
+  margin-left: 6px;
+  font-size: 10px;
+  font-style: italic;
+  color: #9aa0ab;
+}
 /* ---------- Planches d'animation ---------- */
 
 .battle-anims { display: flex; flex-direction: column; gap: 8px; }
@@ -1523,6 +1607,11 @@ button:hover { border-color: var(--accent); }
   align-items: start;
   gap: 6px;
 }
+
+/* Une rangée de son d'ACTION porte une colonne de plus : à qui l'entrée est
+   réservée. Sans elle, la corbeille — quatrième enfant d'une grille qui n'en
+   attend que trois — tomberait à la ligne. */
+.battle-sound-row-performer { grid-template-columns: 120px 130px 1fr auto; }
 
 .battle-sound-files {
   display: flex;

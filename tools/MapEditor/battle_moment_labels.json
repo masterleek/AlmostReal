@@ -27,5 +27,12 @@
     "hurt": "Blessé (encaisse un coup)",
     "dying": "Agonie",
     "dead": "Mort (pose tenue)"
+  },
+  "target_labels": {
+    "enemy": "un ennemi",
+    "enemies": "tous les ennemis",
+    "ally": "un allié",
+    "allies": "tout son camp",
+    "self": "soi-même"
   }
 }
