@@ -137,10 +137,6 @@
           {
             "at": "rhythm",
             "sound": "res://Audio/Battle/Voices/noah_lets_go.wav"
-          },
-          {
-            "at": "hit",
-            "sound": []
           }
         ]
       },

@@ -21,7 +21,23 @@
         "circle"
       ],
       "damage_type": "direct",
-      "animation": "atk"
+      "animation": "atk",
+      "sounds": [
+        {
+          "at": "approach",
+          "sound": "res://Audio/Battle/Voices/noah_now.wav",
+          "units": [
+            "noah"
+          ]
+        },
+        {
+          "at": "approach",
+          "sound": "res://Audio/Battle/Voices/iris_lets_go.wav",
+          "units": [
+            "iris"
+          ]
+        }
+      ]
     },
     "tempeste": {
       "ap_cost": 2,
