@@ -33,7 +33,7 @@ const NUMBER_SIZE := 18
 ## est décalé d'environ un quart du corps vers le bas dans sa boîte (mesuré :
 ## +2 px à 12, +3 px à 15, +4 px à 18).
 const HP_LABEL_POS := Vector2(2, -2)
-const HP_NUMBER_POS := Vector2(28, -9)
+const HP_NUMBER_POS := Vector2(28, -6)
 const HP_BAR_POS := Vector2(2, 8)
 const PORTRAIT_POS := Vector2(1, 14)
 const AP_LABEL_POS := Vector2(4, 34)
