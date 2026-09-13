@@ -286,18 +286,20 @@ func _refresh() -> void:
 ##
 ## DEUX repères différents, et c'est voulu. En ORDONNÉE, le point « pieds » :
 ## c'est le seul repère indépendant de la taille de cellule du personnage, et
-## la maquette pose bien la plaque au sol. En ABSCISSE, le centre du DESSIN :
-## les pieds sont relevés sur l'ellipse d'ombre, qui n'est PAS sous le milieu
-## du corps sur toutes les planches — sur le `standby` de Noah (celui qu'il
-## tient une fois son action choisie) le dessin est décalé de 11,5 px vers la
-## droite, et le nom se retrouvait franchement à côté de lui. Mesuré sur les
-## planches en service : `idle` est centré à un demi-pixel près, `standby` à
-## +11 px pour les deux alliés.
+## la maquette pose bien la plaque au sol. En ABSCISSE, le centre de l'OMBRE
+## (cf. UnitSprite.ground_centre) : ni le point « pieds », qui est le milieu de
+## la cellule de repos et tombe 7 px à gauche de Noah, ni le centre du DESSIN,
+## qui part avec l'épée qu'il dégaine sur son `standby`.
+##
+## Relevé sur la troisième vignette de `mockup_preparation_select_items.png`,
+## où Noah est justement la cible d'un objet : ombre centrée en 454,5, nom en
+## 455,0, jauge en 455,5 — et silhouette, épée comprise, en 461,5. La plaque
+## suit l'ombre.
 ##
 ## Arrondi : la plaque porte du texte, et une abscisse à virgule devient 2 px
 ## de flou une fois le Stage agrandi ×4.
 func _plate_anchor(sprite: UnitSprite) -> Vector2:
-	return Vector2(roundi(sprite.art_centre().x), sprite.position.y)
+	return Vector2(roundi(sprite.ground_centre().x), sprite.position.y)
 
 func _process(_delta: float) -> void:
 	_hold_plate_scale()

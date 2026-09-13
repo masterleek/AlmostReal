@@ -23,6 +23,7 @@ extends Node2D
 
 const HpBar = preload("res://Scripts/Battle/UI/HpBar.gd")
 const BattleUnit = preload("res://Scripts/Battle/BattleUnit.gd")
+const UnitSprite = preload("res://Scripts/Battle/Stage/UnitSprite.gd")
 
 ## Le même shader que la surbrillance de ciblage et que la tuile de révélation
 ## du worldmap : blanchir une silhouette sans toucher à sa transparence est
@@ -42,6 +43,10 @@ const WHITE_TINT := preload("res://Shaders/white_tint.gdshader")
 ## l'ombre du bas de sa cellule, un point « pieds » à 165. Le haut de la jauge
 ## est donc UN PIXEL AU-DESSUS des pieds, et non dix en dessous.
 const BAR_WIDTH := 32
+## L'ABSCISSE se compte depuis le centre de l'OMBRE et non depuis le point
+## « pieds » : celui-ci est le milieu de la cellule de repos, qui tombe sept
+## pixels à gauche de Noah dès qu'il tient son épée. Même partage que la plaque
+## de ciblage, et pour la même raison (cf. TargetSelector._plate_anchor).
 const BAR_OFFSET := Vector2(-BAR_WIDTH / 2, -1)
 
 ## Voir TargetSelector.DARK_CUTOFF : les planches portent leur ombre au sol DANS
@@ -74,7 +79,7 @@ const BAR_HOLD := 0.75
 ## Durée de l'effacement de la jauge, une fois l'attente écoulée.
 const BAR_FADE := 0.1
 
-var _sprite: CanvasItem
+var _sprite: UnitSprite
 var _bar: HpBar
 var _material: ShaderMaterial
 ## Un seul tween de jauge à la fois : un second coup pendant que la précédente
@@ -84,7 +89,7 @@ var _flash_tween: Tween
 
 ## `sprite` est celui de l'unité suivie : il reçoit l'éclat, et sa `position`
 ## (le point « pieds », cf. UnitSprite) donne l'ancrage de la jauge.
-func setup(sprite: CanvasItem) -> void:
+func setup(sprite: UnitSprite) -> void:
 	_sprite = sprite
 
 	_material = ShaderMaterial.new()
@@ -133,7 +138,9 @@ func _show_bar(unit: BattleUnit, before_acquired: float, injury: bool) -> void:
 		_bar_tween.kill()
 	# Position relue à chaque coup : l'unité se déplace pendant l'assaut (elle
 	# va au contact), la jauge doit la suivre là où elle est touchée.
-	_bar.position = (_sprite.position + BAR_OFFSET).round()
+	_bar.position = Vector2(
+		_sprite.ground_centre().x + BAR_OFFSET.x, _sprite.position.y + BAR_OFFSET.y
+	).round()
 	_bar.play_hit(before_acquired, unit.solid_ratio(), unit.hp_ratio(), injury)
 	_bar.visible = true
 	_bar_tween = create_tween()

@@ -178,6 +178,81 @@ func art_centre() -> Vector2:
 		centre.x = _cell_size().x - centre.x
 	return position + offset + centre
 
+## Centre de l'OMBRE AU SOL, dans les coordonnées du parent.
+##
+## CE N'EST PAS LE CENTRE DU DESSIN, et c'est tout l'intérêt. `art_centre()`
+## englobe ce que le personnage TIENT : la grande épée que Noah dégaine sur son
+## `standby` s'étend à bout de bras, et le milieu du rectangle utile part avec
+## elle. Ce qui doit avoir l'air POSÉ PAR TERRE — la plaque de ciblage, nom et
+## jauge — se cale donc ici.
+##
+## La maquette tranche au demi-pixel près : sur la troisième vignette de
+## `mockup_preparation_select_items.png`, l'ombre de Noah est centrée en 454,5,
+## son nom en 455,0 et sa jauge en 455,5, alors que sa silhouette (épée
+## comprise) l'est en 461,5. C'est l'ombre, pas le dessin.
+##
+## L'ombre se reconnaît à ce qu'elle est : du NOIR PUR posé en transparence
+## partielle. C'est la convention de toutes les planches du jeu, et c'est déjà
+## celle sur laquelle les ancrages ont été relevés — le point au sol d'une
+## planche se mesure sur son ellipse d'ombre.
+##
+## Repli sur le centre du dessin quand une planche n'a pas d'ombre : c'est le
+## comportement d'avant cette mesure, et il vaut mieux qu'un point inventé.
+func ground_centre() -> Vector2:
+	var rect := _shadow_rect()
+	if rect.size.x <= 0:
+		return art_centre()
+	var centre := Vector2(rect.position) + Vector2(rect.size) * 0.5
+	# Même correction de miroir que `art_centre` : `flip_h` retourne la texture
+	# dans la cellule sans déplacer le nœud.
+	if flip_h:
+		centre.x = _cell_size().x - centre.x
+	return position + offset + centre
+
+## Un pixel est de l'ombre s'il est noir et translucide. Le seuil est un
+## arrondi de lecture, pas une tolérance de teinte : les ombres sont écrites en
+## 0,0,0 exactement.
+const SHADOW_INK := 0.01
+
+## Rect de l'ombre, mis en cache par planche comme le rect utile : lire l'image
+## d'une texture est cher et une planche donnée a toujours la même ombre.
+## Rect vide quand il n'y en a pas.
+static var _shadow_rects: Dictionary = {}
+
+func _shadow_rect() -> Rect2i:
+	if _shadow_rects.has(sheet_path):
+		return _shadow_rects[sheet_path]
+	var rect := Rect2i()
+	var frame: Texture2D = sprite_frames.get_frame_texture("default", 0)
+	if frame != null:
+		var image := frame.get_image()
+		if image != null:
+			rect = _ink_rect(image)
+	_shadow_rects[sheet_path] = rect
+	return rect
+
+## Rectangle englobant les pixels d'ombre de `image`.
+static func _ink_rect(image: Image) -> Rect2i:
+	var size := image.get_size()
+	var min_x := size.x
+	var max_x := -1
+	var min_y := size.y
+	var max_y := -1
+	for y in size.y:
+		for x in size.x:
+			var pixel := image.get_pixel(x, y)
+			if pixel.a <= 0.0 or pixel.a >= 1.0:
+				continue
+			if pixel.r > SHADOW_INK or pixel.g > SHADOW_INK or pixel.b > SHADOW_INK:
+				continue
+			min_x = mini(min_x, x)
+			max_x = maxi(max_x, x)
+			min_y = mini(min_y, y)
+			max_y = maxi(max_y, y)
+	if max_x < 0:
+		return Rect2i()
+	return Rect2i(min_x, min_y, max_x - min_x + 1, max_y - min_y + 1)
+
 ## Taille de cellule de la planche montée. Lue sur la RÉGION d'atlas d'une
 ## frame, pas sur son image : la région est une simple propriété, là où lire
 ## l'image coûte un transfert depuis la texture.
