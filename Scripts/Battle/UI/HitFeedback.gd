@@ -48,15 +48,31 @@ const BAR_OFFSET := Vector2(-BAR_WIDTH / 2, -1)
 ## la cellule, et sans ce seuil l'éclat allumerait un halo blanc sous les pieds.
 const DARK_CUTOFF := 0.05
 
+# LES QUATRE DURÉES DE CE QU'ON VOIT QUAND UNE UNITÉ ENCAISSE, regroupées ici
+# pour se régler d'un seul endroit. Ce sont des valeurs de RESSENTI : elles ne
+# se démontrent pas, elles s'essaient — on regarde le coup partir, on trouve que
+# la jauge traîne, on reprend deux dixièmes. Les changer, relancer le combat.
+
 ## Durée de l'éclat. Court — c'est un impact, pas un état. La montée est
 ## instantanée (le blanc est posé d'un coup), seule la retombée est animée :
 ## un fondu sur l'aller émousserait le coup.
 const FLASH_DURATION := 0.22
 
-## Temps pendant lequel la jauge reste lisible après le dernier coup encaissé,
-## puis durée de son effacement.
-const BAR_HOLD := 1.1
-const BAR_FADE := 0.3
+## Fondu d'APPARITION de la jauge. Zéro : elle s'allume d'un coup, comme elle
+## l'a toujours fait. Monter à 0,1 - 0,15 l'adoucit si elle paraît surgir.
+const BAR_APPEAR := 0.0
+
+## Temps pendant lequel la jauge reste lisible après le dernier coup encaissé.
+##
+## COMPTÉ DEPUIS L'IMPACT, pas depuis la fin de la résolution : le bord vert
+## met encore 0,53 s à reculer (HpBar.PREVIEW_HOLD + SETTLE_DURATION), il ne
+## reste donc ici que 0,57 s où la jauge est stabilisée et lisible. C'est ce
+## qu'il faut avoir en tête si elle paraît trop courte alors que 1,1 s semble
+## confortable.
+const BAR_HOLD := 0.75
+
+## Durée de l'effacement de la jauge, une fois l'attente écoulée.
+const BAR_FADE := 0.1
 
 var _sprite: CanvasItem
 var _bar: HpBar
@@ -120,8 +136,19 @@ func _show_bar(unit: BattleUnit, before_acquired: float, injury: bool) -> void:
 	_bar.position = (_sprite.position + BAR_OFFSET).round()
 	_bar.play_hit(before_acquired, unit.solid_ratio(), unit.hp_ratio(), injury)
 	_bar.visible = true
-	_bar.modulate.a = 1.0
 	_bar_tween = create_tween()
+	if BAR_APPEAR <= 0.0:
+		_bar.modulate.a = 1.0
+	elif _bar.modulate.a < 1.0:
+		# UN SECOND COUP PENDANT LE FONDU D'ENTRÉE ne repart pas de zéro : la
+		# jauge est déjà là, la rallumer depuis l'invisible la ferait clignoter.
+		# On reprend l'opacité où elle en est, et la durée restante avec.
+		_bar_tween.tween_property(
+			_bar, "modulate:a", 1.0, BAR_APPEAR * (1.0 - _bar.modulate.a)
+		)
+	else:
+		_bar.modulate.a = 0.0
+		_bar_tween.tween_property(_bar, "modulate:a", 1.0, BAR_APPEAR)
 	_bar_tween.tween_interval(BAR_HOLD)
 	_bar_tween.tween_property(_bar, "modulate:a", 0.0, BAR_FADE)
 	_bar_tween.tween_callback(func() -> void: _bar.visible = false)
