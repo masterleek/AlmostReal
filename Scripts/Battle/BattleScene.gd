@@ -72,8 +72,15 @@ const BUS_MUSIC := "Music"
 const BUS_VOICE := "Voice"
 
 const MUSIC_THEME := preload("res://Audio/battle_theme1.mp3")
+## Musique de VICTOIRE, qui prend la place du thème dès que le dernier ennemi
+## est tombé. Elle boucle, comme le thème : l'écran de fin n'a pas de durée —
+## il attend que le joueur valide — et une musique qui s'arrête d'elle-même y
+## laisserait un silence d'autant plus long qu'on prend son temps.
+const MUSIC_VICTORY := preload("res://Audio/victory.mp3")
 ## 70 % du volume nominal. `volume_linear` et pas `volume_db` : la consigne est
 ## une proportion, la convertir en −3,1 dB à la main la rendrait illisible.
+## Les deux musiques le partagent : elles se succèdent, elles ne se répondent
+## pas, et l'une ne doit pas paraître plus forte que l'autre.
 const MUSIC_VOLUME := 0.70
 
 const DESIGN_SIZE := Vector2i(480, 270)
@@ -447,6 +454,10 @@ var _can_exit := false
 ## d'interface gardent un lecteur dédié, les sons portés par les actions
 ## passent par son pool.
 var _audio: SfxBank
+## La musique en cours. Gardée pour pouvoir l'ARRÊTER : le thème de combat n'a
+## plus rien à dire une fois le combat joué, et deux musiques superposées ne se
+## mélangent pas, elles se gênent.
+var _music: AudioStreamPlayer
 var _sfx_move: AudioStreamPlayer
 var _sfx_confirm: AudioStreamPlayer
 var _sfx_cancel: AudioStreamPlayer
@@ -923,7 +934,7 @@ func _build_audio() -> void:
 	# son propre bus le jour où il arrivera : il n'a pas de raison d'effacer la
 	# musique.
 	_audio.bus = BUS_VOICE
-	_audio.music(MUSIC_THEME, MUSIC_VOLUME, BUS_MUSIC)
+	_play_music(MUSIC_THEME)
 
 ## Joue le son qu'une action porte dans sa définition (cf. BattleAssault.
 ## _sounds_of). La scène ne sait pas de QUELLE action il s'agit — c'est voulu :
@@ -1539,9 +1550,24 @@ func _finish_battle(victory: bool) -> void:
 	_can_exit = victory
 	_hide_interface()
 	if victory:
+		# La musique bascule AVANT la célébration : celle-ci attend des planches
+		# entières (17 frames pour Noah, 34 pour Iris), et le thème de combat
+		# continuerait pendant tout ce temps sur une victoire déjà acquise.
+		_play_music(MUSIC_VICTORY)
 		_play_victory()
 	else:
 		_show_game_over()
+
+## Remplace la musique en cours. La précédente est ARRÊTÉE et non baissée : on
+## change de moment, pas d'intensité — et `SfxBank.music` monte un lecteur par
+## appel, les laisser tourner ensemble ferait jouer les deux.
+##
+## La DÉFAITE garde le thème de combat : l'auteur n'a pas de musique de Game Over,
+## et le silence se lirait comme un bug plutôt que comme une intention.
+func _play_music(stream: AudioStream) -> void:
+	if _music != null and is_instance_valid(_music):
+		_music.stop()
+	_music = _audio.music(stream, MUSIC_VOLUME, BUS_MUSIC)
 
 ## HUD et menus disparaissent dans LES DEUX cas : ils proposent des choix qu'on
 ## ne peut plus faire. Désactivés autant que masqués — un composant invisible
