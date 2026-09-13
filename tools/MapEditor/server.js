@@ -156,6 +156,20 @@ function revisionOf(text) {
   return createHash("sha1").update(text).digest("hex").slice(0, 16);
 }
 
+// Empreinte annoncée quand le fichier n'existe pas encore. Il en faut UNE :
+// sans elle, un catalogue neuf ne donnerait aucune empreinte au chargement, le
+// client n'aurait rien à renvoyer, et le verrou ci-dessous le refuserait pour
+// toujours.
+const REVISION_ABSENT = "absent";
+
+async function revisionOnDisk(filePath) {
+  try {
+    return revisionOf(await fs.readFile(filePath, "utf-8"));
+  } catch {
+    return REVISION_ABSENT;
+  }
+}
+
 function metaRoutes(urlPath, filePath, defaultValue = []) {
   app.get(urlPath, async (req, res) => {
     try {
@@ -163,6 +177,7 @@ function metaRoutes(urlPath, filePath, defaultValue = []) {
       res.set("X-Catalog-Revision", revisionOf(raw));
       res.json(JSON.parse(raw));
     } catch {
+      res.set("X-Catalog-Revision", REVISION_ABSENT);
       res.json(defaultValue);
     }
   });
@@ -184,23 +199,37 @@ function metaRoutes(urlPath, filePath, defaultValue = []) {
     if (!sameShape(body, defaultValue)) {
       return res.status(400).json({ error: "invalid payload" });
     }
+    // L'EMPREINTE EST OBLIGATOIRE. Première version de ce verrou : elle était
+    // facultative, et une requête sans en-tête passait sans contrôle « pour ne
+    // pas casser les clients existants ». C'était le verrou à l'envers — la
+    // page qui ne sait pas l'envoyer est précisément la page périmée, celle
+    // dont le code date d'avant le verrou. Elle a écrasé units.json deux fois,
+    // emportant des ancrages relevés au pixel et une voix entière.
+    //
+    // Un verrou se ferme par défaut. Sans en-tête, on REFUSE et on dit quoi
+    // faire : recharger. Une page à jour envoie toujours l'empreinte, même
+    // pour un fichier qui n'existe pas encore (cf. REVISION_ABSENT).
     const expected = req.get("X-Expected-Revision");
-    if (expected) {
-      let current = null;
-      try {
-        current = revisionOf(await fs.readFile(filePath, "utf-8"));
-      } catch {
-        // Fichier absent : il n'y a rien à écraser, la sauvegarde le crée.
-      }
-      if (current !== null && current !== expected) {
-        return res.status(409).json({
-          error: "conflict",
-          message:
-            "Ce catalogue a été modifié ailleurs depuis que cette page l'a "
-            + "chargé. Recharge la page avant de sauvegarder : sans ça, tu "
-            + "écraserais ces changements par l'état d'il y a un moment.",
-        });
-      }
+    if (!expected) {
+      return res.status(428).json({
+        error: "precondition-required",
+        message:
+          "Cette page a été chargée avant la dernière mise à jour de "
+          + "l'éditeur et ne sait pas encore dire sur quelle version elle "
+          + "travaille. Recharge-la avant de modifier quoi que ce soit : sa "
+          + "sauvegarde écraserait le fichier par l'état qu'il avait à son "
+          + "ouverture.",
+      });
+    }
+    const current = await revisionOnDisk(filePath);
+    if (current !== expected) {
+      return res.status(409).json({
+        error: "conflict",
+        message:
+          "Ce catalogue a été modifié ailleurs depuis que cette page l'a "
+          + "chargé. Recharge la page avant de sauvegarder : sans ça, tu "
+          + "écraserais ces changements par l'état d'il y a un moment.",
+      });
     }
     // Saut de ligne final : ces fichiers s'éditent AUSSI à la main, et
     // `JSON.stringify` n'en met pas. Sans lui, chaque sauvegarde depuis

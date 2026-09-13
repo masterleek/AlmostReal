@@ -82,14 +82,15 @@ function entriesOf(section) {
 }
 
 // Un conflit n'est PAS rattrapable ici : la page tient tout le catalogue en
-// mémoire, il n'y a rien à fusionner. On le dit, et on s'arrête — se taire
-// laisserait croire que le changement est enregistré alors qu'il est perdu.
+// mémoire, il n'y a rien à fusionner. Il est déjà annoncé par api.js — la seule
+// couche traversée par les sauvegardes des cinq pages — et on l'avale ici pour
+// qu'il ne parte pas en promesse rejetée. Surtout pas un second `alert` : deux
+// fenêtres pour un seul refus se lisent comme deux problèmes.
 async function persist(section) {
   try {
     await saveBattleCatalog(section, catalogs[section]);
   } catch (err) {
     if (!(err instanceof CatalogConflictError)) throw err;
-    alert(err.message);
   }
 }
 
@@ -1780,7 +1781,13 @@ function momentTable(keys) {
       // déroulante avec des entrées sans nom.
       if (value && value !== key) momentLabels.labels[key] = value;
       else delete momentLabels.labels[key];
-      await saveBattleMomentLabels(momentLabels);
+      // Même avalement qu'en haut : le refus est déjà annoncé par api.js, il ne
+      // doit pas finir en promesse rejetée ni empêcher le redessin.
+      try {
+        await saveBattleMomentLabels(momentLabels);
+      } catch (err) {
+        if (!(err instanceof CatalogConflictError)) throw err;
+      }
       renderList();
     };
     row.appendChild(input);

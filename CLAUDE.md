@@ -134,6 +134,21 @@ Repo git, remote `origin` → github.com/masterleek/AlmostReal, branche `main`.
   compteur `_rev` comme les maps : ces fichiers sont de la donnée de jeu lue
   par Godot, et une empreinte voit aussi passer une modification faite à la
   main.
+- **UN VERROU SE FERME PAR DÉFAUT.** Première version de celui-ci : l'empreinte
+  était facultative, une requête sans en-tête passait sans contrôle « pour ne
+  pas casser les clients existants ». C'était le verrou à l'envers — la page
+  qui ne sait pas envoyer l'empreinte est PRÉCISÉMENT la page périmée, celle
+  dont le code date d'avant le verrou. Elle a écrasé units.json une seconde
+  fois, emportant les ancrages ET les voix. Sans en-tête, on refuse (428) et on
+  dit quoi faire.
+- **Un protocole ne protège que ce qui passe par lui.** Les cinq catalogues de
+  `metaRoutes` avaient chacun leur paire de fonctions recopiée dans api.js ; le
+  verrou n'a été branché que sur celle des combats, et les quatre autres sont
+  restées nues. Une paire unique pour tous, et la question ne se repose plus.
+- **Un refus doit s'ENTENDRE.** Ces sauvegardes partent sans `catch` depuis
+  quatre pages : une erreur s'y perdait en promesse rejetée, et l'auteur
+  continuait d'éditer une page dont plus rien n'était enregistré. L'annonce est
+  donc dans api.js, la seule couche que toutes traversent.
 - **Après avoir corrigé un fichier que l'éditeur web édite, recharger la
   page** — sinon la correction sera écrasée par l'onglet à sa prochaine
   sauvegarde. C'est maintenant refusé au lieu d'être silencieux, mais le

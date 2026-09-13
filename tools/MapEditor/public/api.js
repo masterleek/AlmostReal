@@ -43,58 +43,9 @@ export async function deleteMap(id) {
   return res.json();
 }
 
-export async function getTiles() {
-  const res = await fetch("/api/tiles");
-  return res.json();
-}
-
-export async function saveTiles(tiles) {
-  const res = await fetch("/api/tiles", {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(tiles),
-  });
-  return res.json();
-}
-
-export async function getProps() {
-  const res = await fetch("/api/props");
-  return res.json();
-}
-
-export async function saveProps(props) {
-  const res = await fetch("/api/props", {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(props),
-  });
-  return res.json();
-}
-
-export async function getSystems() {
-  const res = await fetch("/api/systems");
-  return res.json();
-}
-
-export async function getTexts() {
-  const res = await fetch("/api/texts");
-  return res.json();
-}
-
-export async function saveTexts(catalog) {
-  const res = await fetch("/api/texts", {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(catalog),
-  });
-  return res.json();
-}
-
-// Les trois catalogues de combat partagent une seule paire de fonctions : ils
-// ont la même route à un segment près, et les distinguer par trois paires
-// identiques ne dirait rien de plus.
-// Levée par saveBattleCatalog() quand le serveur refuse la sauvegarde : le
-// fichier a changé sur disque depuis que cette page l'a chargé.
+// Levée quand le serveur refuse une sauvegarde : le fichier a changé sur disque
+// depuis que cette page l'a chargé, ou la page est trop ancienne pour dire sur
+// quelle version elle travaille.
 export class CatalogConflictError extends Error {
   constructor(message) {
     super(message);
@@ -102,52 +53,81 @@ export class CatalogConflictError extends Error {
   }
 }
 
-// Empreinte du fichier tel que cette page l'a chargé, par catalogue. Elle est
-// RENVOYÉE à chaque sauvegarde : le serveur refuse d'écrire par-dessus une
-// version qu'on n'a pas vue (cf. le verrou dans server.js). Gardée ici et pas
-// dans le catalogue lui-même — ce sont des fichiers de jeu, ils n'ont pas à
-// porter la comptabilité de l'éditeur.
-const catalogRevisions = new Map();
+// Empreinte du fichier tel que cette page l'a chargé, par route.
+//
+// UNE SEULE PAIRE POUR LES CINQ CATALOGUES servis par metaRoutes — tuiles,
+// props, textes, catalogues de combat, libellés de moments. Ils avaient chacun
+// leur paire recopiée ; la conséquence n'était pas seulement de la répétition :
+// quand le verrou est arrivé, il n'a été branché que sur les catalogues de
+// combat, et les quatre autres sont restés sans protection.
+const revisions = new Map();
 
-export async function getBattleCatalog(name) {
-  const res = await fetch(`/api/battle/${name}`);
+async function loadCatalog(url) {
+  const res = await fetch(url);
   const revision = res.headers.get("X-Catalog-Revision");
-  if (revision) catalogRevisions.set(name, revision);
-  else catalogRevisions.delete(name);
+  if (revision) revisions.set(url, revision);
+  else revisions.delete(url);
   return res.json();
 }
 
-export async function saveBattleCatalog(name, catalog) {
+async function saveCatalog(url, body) {
   const headers = { "Content-Type": "application/json" };
-  const revision = catalogRevisions.get(name);
+  const revision = revisions.get(url);
   if (revision) headers["X-Expected-Revision"] = revision;
-  const res = await fetch(`/api/battle/${name}`, {
-    method: "PUT",
-    headers,
-    body: JSON.stringify(catalog),
+  const res = await fetch(url, {
+    method: "PUT", headers, body: JSON.stringify(body),
   });
-  const body = await res.json();
-  if (res.status === 409) throw new CatalogConflictError(body.message);
+  const payload = await res.json();
+  if (res.status === 409 || res.status === 428) {
+    // L'AVERTISSEMENT EST POSÉ ICI, dans la couche qui connaît le refus, et
+    // pas laissé à chaque appelant. Ces sauvegardes sont lancées sans `catch`
+    // depuis quatre pages : un refus s'y perdrait en promesse rejetée, et
+    // l'auteur continuerait d'éditer une page dont plus rien n'est enregistré.
+    // C'est exactement le silence qui a coûté deux fois des données.
+    alert(payload.message);
+    throw new CatalogConflictError(payload.message);
+  }
   // La page garde le MÊME objet en mémoire d'une sauvegarde à l'autre : sans
   // cette mise à jour, la deuxième se ferait refuser par le verrou qu'on vient
   // de poser nous-mêmes.
   const next = res.headers.get("X-Catalog-Revision");
-  if (next) catalogRevisions.set(name, next);
-  return body;
+  if (next) revisions.set(url, next);
+  return payload;
 }
 
-// Le fichier a-t-il changé sur disque depuis que cette page l'a chargé ?
-//
-// Une requête HEAD : on ne veut que l'empreinte, pas les cent kilo-octets de
-// catalogue. Rend false tant qu'on n'a rien chargé — il n'y a alors rien à
-// contredire.
-export async function battleCatalogChanged(name) {
-  const known = catalogRevisions.get(name);
+// Le fichier a-t-il changé sur disque depuis que cette page l'a chargé ? Une
+// requête HEAD : on ne veut que l'empreinte, pas le catalogue entier.
+function rememberRevision(url, revision) {
+  revisions.set(url, revision);
+}
+
+async function catalogChanged(url) {
+  const known = revisions.get(url);
   if (!known) return false;
-  const res = await fetch(`/api/battle/${name}`, { method: "HEAD" });
+  const res = await fetch(url, { method: "HEAD" });
   const current = res.headers.get("X-Catalog-Revision");
   return current !== null && current !== known;
 }
+
+export const getTiles = () => loadCatalog("/api/tiles");
+export const saveTiles = (tiles) => saveCatalog("/api/tiles", tiles);
+export const getProps = () => loadCatalog("/api/props");
+export const saveProps = (props) => saveCatalog("/api/props", props);
+export const getTexts = () => loadCatalog("/api/texts");
+export const saveTexts = (catalog) => saveCatalog("/api/texts", catalog);
+
+export async function getSystems() {
+  const res = await fetch("/api/systems");
+  return res.json();
+}
+
+// Les trois catalogues de combat partagent une seule paire de fonctions : ils
+// ont la même route à un segment près, et les distinguer par trois paires
+// identiques ne dirait rien de plus.
+export const getBattleCatalog = (name) => loadCatalog(`/api/battle/${name}`);
+export const saveBattleCatalog = (name, catalog) =>
+  saveCatalog(`/api/battle/${name}`, catalog);
+export const battleCatalogChanged = (name) => catalogChanged(`/api/battle/${name}`);
 
 export async function getBattleSounds() {
   const res = await fetch("/api/battle/sounds");
@@ -214,20 +194,19 @@ export async function getBattleMomentLabels() {
   const res = await fetch("/api/battle/moment-labels");
   if (!res.ok) return { labels: {}, stale: true };
   try {
-    return await res.json();
+    const data = await res.json();
+    // Retenir l'empreinte comme loadCatalog le ferait : sans elle, la
+    // sauvegarde des libellés serait refusée par le verrou.
+    const revision = res.headers.get("X-Catalog-Revision");
+    if (revision) rememberRevision("/api/battle/moment-labels", revision);
+    return data;
   } catch {
     return { labels: {}, stale: true };
   }
 }
 
-export async function saveBattleMomentLabels(data) {
-  const res = await fetch("/api/battle/moment-labels", {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(data),
-  });
-  return res.json();
-}
+export const saveBattleMomentLabels = (data) =>
+  saveCatalog("/api/battle/moment-labels", data);
 
 export async function playGame(mapId) {
   const res = await fetch("/api/play", {
