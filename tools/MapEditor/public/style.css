@@ -1614,6 +1614,93 @@ button:hover { border-color: var(--accent); }
 .battle-note,
 .battle-sound-file { display: flex; align-items: center; gap: 2px; }
 
+/* Ce qui se règle sur une séquence : les notes, puis de quoi en ajouter, puis
+   ce que ça donne. Les trois empilés, parce qu'on les parcourt dans cet ordre
+   et qu'aucun ne tient sur la même ligne que les autres. */
+.battle-sequence-editor { display: flex; flex-direction: column; gap: 8px; }
+
+/* Une note posée dans la séquence : une poignée, le dessin du jeu, une croix. */
+.battle-note {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 4px;
+}
+
+/* La seule zone que le `select` ne recouvre pas : c'est par là qu'on saisit la
+   pastille pour la déplacer. */
+.battle-note-grip {
+  color: #6b7280;
+  cursor: grab;
+  font-size: 11px;
+  line-height: 1;
+  letter-spacing: -2px;
+  padding: 0 1px;
+}
+
+.battle-note:active .battle-note-grip { cursor: grabbing; }
+
+/* Le dessin et le `select` invisible qui le change : c'est CETTE boîte qui sert
+   de cadre au positionnement absolu, pas la pastille entière — sinon la
+   poignée et la croix passeraient dessous. */
+.battle-note-face { position: relative; display: flex; align-items: center; }
+
+.battle-note:hover { border-color: var(--accent); }
+.battle-note-dragging { opacity: 0.4; }
+/* La pastille sur laquelle on lâchera : un bord franc du côté où la note
+   s'insère se lirait mieux, mais il déplacerait les voisines d'un pixel à
+   chaque survol. Un contour, lui, ne pousse rien. */
+.battle-note-over { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.battle-note-icon { display: block; image-rendering: auto; }
+
+/* Repli quand l'image ne se charge pas : le nom du moteur, tel quel. */
+.battle-note-name {
+  font-family: monospace;
+  font-size: 11px;
+  padding: 4px 2px;
+}
+
+/* Le `select` recouvre le DESSIN, et lui seul : cliquer la note ouvre la liste,
+   la poignée reste saisissable et la croix cliquable. `opacity: 0` et non
+   `visibility`/`display`, qui lui retireraient le clic et le clavier. */
+.battle-note-pick {
+  position: absolute;
+  inset: 0;
+  width: auto;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.battle-note-palette { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
+
+.battle-note-add {
+  background: none;
+  border: 1px dashed var(--border);
+  border-radius: 4px;
+  padding: 2px 4px;
+  cursor: pointer;
+  line-height: 0;
+}
+
+.battle-note-add:hover { border-color: var(--accent); background: var(--panel); }
+
+.battle-sequence-facts { font-variant-numeric: tabular-nums; margin: 0; }
+
+/* L'aperçu joué : le canevas prend la largeur qu'on lui donne, jamais plus que
+   sa colonne — c'est un écran de 480 px de design, l'agrandir ne montrerait
+   rien de plus. */
+.rhythm-preview { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+.rhythm-preview-canvas {
+  max-width: 100%;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.rhythm-preview-play { white-space: nowrap; }
+
 .battle-note-static {
   font-family: monospace;
   font-size: 11px;

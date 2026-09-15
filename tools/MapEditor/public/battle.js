@@ -16,6 +16,7 @@ import {
 import { pickFrames } from "./frame-picker.js";
 import { animationPreview, forgetSheetSize, sheetSize, staticFrame } from "./sheet-preview.js";
 import { forgetSheetPixels, measureGrid, measureGround } from "./sheet-grid.js";
+import { judgementWindows, rhythmPreview, sequenceTiming } from "./rhythm-preview.js";
 
 // Page « Combat » : les trois catalogues de Battle/ (unités, Ekos, objets).
 //
@@ -64,6 +65,14 @@ let vocabulary = {
   unit_moments: [],
   unit_moment_notes: {},
   notes: [],
+  // Le dessin de chaque note et les vitesses de la barre, lus dans
+  // RhythmBar.gd. Les replis valent ce que le fichier disait le jour où ceci a
+  // été écrit ; le serveur envoie les vrais dès qu'il sait les lire.
+  note_icons: {},
+  rhythm: {
+    note_speed: 170, note_interval: 0.55, tail: 0.45, centre_x: 239.5,
+    window_perfect: 5, window_great: 21, window_good: 32,
+  },
   targets: [],
   damage_types: [],
   behaviours: [],
@@ -347,46 +356,164 @@ function playButton(getPath) {
 //  Séquence de rythme
 // ──────────────────────────────────────────────────────────────────────────
 
+// LE DESSIN D'UNE NOTE, celui-là même que la barre pose à l'écran. « cross » et
+// « circle » sont des noms de FICHIER — le vocabulaire fermé du moteur — et une
+// suite de quatre mots ne se relit pas : ce que l'auteur compose, ce sont les
+// pastilles d'une manette et des flèches, et c'est sous cette forme qu'il les
+// reconnaîtra en jouant.
+//
+// Repli sur le NOM quand l'image manque : un serveur resté sur une version
+// antérieure ne sert pas `UI/`, et une image cassée serait moins lisible qu'un
+// mot. Même règle que partout ici — ce qui n'est que de la présentation dégrade,
+// il ne bloque pas.
+function noteIcon(id, size = 26) {
+  const icon = vocabulary.note_icons?.[id];
+  if (!icon) return el("span", "battle-note-name", id);
+  const image = el("img", "battle-note-icon");
+  image.src = icon.url;
+  image.alt = id;
+  image.width = size;
+  image.height = size;
+  // Les quatre directions partagent UN dessin de flèche, tourné — exactement ce
+  // que fait RhythmBar._make_note avec ARROW_ROTATION.
+  if (icon.rotation) image.style.transform = `rotate(${icon.rotation}deg)`;
+  image.onerror = () => image.replaceWith(el("span", "battle-note-name", id));
+  return image;
+}
+
+// Une note de la séquence : son dessin, de quoi la CHANGER, la DÉPLACER et la
+// RETIRER.
+//
+// Le changement passe par un `select` étiré sur le DESSIN et rendu transparent.
+// C'est un détour, et il est assumé : un `option` natif n'affiche pas d'image,
+// or le vocabulaire doit rester une liste fermée (une note inventée ne produit
+// qu'un silence dans la barre, découvert en lançant ce combat-là). Le détour
+// rend les deux à la fois — on voit le dessin, on choisit dans la liste du
+// moteur — et garde gratuitement le clavier.
+function sequenceChip(action, index, onChanged) {
+  const note = action.sequence[index];
+  const chip = el("span", "battle-note");
+  chip.draggable = true;
+
+  // LA POIGNÉE EST INDISPENSABLE, pas décorative : le `select` recouvre le
+  // dessin, et un appui dessus ouvre sa liste au lieu d'amorcer un glissement.
+  // Sans une zone que rien n'intercepte, la pastille serait draggable et
+  // impossible à saisir — le genre de commande qui « ne fait rien ».
+  const grip = el("span", "battle-note-grip", "⠿");
+  grip.title = `${note} — glisser pour déplacer`;
+  chip.appendChild(grip);
+
+  const face = el("span", "battle-note-face");
+  face.title = `${note} — cliquer pour changer de note`;
+  face.appendChild(noteIcon(note));
+  const pick = selectInput(vocabulary.notes, note, (value) => {
+    action.sequence[index] = value;
+    onChanged();
+  });
+  pick.classList.add("battle-note-pick");
+  face.appendChild(pick);
+  chip.appendChild(face);
+
+  const remove = el("button", "battle-chip-remove", "×");
+  remove.type = "button";
+  remove.title = "Retirer cette note";
+  remove.onclick = () => {
+    action.sequence.splice(index, 1);
+    onChanged();
+  };
+  chip.appendChild(remove);
+
+  // L'ORDRE EST LA MOITIÉ DE LA SÉQUENCE, et il n'y avait aucun moyen de le
+  // changer : insérer une note au milieu obligeait à réécrire toute la suite.
+  chip.ondragstart = (event) => {
+    event.dataTransfer.setData("text/plain", String(index));
+    event.dataTransfer.effectAllowed = "move";
+    chip.classList.add("battle-note-dragging");
+  };
+  chip.ondragend = () => chip.classList.remove("battle-note-dragging");
+  chip.ondragover = (event) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    chip.classList.add("battle-note-over");
+  };
+  chip.ondragleave = () => chip.classList.remove("battle-note-over");
+  chip.ondrop = (event) => {
+    event.preventDefault();
+    // Retiré AVANT le test qui suit : lâcher une pastille sur elle-même ne
+    // redessine rien, et le surlignage du survol resterait allumé.
+    chip.classList.remove("battle-note-over");
+    const from = Number(event.dataTransfer.getData("text/plain"));
+    if (!Number.isInteger(from) || from === index) return;
+    action.sequence.splice(index, 0, action.sequence.splice(from, 1)[0]);
+    onChanged();
+  };
+  return chip;
+}
+
+// Ce qu'une séquence DURE et à quelle tolérance elle se juge — deux choses
+// qu'un nombre de notes ne dit pas, et qui décident pourtant de ce qu'elle
+// vaut à jouer. Les chiffres viennent des constantes de la barre, pas d'ici.
+function sequenceFacts(sequence) {
+  const timings = vocabulary.rhythm;
+  const line = el("p", "battle-inline-hint battle-sequence-facts");
+  if (sequence.length === 0) {
+    line.textContent = "Sans séquence, l'action ne fait pas jouer la barre : "
+      + "elle frappe à puissance nominale.";
+    return line;
+  }
+  const { total } = sequenceTiming(sequence, timings);
+  const windows = judgementWindows(timings);
+  const seconds = (value) => value.toFixed(2).replace(".", ",");
+  line.textContent =
+    `${sequence.length} note${sequence.length > 1 ? "s" : ""} · la barre tourne `
+    + `${seconds(total)} s · une arrivée toutes les `
+    + `${seconds(timings.note_interval)} s — PERFECT ±${windows.perfect} ms, `
+    + `GREAT ±${windows.great} ms, GOOD ±${windows.good} ms.`;
+  return line;
+}
+
 // Les notes sont un vocabulaire fermé lu dans RhythmBar.gd : des pastilles
 // cliquables plutôt qu'un champ texte, une note inventée ne pouvant produire
 // qu'un silence dans la barre.
+//
+// TROIS CHOSES SE RÈGLENT ICI, et la page ne montrait que la première : QUOI
+// (les notes), DANS QUEL ORDRE (le glisser-déposer), et CE QUE ÇA DONNE (un
+// aperçu qui défile à la vitesse du combat). Sans la troisième, deux Ekos de
+// trois notes se ressemblent sur la page et ne se ressemblent pas manette en
+// main.
 function sequenceEditor(action, onChanged) {
-  const wrap = el("div", "battle-sequence");
+  const wrap = el("div", "battle-sequence-editor");
   const notes = action.sequence || [];
 
-  notes.forEach((note, index) => {
-    const chip = el("span", "battle-note");
-    chip.appendChild(
-      selectInput(vocabulary.notes, note, (value) => {
-        action.sequence[index] = value;
-        onChanged();
-      })
-    );
-    const remove = el("button", "battle-chip-remove", "×");
-    remove.type = "button";
-    remove.title = "Retirer cette note";
-    remove.onclick = () => {
-      action.sequence.splice(index, 1);
+  const row = el("div", "battle-sequence");
+  notes.forEach((_, index) => row.appendChild(sequenceChip(action, index, onChanged)));
+  if (notes.length === 0) {
+    row.appendChild(el("span", "battle-inline-hint", "Aucune note."));
+  }
+  wrap.appendChild(row);
+
+  // UNE PALETTE PLUTÔT QU'UN « + note » NEUTRE. L'ancien bouton ajoutait
+  // toujours la première note du vocabulaire, qu'il fallait ensuite changer :
+  // deux gestes pour un, et une valeur fausse écrite dans le fichier entre les
+  // deux. Ici on ajoute LA note qu'on veut.
+  const palette = el("div", "battle-note-palette");
+  palette.appendChild(el("span", "battle-field-label", "Ajouter"));
+  for (const id of vocabulary.notes) {
+    const add = el("button", "battle-note-add");
+    add.type = "button";
+    add.title = `Ajouter « ${id} » à la fin`;
+    add.appendChild(noteIcon(id, 22));
+    add.onclick = () => {
+      if (!action.sequence) action.sequence = [];
+      action.sequence.push(id);
       onChanged();
     };
-    chip.appendChild(remove);
-    wrap.appendChild(chip);
-  });
-
-  const add = el("button", "battle-chip-add", "+ note");
-  add.type = "button";
-  add.onclick = () => {
-    if (!action.sequence) action.sequence = [];
-    action.sequence.push(vocabulary.notes[0]);
-    onChanged();
-  };
-  wrap.appendChild(add);
-
-  if (notes.length === 0) {
-    wrap.appendChild(
-      el("span", "battle-inline-hint", "Sans séquence, l'action ne fait pas jouer la barre.")
-    );
+    palette.appendChild(add);
   }
+  wrap.appendChild(palette);
+
+  wrap.appendChild(sequenceFacts(notes));
+  wrap.appendChild(rhythmPreview(notes, vocabulary.rhythm, vocabulary.note_icons || {}));
   return wrap;
 }
 
@@ -2638,7 +2765,12 @@ export async function openBattleManager() {
   catalogs = { units, ekos, items };
   texts = catalogTexts;
   sounds = soundList;
-  vocabulary = vocab;
+  // FUSION et non remplacement : le serveur ne se recharge pas tout seul, et
+  // celui qui tourne peut dater d'avant une clé (les dessins de notes, les
+  // vitesses de la barre). Elle garde alors le repli déclaré à la déclaration
+  // de `vocabulary`, au lieu de devenir `undefined` et de casser la page à
+  // l'endroit qui la lit.
+  vocabulary = { ...vocabulary, ...vocab };
   animationStates = vocab.animation_states || [];
   actionAnimationDefault = vocab.action_animation_default || "atk";
   momentLabels = labels;

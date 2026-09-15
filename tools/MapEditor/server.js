@@ -22,6 +22,11 @@ const LOCALIZATION_DIR = path.join(PROJECT_ROOT, "Localization");
 const TEXTS_PATH = path.join(LOCALIZATION_DIR, "texts.json");
 const PREVIEWS_DIR = path.join(LOCALIZATION_DIR, "previews");
 const FONTS_DIR = path.join(PROJECT_ROOT, "Fonts");
+// Les assets d'interface du jeu. Servis pour que l'éditeur montre une note de
+// rythme AVEC LE DESSIN QU'ELLE A EN JEU — un « cross » et un « circle » écrits
+// en toutes lettres ne se relisent pas en séquence, alors que les quatre
+// pastilles de manette se reconnaissent d'un coup d'œil.
+const UI_DIR = path.join(PROJECT_ROOT, "UI");
 const BATTLE_DIR = path.join(PROJECT_ROOT, "Battle");
 const AUDIO_DIR = path.join(PROJECT_ROOT, "Audio");
 // Où atterrissent les sons déposés depuis la page « Combat ». Un dossier à part
@@ -47,6 +52,7 @@ app.use(express.static(path.join(__dirname, "public")));
 app.use("/sprites", express.static(SPRITES_DIR));
 app.use("/localization-previews", express.static(PREVIEWS_DIR));
 app.use("/fonts", express.static(FONTS_DIR));
+app.use("/ui", express.static(UI_DIR));
 // Les sons servis tels quels, pour que la page « Combat » puisse faire écouter
 // ce qu'on est en train de choisir. Un chemin `res://Audio/x.wav` se lit donc
 // aussi en `/audio/x.wav`.
@@ -531,6 +537,66 @@ function parseGdActionAnimationDefault(content, states) {
   return named ? named.key : null;
 }
 
+// Une constante NUMÉRIQUE du moteur (`const NOTE_INTERVAL := 0.55`). Lue plutôt
+// que recopiée, pour la même raison que les vocabulaires : l'éditeur annonce
+// combien de temps une séquence va durer, et ce chiffre doit être celui que la
+// barre appliquera vraiment — sinon il devient faux au premier réglage de
+// difficulté, sans que rien ne le dise.
+function parseGdNumber(content, name) {
+  const match = content.match(
+    new RegExp(String.raw`const\s+${name}\s*:?=\s*(-?\d+(?:\.\d+)?)`)
+  );
+  return match ? Number(match[1]) : null;
+}
+
+// L'abscisse d'un `const X := Vector2(a, b)`. Une seule est utile ici — le
+// centre de l'anneau, dont dépend le temps de vol de la première note.
+function parseGdVector2X(content, name) {
+  const match = content.match(
+    new RegExp(String.raw`const\s+${name}\s*:?=\s*Vector2\(\s*(-?\d+(?:\.\d+)?)`)
+  );
+  return match ? Number(match[1]) : null;
+}
+
+// L'IMAGE DE CHAQUE NOTE, telle que la barre la dessine. Quatre pastilles de
+// manette ont leur propre texture ; les quatre directions partagent un seul
+// dessin de flèche, TOURNÉ (`ARROW_ROTATION`). Reproduire ce partage ici plutôt
+// que de lister huit fichiers évite qu'un cinquième arrive dans le jeu sans
+// jamais apparaître dans l'éditeur.
+//
+// Seuls les chemins sous `UI/` sont rendus : c'est le seul dossier servi, et une
+// URL qu'on ne saurait pas servir vaut moins qu'une absence — la page retombe
+// alors sur le nom de la note, lisible faute d'être reconnaissable.
+function parseGdNoteIcons(content) {
+  const ids = parseGdDictionaryKeys(content, "NOTE_ACTIONS");
+  if (!ids) return null;
+  const own = {};
+  const textures = content.match(/const\s+NOTE_TEXTURES[^=]*=\s*\{([\s\S]*?)\n\}/);
+  if (textures) {
+    for (const entry of textures[1].matchAll(/"([^"]+)"\s*:\s*preload\("res:\/\/([^"]+)"\)/g)) {
+      own[entry[1]] = entry[2];
+    }
+  }
+  const arrow = content.match(/const\s+ARROW\s*:?=\s*preload\("res:\/\/([^"]+)"\)/);
+  const rotations = {};
+  const declared = content.match(/const\s+ARROW_ROTATION\s*:?=\s*\{([^}]*)\}/);
+  if (declared) {
+    for (const entry of declared[1].matchAll(/"([^"]+)"\s*:\s*(-?\d+(?:\.\d+)?)/g)) {
+      rotations[entry[1]] = Number(entry[2]);
+    }
+  }
+  const icons = {};
+  for (const id of ids) {
+    const source = own[id] || (arrow ? arrow[1] : null);
+    if (!source || !source.startsWith("UI/")) continue;
+    icons[id] = {
+      url: `/ui/${source.slice("UI/".length)}`,
+      rotation: own[id] ? 0 : (rotations[id] ?? 0),
+    };
+  }
+  return Object.keys(icons).length ? icons : null;
+}
+
 function parseGdDictionaryKeys(content, name) {
   const match = content.match(
     new RegExp(String.raw`const\s+${name}[^=]*=\s*\{([\s\S]*?)\n\}`)
@@ -592,6 +658,21 @@ app.get("/api/battle/vocabulary", async (req, res) => {
     return kept;
   }, []);
   const actionDefault = parseGdActionAnimationDefault(assault, animationStates);
+  // LE TEMPS QUE FAIT LA BARRE, lu dans ses propres constantes. C'est ce qui
+  // permet à l'éditeur de dire ce qu'une séquence DURE et à quelle tolérance
+  // elle se juge, au lieu de n'afficher qu'un nombre de notes — deux Ekos à
+  // trois notes peuvent être très différents à jouer, et rien ne le montrait.
+  const noteIcons = parseGdNoteIcons(rhythm);
+  const timings = {
+    note_speed: parseGdNumber(rhythm, "NOTE_SPEED"),
+    note_interval: parseGdNumber(rhythm, "NOTE_INTERVAL"),
+    tail: parseGdNumber(rhythm, "TAIL"),
+    centre_x: parseGdVector2X(rhythm, "CENTRE"),
+    window_perfect: parseGdNumber(rhythm, "WINDOW_PERFECT"),
+    window_great: parseGdNumber(rhythm, "WINDOW_GREAT"),
+    window_good: parseGdNumber(rhythm, "WINDOW_GOOD"),
+  };
+  const timingsRead = Object.values(timings).every((value) => value !== null);
 
   res.json({
     animation_states: animationStates.length ? animationStates : [
@@ -627,6 +708,16 @@ app.get("/api/battle/vocabulary", async (req, res) => {
       hurt: "elle encaisse des dégâts",
     },
     notes: notes || ["cross", "circle", "square", "triangle", "up", "down", "left", "right"],
+    // Repli volontairement muet sur les images : sans elles la page montre le
+    // NOM de la note, ce qui reste juste. Une URL inventée, elle, afficherait
+    // une image cassée.
+    note_icons: noteIcons || {},
+    // Repli sur les valeurs du fichier au jour où ceci a été écrit. Elles
+    // vieilliront ; `parsed.rhythm` dit si c'est le cas.
+    rhythm: timingsRead ? timings : {
+      note_speed: 170.0, note_interval: 0.55, tail: 0.45, centre_x: 239.5,
+      window_perfect: 5.0, window_great: 21.0, window_good: 32.0,
+    },
     targets: ["enemy", "enemies", "ally", "allies", "self"],
     damage_types: ["direct", "injury"],
     behaviours: ["random", "aggressive", "defensive", "focused"],
@@ -636,6 +727,8 @@ app.get("/api/battle/vocabulary", async (req, res) => {
       unit_moments: Boolean(unitMoments),
       unit_moment_notes: Boolean(unitMomentNotes),
       notes: Boolean(notes),
+      note_icons: Boolean(noteIcons),
+      rhythm: timingsRead,
     },
   });
 });

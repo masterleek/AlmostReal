@@ -1072,6 +1072,38 @@ pas partir en guerre contre des choix déjà faits et documentés dans ce repo :
   image » et le bloc s'ouvre d'office sur son bouton d'import. Créée depuis une
   ACTION, elle part en plus `loop: false` — un geste se joue une fois, et le
   défaut du moteur (le bouclage) fige le personnage en fin de geste.
+- **Un vocabulaire fermé se lit dans le `.gd` ; les NOMBRES du moteur aussi.**
+  La page savait déjà lire les listes (moments, notes, états) ; elle recopiait en
+  revanche — ou plutôt n'affichait pas du tout — les vitesses de la barre de
+  rythme. Or c'est ce qui décide de ce qu'une séquence vaut à jouer : trois notes
+  durent 2,96 s parce que `NOTE_INTERVAL` vaut 0,55 et que la première met une
+  demi-barre à arriver, et les fenêtres de jugement sont déclarées en PIXELS
+  (`WINDOW_PERFECT`, etc.) — c'est `NOTE_SPEED` qui les convertit en ±29 ms.
+  Recopier ces chiffres les aurait rendus faux au premier réglage de difficulté,
+  sans que rien ne le dise. Contrôle de cohérence gratuit : les millisecondes
+  calculées par l'éditeur retombent exactement sur celles que le commentaire de
+  `NOTE_SPEED` annonce.
+- **Un vocabulaire qui a un DESSIN en jeu doit s'éditer avec ce dessin.**
+  Une séquence de rythme s'écrivait « cross, circle, square » — les noms de
+  fichier du moteur — dans une file de déroulants qui ne se relit pas. Ce que
+  l'auteur compose, ce sont les pastilles d'une manette ; le serveur sert donc
+  `UI/`, et l'éditeur lit `NOTE_TEXTURES`/`ARROW`/`ARROW_ROTATION` pour montrer
+  la même image, flèches tournées comprises. Corollaire de mécanique : un
+  `<option>` natif n'affiche pas d'image — le `select` est donc étiré,
+  transparent, SUR le dessin, ce qui garde la liste fermée et le clavier.
+- **Une pastille « draggable » entièrement recouverte n'est pas saisissable.**
+  Le `select` invisible interceptait l'appui : la pastille se déclarait
+  déplaçable et ne se laissait jamais prendre — exactement la commande qui « ne
+  fait rien ». Il lui faut une POIGNÉE que rien ne recouvre. Vérifié par
+  `document.elementFromPoint` sur les trois zones (poignée, dessin, croix), puis
+  par un vrai glisser à la souris, pas seulement par des `DragEvent` fabriqués.
+- **Un aperçu de rythme se JOUE, comme un aperçu de planche.** « circle, square,
+  triangle » ne dit pas ce que ça fait sous les doigts, et deux Ekos de trois
+  notes n'ont pas la même allure. Le canevas fait défiler les notes à la vitesse
+  du combat et dessine les trois fenêtres autour de l'anneau — la tolérance du
+  jugement ne se voit nulle part ailleurs. Au repos il montre l'instant où la
+  PREMIÈRE note touche l'anneau : une image réelle de l'animation, où toute la
+  séquence se lit, alors qu'à t = 0 la barre est vide.
 - **Un « état » d'animation n'existe que si le moteur le JOUE.** Ajouter une
   entrée dans `units.json` ou une ligne dans l'éditeur ne crée rien : il faut un
   `const ANIM_X := "x"` et un appel à `play_sheet()` au bon endroit du déroulé.
