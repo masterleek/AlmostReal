@@ -58,6 +58,9 @@ let sheetFiles = [];
 // États d'animation que le moteur va chercher par leur nom (lus dans le .gd).
 let animationStates = [];
 let actionAnimationDefault = "atk";
+// État du personnage sur lequel retombe la pose tenue pendant la séquence de
+// rythme, quand l'action n'en nomme pas (cf. BattleAssault.ANIM_RHYTHM).
+let rhythmAnimationDefault = "rhythm";
 let momentLabels = { labels: {} };
 let vocabulary = {
   moments: [],
@@ -74,6 +77,7 @@ let vocabulary = {
     window_perfect: 5, window_great: 21, window_good: 32,
   },
   targets: [],
+  ranges: [],
   damage_types: [],
   behaviours: [],
   parsed: {},
@@ -282,6 +286,12 @@ function targetLabel(key) {
   return momentLabels.target_labels?.[key] || key;
 }
 
+// La portée en clair. « melee » et « ranged » disent ce que l'action EST ; le
+// libellé dit ce qu'on VERRA, qui est la seule chose à comparer quand on hésite.
+function rangeLabel(key) {
+  return momentLabels.range_labels?.[key] || key;
+}
+
 // LECTURE EN CLAIR D'UNE ACTION, en une ligne : ce qu'elle coûte, ce qu'elle
 // fait, sur qui, et si elle fait jouer la barre. Sert à deux endroits — l'index,
 // où elle évite d'ouvrir six fiches pour retrouver « le soin de groupe », et le
@@ -306,6 +316,9 @@ function actionSummary(section, action) {
     parts.push(power > 0 ? `${power} ${nature}` : `sans puissance (${nature})`);
   }
   parts.push(targetLabel(action.target || "enemy"));
+  // La portée ne se dit que quand elle sort de l'ordinaire : toute action allait
+  // au contact avant ce champ, et l'écrire partout noierait la seule qui compte.
+  if (heal <= 0 && action.range === "ranged") parts.push("à distance");
   const notes = (action.sequence || []).length;
   parts.push(notes > 0 ? `${notes} note${notes > 1 ? "s" : ""}` : "sans séquence");
   return parts.join(" · ");
@@ -531,7 +544,10 @@ function sequenceEditor(action, onChanged) {
 // `_effect_of`), et le rythme que pour une action qui a une séquence.
 function unreachableMoments(action) {
   const unreachable = new Set();
-  if (Number(action.heal || 0) > 0) {
+  // MÊME RÈGLE QUE LE MOTEUR : « approach » et « return » n'existent que pour
+  // une action qui VA AU CONTACT (cf. BattleAssault._comes_to_contact). Ni un
+  // soin, ni une attaque à distance n'y passent.
+  if (Number(action.heal || 0) > 0 || action.range === "ranged") {
     unreachable.add("approach");
     unreachable.add("return");
   }
@@ -897,6 +913,48 @@ function allAnimationNames() {
 // collision avec un nom de planche, qui passe par ID_PATTERN.
 const NEW_ANIMATION = "+";
 
+// LES DEUX MOMENTS OÙ UNE ACTION NOMME UNE PLANCHE que le PERSONNAGE déclare.
+// C'est une seule règle côté moteur (`BattleAssault._sheet_for` : le nom que
+// porte l'action, sinon l'état du personnage), et c'est donc un seul tableau
+// ici — décrit en donnée plutôt que recopié en deux fonctions jumelles qui
+// finiraient par diverger.
+//
+// `fallback` est une FONCTION et non une valeur : les deux défauts sont lus
+// dans les `.gd` au chargement de la page, donc après l'évaluation de ce bloc.
+const ACTION_SHEETS = {
+  gesture: {
+    field: "animation",
+    label: "Planche du geste",
+    fallback: () => actionAnimationDefault,
+    hint: "Nom cherché dans le bloc « animations » de l'unité qui agit, pas ici.",
+    empty: "(pas en avant)",
+    title: "Geste, par personnage",
+    note: "la planche que chacun joue quand le coup part",
+    none: "il frappe sans rien montrer, d'un simple pas en avant",
+  },
+  approach: {
+    field: "approach_animation",
+    label: "Planche du déplacement",
+    fallback: () => "approach",
+    hint: "Jouée pendant que l'unité traverse le terrain, et au moins aussi "
+      + "longtemps que le trajet.",
+    empty: "(il glisse sur sa planche du moment)",
+    title: "Déplacement, par personnage",
+    note: "la planche que chacun joue en s'élançant",
+    none: "il glisse jusqu'au contact sur la planche qu'il porte",
+  },
+  rhythm: {
+    field: "rhythm_animation",
+    label: "Planche tenue",
+    fallback: () => rhythmAnimationDefault,
+    hint: "Pose prise dès la première note, avant que l'unité ne se déplace.",
+    empty: "(pas de pose)",
+    title: "Pose pendant la séquence, par personnage",
+    note: "ce que chacun montre pendant qu'on joue les notes",
+    none: "il garde la planche qu'il portait, comme avant",
+  },
+};
+
 // `fields` dit quels champs cette action-là possède : une attaque de base n'a
 // ni coût en PA ni mode de ciblage (elle vise toujours un adversaire), un objet
 // n'a pas de coût en PA, un Eko a tout.
@@ -967,45 +1025,51 @@ function actionFields(action, fields, animations, onChanged, suggestion = "") {
   if (heals) markIgnored(natureField, "Ignorée : cette action soigne.");
   grid.appendChild(natureField);
 
-  // LE NOM D'UN GESTE SE CRÉE ICI, et pas seulement dans la fiche d'un
-  // personnage. La liste ne pouvait offrir que les planches DÉJÀ déclarées
-  // quelque part : donner un geste propre à un Eko obligeait donc à aller
-  // d'abord en inventer un chez chaque personnage, pour revenir le choisir ici.
-  // C'est pourtant sur l'action que la question se pose — « Aubaine ne doit pas
-  // faire le même geste qu'une attaque » — et le tableau ci-dessous permet
-  // ensuite de donner sa planche à chacun sans quitter la page.
-  const choices = suggestion ? [...animations, NEW_ANIMATION] : animations;
-  grid.appendChild(
-    field(
-      "Planche",
-      selectInput(choices, action.animation, (v) => {
-        if (v === NEW_ANIMATION) nameNewAnimation(action, suggestion);
-        else if (v) action.animation = v;
-        else delete action.animation;
-        onChanged();
-      }, { empty: "(pas en avant)", labelOf: animationOptionLabel }),
-      "Nom cherché dans le bloc « animations » de l'unité qui agit, pas ici."
-    )
-  );
-
+  grid.appendChild(sheetField(action, ACTION_SHEETS.gesture, animations, suggestion, onChanged));
   return grid;
 }
 
-// Demande un nom de geste et le pose sur l'action. Un refus (annulation, nom
+// LE NOM D'UNE PLANCHE SE CRÉE ICI, et pas seulement dans la fiche d'un
+// personnage. La liste ne pouvait offrir que les planches DÉJÀ déclarées
+// quelque part : donner un geste propre à un Eko obligeait donc à aller d'abord
+// en inventer un chez chaque personnage, pour revenir le choisir ici. C'est
+// pourtant sur l'action que la question se pose — « Aubaine ne doit pas faire
+// le même geste qu'une attaque » — et le tableau qui suit permet ensuite de
+// donner sa planche à chacun sans quitter la page.
+function sheetField(action, spec, animations, suggestion, onChanged) {
+  const choices = suggestion ? [...animations, NEW_ANIMATION] : animations;
+  return field(
+    spec.label,
+    selectInput(choices, action[spec.field], (v) => {
+      if (v === NEW_ANIMATION) nameNewAnimation(action, spec, suggestion);
+      else if (v) action[spec.field] = v;
+      else delete action[spec.field];
+      onChanged();
+    }, { empty: spec.empty, labelOf: animationOptionLabel }),
+    spec.hint
+  );
+}
+
+// Demande un nom de planche et le pose sur l'action. Un refus (annulation, nom
 // invalide) laisse l'action telle quelle : l'appelant redessine de toute façon,
 // donc la liste revient d'elle-même sur la valeur d'avant.
-function nameNewAnimation(action, suggestion) {
+//
+// Le nom proposé est celui de l'action pour le geste, et suffixé pour les
+// autres moments : un même Eko peut vouloir deux planches, et « aubaine » pour
+// les deux ferait jouer la même des deux côtés sans que rien ne le dise.
+function nameNewAnimation(action, spec, suggestion) {
+  const proposed = spec === ACTION_SHEETS.gesture ? suggestion : `${suggestion}_${spec.fallback()}`;
   const name = prompt(
-    "Nom du geste de cette action. Chaque personnage qui la lance jouera SA "
+    "Nom de la planche. Chaque personnage qui lance cette action jouera SA "
       + "planche portant ce nom :",
-    suggestion
+    proposed
   );
   if (!name) return;
   if (!ID_PATTERN.test(name)) {
     alert("Nom invalide : minuscules, chiffres et « _ » seulement.");
     return;
   }
-  action.animation = name;
+  action[spec.field] = name;
 }
 
 // MÊME VOCABULAIRE QUE LA PAGE UNITÉS. Une action ne porte pas une planche,
@@ -1014,7 +1078,7 @@ function nameNewAnimation(action, suggestion) {
 // libellés sont donc les mêmes des deux bords, sinon la même chaîne s'appelle
 // « Repos — idle » ici et « idle » là.
 function animationOptionLabel(key) {
-  if (key === NEW_ANIMATION) return "+ nouveau geste…";
+  if (key === NEW_ANIMATION) return "+ nouvelle planche…";
   const label = momentLabels.animation_labels?.[key];
   if (label) return `${label} — ${key}`;
   return key === actionAnimationDefault
@@ -1030,11 +1094,12 @@ function animationOptionLabel(key) {
 // d'une unité ne regarde qu'elle, un Eko ne regarde que les personnages qui le
 // connaissent. Sans ça, la ligne accuserait un manque chez des unités qui ne
 // lanceront jamais cette action.
-function animationCoverage(action, performers) {
-  const name = action.animation || actionAnimationDefault;
+function animationCoverage(action, performers, spec) {
+  const fallback = spec.fallback();
+  const name = action[spec.field] || fallback;
   const units = entriesOf("units");
   const has = [];
-  const fallback = [];
+  const replaced = [];
   const none = [];
   for (const id of performers) {
     const unit = units[id];
@@ -1044,27 +1109,27 @@ function animationCoverage(action, performers) {
     // planche qu'il n'a pas (cf. BattleAssault._gesture_for) : l'éditeur doit
     // dire la même chose, sinon il annonce un geste manquant là où il y en a un.
     if (sheets[name]) has.push(id);
-    else if (sheets[actionAnimationDefault]) fallback.push(id);
+    else if (sheets[fallback]) replaced.push(id);
     else none.push(id);
   }
-  return { name, has, fallback, none };
+  return { name, fallback, has, replaced, none };
 }
 
 // Ligne d'information sous les champs d'une action, dans le même esprit que
 // « États sans planche : … » côté unité.
-function actionCoverageLine(action, performers) {
+function actionCoverageLine(action, performers, spec) {
   const line = el("span", "battle-inline-hint");
   if (!performers || performers.length === 0) {
     line.textContent = "Aucune unité ne connaît cette action pour l'instant.";
     return line;
   }
-  const { name, has, fallback, none } = animationCoverage(action, performers);
+  const { name, fallback, has, replaced, none } = animationCoverage(action, performers, spec);
   const parts = [];
   if (has.length) parts.push(`déclarée par ${has.join(", ")}`);
-  if (fallback.length) {
-    parts.push(`${fallback.join(", ")} jouera « ${actionAnimationDefault} » à la place`);
+  if (replaced.length) {
+    parts.push(`${replaced.join(", ")} jouera « ${fallback} » à la place`);
   }
-  if (none.length) parts.push(`aucun geste pour ${none.join(", ")}`);
+  if (none.length) parts.push(`rien pour ${none.join(", ")}, ${spec.none}`);
   line.textContent = `Planche « ${name} » : ${parts.join(" ; ")}.`;
   // Rouge seulement quand quelqu'un frappe VRAIMENT sans rien montrer : un
   // repli sur la planche du personnage est un fonctionnement normal, pas une
@@ -1088,21 +1153,18 @@ function actionCoverageLine(action, performers) {
 // C'est aussi ce qui manquait pour que le réglage soit FAISABLE d'ici : la
 // ligne d'information annonçait « aucun geste pour iris » sans offrir le geste
 // qui l'aurait corrigé.
-function gestureTable(action, performers, onChanged) {
+function sheetTable(action, performers, onChanged, spec) {
   const block = el("div", "battle-block");
-  const name = action.animation || actionAnimationDefault;
-  block.appendChild(
-    sectionTitle(
-      "Geste, par personnage",
-      `la planche que chacun joue sous le nom « ${name} »`
-    )
-  );
+  const name = action[spec.field] || spec.fallback();
+  block.appendChild(sectionTitle(spec.title, `${spec.note} — sous le nom « ${name} »`));
   if (performers.length === 0) {
     block.appendChild(el("p", "battle-inline-hint", "Personne ne lance cette action."));
     return block;
   }
   const table = el("div", "battle-gestures");
-  for (const id of performers) table.appendChild(gestureLine(id, name, onChanged));
+  for (const id of performers) {
+    table.appendChild(performerSheetLine(id, name, onChanged, spec));
+  }
   block.appendChild(table);
   return block;
 }
@@ -1110,7 +1172,7 @@ function gestureTable(action, performers, onChanged) {
 // Une ligne du tableau : qui, et ce qu'il joue. Trois cas, et un seul d'entre
 // eux se règle vraiment ici — les deux autres disent ce que le MOTEUR fera à la
 // place, parce qu'aucun des deux ne lève d'erreur en jeu.
-function gestureLine(unitId, name, onChanged) {
+function performerSheetLine(unitId, name, onChanged, spec) {
   const unit = entriesOf("units")[unitId];
   const line = el("div", "battle-gesture");
   const head = el("div", "battle-gesture-head");
@@ -1129,31 +1191,35 @@ function gestureLine(unitId, name, onChanged) {
   }
 
   if (unit.animations?.[name]) {
-    head.appendChild(el("span", "battle-badge", "geste propre"));
+    head.appendChild(el("span", "battle-badge", "planche propre"));
     line.appendChild(animationBlock(unitId, unit, name, onChanged, { state: false }));
     return line;
   }
 
   const note = el("div", "battle-gesture-fallback");
-  // Le moteur retombe sur l'ATTAQUE DU PERSONNAGE quand l'action nomme une
-  // planche qu'il n'a pas — et sur rien du tout s'il n'a pas celle-là non plus
-  // (cf. BattleAssault._gesture_for). Les deux sont des fonctionnements
-  // normaux ; seul le second mérite du rouge.
-  const fallback = unit.animations?.[actionAnimationDefault];
+  // Le moteur retombe sur l'ÉTAT DU PERSONNAGE quand l'action nomme une planche
+  // qu'il n'a pas — et sur rien du tout s'il n'a pas celle-là non plus
+  // (cf. BattleAssault._sheet_for). Les deux sont des fonctionnements normaux ;
+  // seul le second mérite du rouge.
+  const state = spec.fallback();
+  const fallback = unit.animations?.[state];
   if (fallback) {
     head.appendChild(el("span", "battle-badge", "repli"));
     note.appendChild(staticFrame(fallback, sheetUrl(fallback.sheet), 40));
     note.appendChild(
       el("span", "battle-inline-hint",
-        `Pas de planche « ${name} » : il joue son geste d'attaque `
-        + `« ${actionAnimationDefault} ».`)
+        `Pas de planche « ${name} » : il joue sa planche « ${state} ».`)
     );
   } else {
-    head.appendChild(el("span", "battle-warning", "aucun geste"));
+    head.appendChild(el("span", "battle-warning", "rien à montrer"));
+    // L'ACTION QUI NE NOMME RIEN retombe sur l'état du personnage : les deux
+    // noms sont alors le MÊME, et « ni rhythm ni rhythm » se lit comme un bug
+    // de l'éditeur. Un seul nom, une seule fois.
     note.appendChild(
       el("span", "battle-inline-hint",
-        `Ni « ${name} » ni « ${actionAnimationDefault} » : il frappe sans rien `
-        + "montrer, d'un simple pas en avant.")
+        name === state
+          ? `Aucune planche « ${name} » : ${spec.none}.`
+          : `Ni « ${name} » ni « ${state} » : ${spec.none}.`)
     );
   }
   const add = el("button", "battle-chip-add", `+ planche « ${name} »`);
@@ -1196,6 +1262,232 @@ function unreachableLine(action) {
     + " — un son posé là ne se jouera pas.");
 }
 
+// ──────────────────────────────────────────────────────────────────────────
+//  Déplacement
+// ──────────────────────────────────────────────────────────────────────────
+
+// AU CONTACT OU À DISTANCE, et la planche du trajet.
+//
+// Jusqu'ici toute action offensive traversait le terrain : juste d'un coup
+// d'épée, faux d'un tir ou d'un sort lancé de loin. « ranged » supprime les deux
+// déplacements d'un bloc — l'aller ET le retour, qui n'a plus rien à ramener —
+// ainsi que le glissement du terrain, qui existe pour accompagner celui qui
+// s'élance (cf. BattleAssault._comes_to_contact).
+//
+// CE QUI DEVIENT SANS OBJET EST ESTOMPÉ, PAS CACHÉ : la planche du trajet garde
+// sa valeur, visiblement inerte, et redevient vivante si l'action repasse au
+// contact. Le TABLEAU par personnage, lui, disparaît — c'est un bloc haut, et
+// le garder pour dire « ceci ne sert à rien » occuperait l'écran au lieu de
+// l'informer.
+function rangeBlock(action, performers, animations, suggestion, onChanged, onGestureChanged) {
+  const wrap = el("div", "battle-range");
+  const heals = Number(action.heal || 0) > 0;
+  const ranged = action.range === "ranged";
+
+  const grid = el("div", "battle-grid");
+  const rangeField = field(
+    "Portée",
+    selectInput(vocabulary.ranges, action.range || "melee", (value) => {
+      // « melee » est le DÉFAUT du moteur : ne pas l'écrire garde les
+      // catalogues tels qu'ils étaient avant ce champ, et une entrée qu'on
+      // n'a pas touchée ne gagne pas une ligne à la première visite.
+      if (value === "ranged") action.range = value;
+      else delete action.range;
+      onChanged();
+    }, { labelOf: rangeLabel, titleOf: (key) => key }),
+    "Au contact, l'unité va vers sa cible et revient. À distance, elle frappe "
+      + "depuis son emplacement et il n'y a pas de repli."
+  );
+  // UN SOIN NE SE DÉPLACE JAMAIS, quelle que soit la portée déclarée : le
+  // moteur le sort avant même de lire ce champ (cf. _comes_to_contact).
+  if (heals) markIgnored(rangeField, "Ignorée : un soin ne se déplace pas.");
+  grid.appendChild(rangeField);
+
+  const sheet = sheetField(action, ACTION_SHEETS.approach, animations, suggestion, onChanged);
+  if (heals) markIgnored(sheet, "Ignorée : un soin ne se déplace pas.");
+  else if (ranged) markIgnored(sheet, "Ignorée : à distance, l'unité ne bouge pas.");
+  grid.appendChild(sheet);
+  wrap.appendChild(grid);
+
+  if (heals || ranged) {
+    wrap.appendChild(
+      el("p", "battle-inline-hint",
+        heals
+          ? "Un soin part de son emplacement : ni approche, ni repli."
+          : "À distance : l'unité reste à son emplacement, le terrain ne glisse "
+            + "pas, et il n'y a pas de repli. Les sons posés sur « Approche » et "
+            + "« Retour » ne partiront jamais.")
+    );
+    return wrap;
+  }
+  wrap.appendChild(
+    byPerformer(action, performers, onChanged, onGestureChanged, ACTION_SHEETS.approach)
+  );
+  return wrap;
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+//  Effet d'impact
+// ──────────────────────────────────────────────────────────────────────────
+
+// Modes de fusion d'un effet, et ce qu'ils veulent dire pour l'auteur. Le
+// vocabulaire est celui du moteur (cf. BattleVfx.BLEND_ADD) ; l'explication,
+// elle, est en termes de PLANCHE — c'est en la regardant qu'on choisit, et
+// « fond noir » se vérifie d'un coup d'œil là où « BLEND_MODE_ADD » ne se
+// vérifie nulle part.
+const VFX_BLENDS = ["", "add"];
+const VFX_BLEND_LABELS = {
+  "": "normale (planche détourée)",
+  add: "additive (planche sur fond noir)",
+};
+
+// L'EFFET QUI ÉCLATE SUR LA CIBLE QUAND L'ACTION PORTE.
+//
+// POURQUOI IL VIT SUR L'ACTION et pas sur un personnage, contrairement au geste
+// et à la pose. Ces deux-là sont des planches du PERSONNAGE — c'est lui qui
+// bouge, et deux héros ne lancent pas le même Eko de la même façon. L'impact,
+// lui, est ce que l'ACTION fait à celui qui le reçoit : une attaque normale et
+// un Eko de foudre ne montrent pas la même chose, quel que soit celui qui
+// frappe. Il n'y a donc rien à chercher chez le lanceur, et sa planche est
+// décrite ici même.
+//
+// PAS DE BOUCLAGE À RÉGLER : un impact se joue une fois et s'efface, c'est le
+// moteur qui le fixe (cf. BattleVfx.play_once). Un champ `loop` dans la donnée
+// serait lu par personne.
+function vfxBlock(action, suggestion, onChanged) {
+  const wrap = el("div", "battle-vfx");
+  const config = action.impact_vfx;
+  if (!config) {
+    wrap.appendChild(
+      el("p", "battle-inline-hint",
+        "Aucun effet : la cible encaisse sans rien d'autre que son éclat blanc "
+        + "et son nombre de dégâts.")
+    );
+    const add = el("button", "battle-chip-add", "+ effet d'impact");
+    add.type = "button";
+    add.onclick = () => {
+      action.impact_vfx = blankSheet();
+      onChanged();
+    };
+    wrap.appendChild(add);
+    return wrap;
+  }
+
+  const body = el("div", "battle-anim-body");
+  // La planche jouée UNE FOIS dans l'aperçu comme en jeu : `loop` n'existe pas
+  // dans la donnée d'un impact, et un aperçu qui tourne en rond donnerait une
+  // idée fausse de sa durée.
+  const preview = animationPreview({ ...config, loop: false }, sheetUrl(config.sheet), true);
+  if (config.blend === "add") preview.classList.add("battle-vfx-add");
+  if (config.sheet) {
+    preview.classList.add("sheet-preview-openable");
+    preview.title = "Voir la planche entière";
+    preview.onclick = () => openSheet(config, "impact", onChanged);
+  }
+  body.appendChild(preview);
+
+  const column = el("div", "battle-anim-settings");
+  const head = el("div", "battle-anim-head");
+  head.appendChild(el("span", "battle-inline-hint", vfxSummary(config)));
+  const drop = el("button", "modal-map-delete", "🗑");
+  drop.type = "button";
+  drop.title = "Retirer l'effet d'impact";
+  drop.onclick = () => {
+    if (!confirm("Retirer l'effet d'impact de cette action ?")) return;
+    delete action.impact_vfx;
+    onChanged();
+  };
+  head.appendChild(drop);
+  column.appendChild(head);
+
+  // Le fichier, la grille et l'extrait se règlent EXACTEMENT comme une planche
+  // de personnage : ce sont les mêmes mesures sur la même sorte d'image, et
+  // l'auteur n'a pas à réapprendre trois commandes parce que l'image sert à
+  // autre chose. `{}` en guise d'unité : le relevé d'ancrage n'a pas de sens
+  // ici — un effet n'a pas de planche de repos sur laquelle se recaler — et la
+  // mesure rend alors `null`, ce qui efface simplement l'ancrage.
+  column.appendChild(sheetLine(suggestion, {}, config, "impact", onChanged));
+  const grid = el("div", "battle-grid");
+  for (const [key, label, options] of SHEET_FIELDS) {
+    grid.appendChild(objectNumberField(config, key, label, { ...options, onCommit: onChanged }));
+  }
+  column.appendChild(grid);
+  column.appendChild(gridLine({}, "impact", config, onChanged));
+  column.appendChild(framesLine(config, "impact", onChanged));
+
+  const options = el("div", "battle-grid");
+  options.appendChild(
+    field(
+      "Fusion",
+      selectInput(VFX_BLENDS, config.blend || "", (value) => {
+        if (value) config.blend = value;
+        else delete config.blend;
+        onChanged();
+      }, { labelOf: (key) => VFX_BLEND_LABELS[key] || key }),
+      "Une planche peinte sur fond noir s'ajoute à l'image au lieu de la "
+        + "recouvrir : son noir n'apporte rien, et seule sa lumière passe."
+    )
+  );
+  column.appendChild(options);
+  column.appendChild(vfxOffsetLine(config, onChanged));
+
+  body.appendChild(column);
+  wrap.appendChild(body);
+  return wrap;
+}
+
+function vfxSummary(config) {
+  const count = Math.max(1, Number(config.frames || 1));
+  const fps = Math.max(1, Number(config.fps || 6));
+  return `${count} vignette${count > 1 ? "s" : ""} · ${fps} fps · `
+    + `${(count / fps).toFixed(2).replace(".", ",")} s`;
+}
+
+// OÙ L'EFFET SE POSE, compté depuis le CENTRE DU DESSIN de la cible — pas
+// depuis son point au sol, qui est sous ses pieds (cf. BattleAssault._pop_vfx).
+// Zéro veut donc dire « au milieu du personnage touché », ce qui est le bon
+// défaut pour un impact et n'a rien d'un point inventé : il est mesuré sur les
+// pixels réellement dessinés.
+//
+// La paire est écrite ENTIÈRE ou effacée : `offset` est un couple dans le
+// fichier, et n'en écrire qu'une moitié donnerait un tableau incomplet que le
+// moteur ignorerait en silence.
+function vfxOffsetLine(config, onChanged) {
+  const line = el("div", "battle-grid");
+  const declared = Array.isArray(config.offset) ? config.offset : [0, 0];
+  const inputs = [];
+  const commit = (index, value) => {
+    const pair = [Number(inputs[0].value) || 0, Number(inputs[1].value) || 0];
+    pair[index] = value;
+    if (pair[0] === 0 && pair[1] === 0) delete config.offset;
+    else config.offset = pair;
+    onChanged();
+  };
+  ["Décalage X", "Décalage Y"].forEach((label, index) => {
+    const input = numberInput(declared[index] ?? 0, (value) => commit(index, value));
+    inputs.push(input);
+    line.appendChild(
+      field(label, input,
+        index === 0
+          ? "Depuis le centre du dessin de la cible. Positif = vers la droite."
+          : "Depuis le centre du dessin de la cible. Négatif = vers le haut.")
+    );
+  });
+  return line;
+}
+
+// Le tableau par personnage quand on peut y agir, la ligne d'information sinon.
+//
+// La fiche d'une UNITÉ montre déjà toutes ses planches juste au-dessus : y
+// répéter le tableau ne dirait rien de neuf. Sur un Eko ou un objet, au
+// contraire, c'est le seul endroit d'où l'on voit — et règle — ce que joue
+// chacun de ceux qui le lancent.
+function byPerformer(action, performers, onChanged, onGestureChanged, spec) {
+  return onGestureChanged
+    ? sheetTable(action, performers, onGestureChanged, spec)
+    : actionCoverageLine(action, performers, spec);
+}
+
 // `sounds = false` sur l'attaque de base d'une unité : ses sons rejoignent la
 // liste unique de l'unité, avec la voix du personnage. Un Eko ou un objet, lui,
 // n'a qu'une famille et garde ses sons dans son propre bloc.
@@ -1211,17 +1503,37 @@ function actionBlock(
   // chose : des réglages, un geste, des sons.
   block.appendChild(sectionTitle(title));
   block.appendChild(actionFields(action, fields, animations, onChanged, suggestion));
-  // La fiche d'une UNITÉ montre déjà toutes ses planches juste au-dessus : y
-  // répéter le tableau ne dirait rien de neuf, la ligne d'information suffit.
-  // Sur un Eko ou un objet, au contraire, c'est le seul endroit d'où l'on voit
-  // — et règle — le geste de chacun de ceux qui le lancent.
-  block.appendChild(
-    onGestureChanged
-      ? gestureTable(action, performers, onGestureChanged)
-      : actionCoverageLine(action, performers)
-  );
+  block.appendChild(byPerformer(action, performers, onChanged, onGestureChanged, ACTION_SHEETS.gesture));
   block.appendChild(sectionTitle("Séquence de rythme"));
   block.appendChild(sequenceEditor(action, onChanged));
+
+  // LA POSE RESTE DANS LA SECTION DU RYTHME, sans intertitre à elle : elle se
+  // prend à la première note, et le tableau qui la suit porte déjà son titre.
+  // Deux en-têtes qui se suivent en disant la même chose se lisent comme une
+  // répétition, pas comme une hiérarchie.
+  const pose = el("div", "battle-grid");
+  const poseField = sheetField(
+    action, ACTION_SHEETS.rhythm, animations, suggestion, onChanged
+  );
+  // SANS SÉQUENCE, PAS DE POSE : la barre ne se joue pas du tout (cf.
+  // BattleAssault._run_rhythm, qui sort avant). Le dire plutôt que de laisser
+  // régler une planche qui ne se montrera jamais.
+  if ((action.sequence || []).length === 0) {
+    markIgnored(poseField, "Ignorée : sans séquence, la barre ne se joue pas.");
+  }
+  pose.appendChild(poseField);
+  block.appendChild(pose);
+  block.appendChild(byPerformer(action, performers, onChanged, onGestureChanged, ACTION_SHEETS.rhythm));
+
+  block.appendChild(sectionTitle("Déplacement", "comment l'unité rejoint sa cible"));
+  block.appendChild(
+    rangeBlock(action, performers, animations, suggestion, onChanged, onGestureChanged)
+  );
+
+  block.appendChild(
+    sectionTitle("Impact", "ce qui éclate sur la cible quand l'effet porte")
+  );
+  block.appendChild(vfxBlock(action, suggestion, onChanged));
   if (sounds) {
     block.appendChild(
       sectionTitle("Sons", "de CETTE action, aux six moments de son geste")
@@ -1881,7 +2193,10 @@ function gridLine(unit, name, config, onChanged) {
 // 1 × 1 ; la grille était donc « inchangée » et l'ancrage n'était jamais
 // relevé. C'est exactement ce qui est arrivé à `noah_approach`.
 async function applyMeasuredGrid(unit, name, config, url, remeasureAnchor = false) {
-  const grid = await measureGrid(url);
+  // La convention du « vide » se lit sur la planche elle-même : un effet joué
+  // en fusion additive est peint sur du NOIR, pas détouré, et le relevé par
+  // l'alpha n'y trouverait aucune coupe (cf. sheet-grid.measureGrid).
+  const grid = await measureGrid(url, { onDark: config.blend === "add" });
   if (grid === null) return null;
   const same = Number(config.columns || 1) === grid.columns
     && Number(config.rows || 1) === grid.rows;
@@ -2223,6 +2538,9 @@ function renderUnit(id, unit, refresh) {
     actionBlock("Attaque de base", unit.basic_attack, ["heal"], sheets, refresh, {
       sounds: false,
       performers: [id],
+      // Le nom du personnage sert de préfixe aux fichiers qu'on importe depuis
+      // ici (noah_impact.png) et de base aux noms de planche qu'on y crée.
+      suggestion: id,
     })
   );
 
@@ -2773,6 +3091,7 @@ export async function openBattleManager() {
   vocabulary = { ...vocabulary, ...vocab };
   animationStates = vocab.animation_states || [];
   actionAnimationDefault = vocab.action_animation_default || "atk";
+  rhythmAnimationDefault = vocab.rhythm_animation_default || "rhythm";
   momentLabels = labels;
   sheetFiles = sheetList;
   if (!momentLabels.labels) momentLabels.labels = {};

@@ -1104,6 +1104,47 @@ pas partir en guerre contre des choix déjà faits et documentés dans ce repo :
   jugement ne se voit nulle part ailleurs. Au repos il montre l'instant où la
   PREMIÈRE note touche l'anneau : une image réelle de l'animation, où toute la
   séquence se lit, alors qu'à t = 0 la barre est vide.
+- **Deux moments qui suivent la même règle n'ont droit qu'à UNE fonction.** Le
+  geste (`animation`) et la pose tenue pendant la séquence de rythme
+  (`rhythm_animation`) se résolvent exactement pareil — le nom que porte
+  l'ACTION, sinon l'état du PERSONNAGE — d'où `BattleAssault._sheet_for(unit,
+  action, field, fallback)` et non deux jumelles. Côté éditeur, pareil : un
+  tableau `ACTION_SHEETS` décrit les deux, et le même tableau « par personnage »
+  les sert. La règle vaut aussi pour le PARSEUR qui lit le défaut dans le `.gd` :
+  accroché à la forme d'appel `get("animation", …)`, il s'est tu en silence dès
+  que la lecture est passée par `_sheet_for` — il retombait sur son repli, qui
+  se trouvait juste. C'est `parsed.action_animation_default` qui l'a montré ;
+  tout ce qu'on lit dans le moteur mérite son drapeau « vraiment lu ».
+- **Un effet d'impact appartient à l'ACTION, un geste au PERSONNAGE.** Le geste
+  et la pose sont des planches du personnage (deux héros ne lancent pas le même
+  Eko de la même façon), donc l'action n'en porte que le NOM. L'impact, lui, est
+  ce que l'action fait à celui qui le reçoit : une attaque normale et un Eko de
+  foudre ne montrent pas la même chose quel que soit le frappeur. Sa planche est
+  donc décrite dans le catalogue de l'action (`impact_vfx`), et il n'y a rien à
+  chercher chez le lanceur. Le test qui tranche : « est-ce que ça changerait si
+  quelqu'un d'autre lançait la même action ? »
+- **Une planche d'effet n'est pas forcément détourée.** `vfx_hit.png` est
+  OPAQUE du premier au dernier pixel : son vide est peint en noir, et c'est la
+  fusion ADDITIVE qui le rend invisible (le noir n'ajoute rien, seule la lumière
+  passe). Détourer une telle planche détruirait les dégradés d'une lueur. Deux
+  conséquences : `BattleVfx` sait poser un `CanvasItemMaterial` en
+  `BLEND_MODE_ADD` (`blend: "add"` dans la donnée), et le relevé de grille de
+  l'éditeur sait chercher ses gouttières dans le NOIR et non dans l'alpha
+  (`measureGrid(url, {onDark})`) — sans quoi le bouton « Automatique » ne
+  trouvait rien sur la seule planche d'effet du projet. L'aperçu de l'éditeur se
+  pose alors sur du noir, ce qui montre exactement ce que l'addition donnera.
+- **« Offensive » et « va au contact » ne sont pas la même question.** Elles se
+  confondaient tant que TOUTE attaque traversait le terrain ; une attaque à
+  distance (`range: "ranged"`) les sépare, et trois décisions qui lisaient
+  `offensive` parlaient en fait du DÉPLACEMENT : l'approche, le repli, et le
+  glissement du terrain — qui existe pour accompagner celui qui s'élance. Le
+  piège qui attendait était ailleurs : `_play_gesture` choisissait son repli sur
+  `offensive`, avec le commentaire « une unité venue au contact marque un temps
+  d'arrêt, le déplacement tient lieu de geste ». Vrai pour un coup d'épée, faux
+  pour un tir — un quart de seconde où rien du tout ne se passe. Règle : quand
+  on ajoute une variante à un comportement jusqu'ici unique, relire CHAQUE test
+  qui s'appuyait sur l'ancienne équivalence, en commençant par les commentaires
+  qui justifient un repli.
 - **Un « état » d'animation n'existe que si le moteur le JOUE.** Ajouter une
   entrée dans `units.json` ou une ligne dans l'éditeur ne crée rien : il faut un
   `const ANIM_X := "x"` et un appel à `play_sheet()` au bon endroit du déroulé.

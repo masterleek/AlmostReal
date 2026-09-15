@@ -32,6 +32,7 @@ const HitFeedback = preload("res://Scripts/Battle/UI/HitFeedback.gd")
 const RhythmBar = preload("res://Scripts/Battle/UI/RhythmBar.gd")
 const ActionBanner = preload("res://Scripts/Battle/UI/ActionBanner.gd")
 const ActorCursor = preload("res://Scripts/Battle/UI/ActorCursor.gd")
+const BattleVfx = preload("res://Scripts/Battle/Stage/BattleVfx.gd")
 const EnemyBehaviour = preload("res://Scripts/Battle/EnemyBehaviour.gd")
 
 ## Émis dès qu'une valeur affichée par le HUD a bougé (PV, blessure, mort).
@@ -82,6 +83,22 @@ const ANIM_RETURN := "move_back"
 ## la planche qu'elle porte — son repos.
 const ANIM_APPROACH := "approach"
 
+## PORTÉE d'une action offensive : est-ce qu'elle amène celui qui la lance AU
+## CONTACT, ou est-ce qu'elle part de son emplacement ?
+##
+## Jusqu'ici toute attaque traversait le terrain — ce qui est juste d'un coup
+## d'épée et faux d'un tir ou d'un sort lancé de loin. « ranged » supprime les
+## deux déplacements d'un bloc : l'unité ne va pas au contact, et il n'y a donc
+## rien à ramener ensuite. Le glissement du terrain suit la même règle : il
+## existe parce que la caméra accompagne CELUI QUI S'ÉLANCE (cf. les maquettes
+## d'assaut), et personne ne s'élance ici.
+##
+## PAR DÉFAUT « melee », donc exactement le comportement d'avant ce champ : une
+## action qui ne le déclare pas se joue comme elle s'est toujours jouée.
+const RANGE_MELEE := "melee"
+const RANGE_RANGED := "ranged"
+const RANGES: PackedStringArray = [RANGE_MELEE, RANGE_RANGED]
+
 ## Planche du GESTE d'attaque, celle du PERSONNAGE. Une action peut nommer la
 ## sienne (`animation` dans ekos.json / items.json / basic_attack), et c'est ce
 ## qui permet à deux Ekos d'avoir deux gestes ; mais quand elle n'en nomme pas,
@@ -90,6 +107,20 @@ const ANIM_APPROACH := "approach"
 ## une planche du même nom — et le jour où l'un renomme la sienne, il attaque
 ## sans geste, en silence.
 const ANIM_ATTACK := "attack"
+
+## Planche tenue PENDANT LA SÉQUENCE DE RYTHME, avant que l'unité ne bouge.
+##
+## C'est le seul moment de l'assaut où il ne se passait rien à l'écran : le
+## joueur a les yeux sur la barre, et le personnage restait figé sur la pose
+## d'attente héritée de la préparation. Une planche ici lui donne sa mise en
+## garde, son incantation, son armement de coup — et comme elle est nommée par
+## l'ACTION avant de retomber sur le personnage, deux Ekos peuvent se préparer
+## différemment.
+##
+## FACULTATIVE, et sans repli inventé : sans planche, l'unité garde celle
+## qu'elle portait, exactement comme avant. La planche qui suit (approche ou
+## geste) la remplace de toute façon.
+const ANIM_RHYTHM := "rhythm"
 
 ## Planche de DOULEUR, jouée par celui qui ENCAISSE. C'est la contrepartie
 ## visuelle du cri `hurt` (cf. BattleData.UNIT_SOUNDS) : même mot, même
@@ -281,6 +312,10 @@ func _resolve(entry: Dictionary) -> void:
 
 	var effect := _effect_of(unit, action)
 	var offensive := bool(effect["offensive"])
+	# CE QUI DÉCIDE DES DÉPLACEMENTS n'est plus « est-ce que ça frappe ? » mais
+	# « est-ce que ça va au contact ? ». Les deux se confondaient tant que toute
+	# attaque traversait le terrain ; une attaque à distance les sépare.
+	var contact := _comes_to_contact(unit, action, offensive)
 	var gesture := _gesture_for(unit, action)
 	var ally_acts := _allies.has(entry)
 	# Annoncée dès le départ : la maquette montre la pastille déjà en place
@@ -304,19 +339,20 @@ func _resolve(entry: Dictionary) -> void:
 	var multiplier := await _run_rhythm(unit, action, ally_acts, sounds)
 	effect["multiplier"] = multiplier
 
-	# Aller au contact, frapper, revenir. Une action qui SOIGNE ne se déplace
-	# pas : elle n'a personne à aller chercher, et traverser le terrain pour
-	# tendre une potion se lirait comme une charge.
-	if offensive:
+	# Aller au contact, frapper, revenir. Deux actions n'y vont pas : celle qui
+	# SOIGNE — elle n'a personne à aller chercher, et traverser le terrain pour
+	# tendre une potion se lirait comme une charge — et celle qui frappe À
+	# DISTANCE, qui part de son emplacement.
+	if contact:
 		# Le terrain glisse VERS LA CIBLE en même temps que l'attaquant s'élance :
 		# sur les maquettes, la vignette où il est au contact est aussi celle où
-		# le décor a bougé.
+		# le décor a bougé. Pas d'élan, donc pas de glissement.
 		field_shift.emit(1 if ally_acts else -1)
 		_cue(sounds, "approach")
-		await _approach(entry, targets)
+		await _approach(entry, targets, _approach_for(unit, action))
 
 	_cue(sounds, "gesture")
-	await _play_gesture(entry, targets, gesture, offensive)
+	await _play_gesture(entry, targets, gesture, contact)
 
 	for target in targets:
 		# Relevé AVANT le coup : c'est le point de départ de l'animation de
@@ -334,11 +370,14 @@ func _resolve(entry: Dictionary) -> void:
 		impact.emit()
 
 	await _finish_gesture(entry, gesture)
-	if offensive:
+	if contact:
 		field_shift.emit(0)
 		_cue(sounds, "return")
 		await _return_home(entry)
 	else:
+		# Personne à ramener : l'unité n'a pas quitté son emplacement. Elle
+		# retrouve son repos sur place, ce que `_return_home` faisait pour les
+		# autres au bout de son trajet.
 		_node_of(entry).play_sheet(BattleData.get_animation(unit.id, ANIM_IDLE))
 	_rhythm.rest()
 	_banner.hide_action()
@@ -360,6 +399,16 @@ func _run_rhythm(
 	# séquence sort à la ligne précédente, et son « rhythm » ne doit pas sonner
 	# sur une barre qui ne se joue jamais.
 	_cue(sounds, "rhythm")
+	# LA POSE SE PREND AVANT LA PREMIÈRE NOTE, pas après : c'est elle qui dit ce
+	# que le personnage est en train de préparer, et l'annoncer une fois la
+	# séquence jouée n'annoncerait plus rien. Rien à restaurer derrière — la
+	# suite du déroulé (approche, geste, puis repos) repose une planche de toute
+	# façon.
+	var pose := _rhythm_pose_for(unit, action)
+	if not pose.is_empty():
+		var sprite := _sprite_of(unit) as UnitSprite
+		if sprite != null:
+			sprite.play_sheet(pose)
 	# Le curseur dit QUI joue : pendant la séquence, le joueur a les yeux sur la
 	# barre, et l'unité n'a pas encore bougé.
 	_cursor.show_above(_sprite_of(unit))
@@ -399,13 +448,39 @@ func _sequence_of(unit: BattleUnit, action: Dictionary) -> PackedStringArray:
 ## sa propre planche et sa propre fourchette de frames. Une planche absente
 ## n'est pas une erreur : l'unité frappe sans geste (cf. _play_gesture).
 func _gesture_for(unit: BattleUnit, action: Dictionary) -> Dictionary:
-	var name := String(_definition_of(unit, action).get("animation", ANIM_ATTACK))
+	return _sheet_for(unit, action, "animation", ANIM_ATTACK)
+
+## Planche tenue pendant la séquence de rythme, même règle que le geste : c'est
+## l'ACTION qui la nomme (`rhythm_animation`), le PERSONNAGE qui la déclare, et
+## à défaut on retombe sur l'état `rhythm` de celui qui joue. Vide s'il n'en a
+## aucune des deux — il garde alors la planche qu'il porte.
+func _rhythm_pose_for(unit: BattleUnit, action: Dictionary) -> Dictionary:
+	return _sheet_for(unit, action, "rhythm_animation", ANIM_RHYTHM)
+
+## Planche du déplacement vers la cible, même règle encore : une charge à l'épée
+## et une course d'approche n'ont pas de raison de se ressembler, et deux Ekos du
+## même personnage peuvent vouloir deux élans.
+func _approach_for(unit: BattleUnit, action: Dictionary) -> Dictionary:
+	return _sheet_for(unit, action, "approach_animation", ANIM_APPROACH)
+
+## PLANCHE NOMMÉE PAR UNE ACTION, CHERCHÉE CHEZ CELUI QUI AGIT. Une seule
+## fonction pour les deux moments qui marchent ainsi (le geste, la pose de
+## rythme), parce que c'est une seule règle — et qu'elle a un point subtil qu'on
+## ne veut pas voir diverger d'un moment à l'autre.
+##
+## `field` est le champ du catalogue qui porte le NOM, `fallback` l'état du
+## personnage sur lequel on retombe. L'ACTION D'ABORD, LE PERSONNAGE ENSUITE :
+## une action qui nomme une planche que ce personnage-là n'a pas ne doit pas le
+## laisser sans rien, il joue alors la sienne. Sans ce repli, un Eko partagé
+## entre deux héros exige que tous deux aient une planche du même nom — et le
+## jour où l'un renomme la sienne, il frappe sans geste, en silence.
+func _sheet_for(
+	unit: BattleUnit, action: Dictionary, field: String, fallback: String
+) -> Dictionary:
+	var name := String(_definition_of(unit, action).get(field, fallback))
 	var sheet := BattleData.get_animation(unit.id, name)
-	# L'ACTION D'ABORD, LE PERSONNAGE ENSUITE. Une action qui nomme une planche
-	# que ce personnage-là n'a pas ne doit pas le laisser sans geste : il joue
-	# alors son attaque à lui.
-	if sheet.is_empty() and name != ANIM_ATTACK:
-		sheet = BattleData.get_animation(unit.id, ANIM_ATTACK)
+	if sheet.is_empty() and name != fallback:
+		sheet = BattleData.get_animation(unit.id, fallback)
 	return sheet
 
 ## Action de l'unité. Un allié joue celle qu'il a retenue ; un ennemi n'a pas de
@@ -494,8 +569,9 @@ func _standing(camp: Array[Dictionary]) -> Array[BattleUnit]:
 ## `_cue()` posé dans le déroulé ci-dessus.
 ##
 ## Deux d'entre eux sont CONDITIONNELS, et c'est assumé : « approach » et
-## « return » n'existent que pour une action offensive (un soin ne traverse pas
-## le terrain), « rhythm » que pour une action qui a une séquence. Un son
+## « return » n'existent que pour une action qui VA AU CONTACT — ni un soin, qui
+## ne traverse pas le terrain, ni une attaque à distance, qui frappe depuis son
+## emplacement — et « rhythm » que pour une action qui a une séquence. Un son
 ## accroché à un moment que son action n'atteint pas ne se joue jamais.
 const SOUND_MOMENTS: PackedStringArray = [
 	"announce",  # la pastille s'affiche, avant tout le reste
@@ -539,6 +615,23 @@ func _cue(sounds: Array, moment: String) -> void:
 	if path != "":
 		sound_cue.emit(path)
 
+## Vrai quand l'action amène son lanceur AU CONTACT. Un soin n'y va jamais : il
+## n'a personne à aller chercher, et traverser le terrain pour tendre une potion
+## se lirait comme une charge. Une portée inconnue retombe sur « melee » avec un
+## avertissement — une faute de frappe dans un catalogue ne doit pas changer un
+## comportement en silence.
+func _comes_to_contact(unit: BattleUnit, action: Dictionary, offensive: bool) -> bool:
+	if not offensive:
+		return false
+	var declared := String(_definition_of(unit, action).get("range", RANGE_MELEE))
+	if declared in RANGES:
+		return declared == RANGE_MELEE
+	push_warning(
+		"BattleAssault: portée '%s' inconnue pour '%s', repli sur '%s'"
+		% [declared, unit.id, RANGE_MELEE]
+	)
+	return true
+
 func _effect_of(unit: BattleUnit, action: Dictionary) -> Dictionary:
 	var definition := _definition_of(unit, action)
 	var heal := int(definition.get("heal", 0))
@@ -547,6 +640,12 @@ func _effect_of(unit: BattleUnit, action: Dictionary) -> Dictionary:
 		"power": int(definition.get("power", 0)),
 		"heal": heal,
 		"injury": String(definition.get("damage_type", "direct")) == "injury",
+		# L'EFFET VISUEL VOYAGE AVEC L'EFFET CHIFFRÉ. `_apply` ne reçoit pas
+		# l'action — il reçoit ce qu'elle FAIT — et c'est bien à l'endroit où le
+		# coup est appliqué que l'impact doit se montrer. Le lire ici, avec la
+		# puissance et la nature des dégâts, évite de repasser l'action entière
+		# et de la relire une seconde fois.
+		"vfx": definition.get("impact_vfx", {}),
 	}
 
 ## Raccourci de lecture : la règle elle-même vit dans BattleData, partagée avec
@@ -564,6 +663,7 @@ func _apply(actor: BattleUnit, target: BattleUnit, effect: Dictionary) -> void:
 		var healed := roundi(int(effect["heal"]) * float(effect.get("multiplier", 1.0)))
 		target.heal(healed)
 		_pop_number(anchor, healed, DamageNumber.Kind.HEAL)
+		_pop_vfx(target, effect, healed)
 		return
 	var amount := BattleRules.guarded(
 		roundi(BattleRules.damage(int(effect["power"]), actor.force, target.defense)
@@ -576,6 +676,7 @@ func _apply(actor: BattleUnit, target: BattleUnit, effect: Dictionary) -> void:
 	else:
 		target.take_direct_damage(amount)
 		_pop_number(anchor, amount, DamageNumber.Kind.DIRECT)
+	_pop_vfx(target, effect, amount)
 	# La voix du BLESSÉ, donc lue sur la fiche de la CIBLE et pas sur l'action —
 	# c'est elle qui crie. Une seule par unité touchée : contrairement aux sons
 	# d'action, qui partent une fois pour tout le geste, celui-ci décrit ce qui
@@ -629,6 +730,46 @@ func _cue_unit(unit: BattleUnit, moment: String) -> void:
 	if path != "":
 		sound_cue.emit(path)
 
+## L'IMPACT DE L'ACTION, sur une cible qu'elle a vraiment touchée.
+##
+## MÊME CONDITION QUE LE NOMBRE ET QUE LE CRI : `amount` à zéro — une garde, une
+## défense supérieure — ne montre rien. Il ne s'est rien passé qu'on puisse
+## chiffrer, crier, ni faire éclater.
+##
+## Un par CIBLE et non un par action, contrairement aux sons : une attaque de
+## groupe est bien UN geste, mais elle porte à trois endroits, et c'est
+## justement là que l'effet doit se voir.
+##
+## POSÉ SUR LE CENTRE DU DESSIN de la cible, pas sur son point au sol : un
+## impact se voit sur le corps, et le point au sol est sous les pieds. `offset`,
+## dans la donnée, déplace l'effet depuis là — il est donc nul par défaut, ce
+## qui est un défaut JUSTE et non un point inventé.
+##
+## Le nœud est instancié ICI et non par BattleVfx : un script sans `class_name`
+## ne peut pas se référencer lui-même dans une fonction statique, alors qu'un
+## `const … = preload(…)` chez l'appelant le peut.
+func _pop_vfx(target: BattleUnit, effect: Dictionary, amount: int) -> void:
+	if amount <= 0:
+		return
+	var config: Dictionary = effect.get("vfx", {})
+	if config.is_empty():
+		return
+	var sprite := _sprite_of(target) as UnitSprite
+	if sprite == null:
+		return
+	var node: Node2D = BattleVfx.new()
+	_effects.add_child(node)
+	node.play_once(config, sprite.art_centre() + _vfx_offset(config))
+
+## Décalage déclaré de l'effet, en unités de design depuis le centre du dessin
+## de la cible. Entier : un demi-pixel de design devient 2 px de flou une fois
+## le Stage agrandi ×4.
+static func _vfx_offset(config: Dictionary) -> Vector2:
+	var declared: Array = config.get("offset", [])
+	if declared.size() == 2:
+		return Vector2(int(declared[0]), int(declared[1]))
+	return Vector2.ZERO
+
 ## Le nombre est instancié ICI et non par DamageNumber : un script sans
 ## `class_name` ne peut pas se référencer lui-même dans une fonction statique,
 ## alors qu'un `const … = preload(…)` chez l'appelant le peut.
@@ -651,7 +792,7 @@ func _pop_number(anchor: Vector2, amount: int, kind: int) -> void:
 ## Sur un ciblage de groupe, le point visé est le barycentre des cibles : se
 ## poster devant un membre arbitraire donnerait l'impression de n'attaquer que
 ## celui-là. C'est déjà la règle du ciblage (cf. TargetSelector).
-func _approach(entry: Dictionary, targets: Array[BattleUnit]) -> void:
+func _approach(entry: Dictionary, targets: Array[BattleUnit], gesture: Dictionary) -> void:
 	var sprite := _node_of(entry)
 	var home: Vector2 = _home[_unit_of(entry)]
 	var focus := _centre_of(targets)
@@ -666,7 +807,6 @@ func _approach(entry: Dictionary, targets: Array[BattleUnit]) -> void:
 	# Le trajet dure au moins la planche, exactement comme le retour : une
 	# planche de course qui se terminerait à mi-chemin laisserait le personnage
 	# figé sur sa dernière image le reste du déplacement.
-	var gesture := BattleData.get_animation(_unit_of(entry).id, ANIM_APPROACH)
 	var duration := APPROACH_DURATION
 	if not gesture.is_empty():
 		duration = maxf(duration, UnitSprite.duration_of(gesture))
@@ -716,17 +856,24 @@ func _centre_of(targets: Array[BattleUnit]) -> Vector2:
 ## l'appelant qui applique les effets, pour que le Lot 7 puisse insérer sa barre
 ## de rythme entre les deux sans toucher à cette fonction.
 ##
-## Sans planche, deux cas distincts : une unité venue au contact marque un temps
-## d'arrêt (le déplacement tient lieu de geste), une unité qui soigne fait un pas
-## en avant depuis son emplacement.
+## Sans planche, deux cas distincts, et c'est LE DÉPLACEMENT qui les sépare — pas
+## la nature de l'action. Une unité VENUE AU CONTACT marque un temps d'arrêt : sa
+## course tient lieu de geste, elle vient de traverser le terrain. Une unité qui
+## n'a pas bougé — celle qui soigne, celle qui tire de loin — n'a rien montré du
+## tout, et fait un pas en avant depuis son emplacement.
+##
+## Le paramètre disait « offensive » tant que toute attaque allait au contact.
+## Une attaque À DISTANCE sans planche de geste serait alors restée plantée le
+## temps d'une pause de contact qui n'a pas eu lieu : un quart de seconde où
+## rien, absolument rien, ne se passe à l'écran.
 func _play_gesture(
-	entry: Dictionary, targets: Array[BattleUnit], gesture: Dictionary, offensive: bool
+	entry: Dictionary, targets: Array[BattleUnit], gesture: Dictionary, contact: bool
 ) -> void:
 	if not gesture.is_empty():
 		_node_of(entry).play_sheet(gesture)
 		await _wait(UnitSprite.hit_time_of(gesture))
 		return
-	if offensive:
+	if contact:
 		await _wait(CONTACT_PAUSE)
 		return
 	await _lunge(entry, targets)

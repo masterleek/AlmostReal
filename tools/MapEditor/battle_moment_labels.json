@@ -26,7 +26,8 @@
     "attack": "Attaque (planche du personnage)",
     "hurt": "Blessé (encaisse un coup)",
     "dying": "Agonie",
-    "dead": "Mort (pose tenue)"
+    "dead": "Mort (pose tenue)",
+    "rhythm": "Pose pendant la séquence de rythme"
   },
   "target_labels": {
     "enemy": "un ennemi",
@@ -34,5 +35,9 @@
     "ally": "un allié",
     "allies": "tout son camp",
     "self": "soi-même"
+  },
+  "range_labels": {
+    "melee": "au contact — il traverse le terrain",
+    "ranged": "à distance — il reste à son emplacement"
   }
 }

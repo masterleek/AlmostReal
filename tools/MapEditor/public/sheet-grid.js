@@ -38,18 +38,43 @@ const GUTTER_INK = 1;
 // projet porte 166 au cœur.
 const SHADOW_ALPHA = 64;
 
+// Luminance en-deçà de laquelle un pixel OPAQUE compte quand même comme une
+// gouttière, sur une planche peinte pour être ajoutée à l'image.
+//
+// UNE PLANCHE ADDITIVE N'A PAS DE TRANSPARENCE : son vide est peint en NOIR, et
+// c'est l'addition qui le rend invisible en jeu (cf. BattleVfx.BLEND_ADD). Le
+// relevé par l'alpha y voit donc une image pleine et ne trouve aucune coupe —
+// `vfx_hit.png`, opaque du premier au dernier pixel, ne rend ni colonnes ni
+// lignes. La question est la même, seule la convention du « vide » change.
+//
+// 8 et non 0 : les séparateurs de cette planche-là mesurent 0 à 1 par canal,
+// une marge de quelques niveaux absorbe le bruit d'un export sans risquer
+// d'effacer du dessin (le premier pixel utile y est bien au-dessus de 100).
+const DARK_INK = 8;
+
+// « Ce pixel porte-t-il du dessin ? » — deux conventions de planche, une seule
+// question, posée une fois pour toutes plutôt qu'en double dans chaque boucle.
+function inkTest(onDark) {
+  if (!onDark) return (data, i) => data[i * 4 + 3] !== 0;
+  return (data, i) => data[i * 4 + 3] !== 0
+    && Math.max(data[i * 4], data[i * 4 + 1], data[i * 4 + 2]) > DARK_INK;
+}
+
 // Rend {columns, rows, frames} ou null si l'image ne se lit pas.
 //
 // `frames` est le nombre de vignettes RÉELLEMENT dessinées : la dernière ligne
 // d'une planche est souvent incomplète (noah_atkeff : 21 cases, 20 dessins), et
 // laisser l'animation jouer les cases vides ferait clignoter le personnage.
-export async function measureGrid(url) {
+// `onDark` relève une planche dont le vide est peint en NOIR au lieu d'être
+// transparent — la convention des effets joués en fusion additive.
+export async function measureGrid(url, { onDark = false } = {}) {
   const pixels = await pixelsOf(url);
   if (pixels === null) return null;
   const { data, width, height } = pixels;
-  const columns = split(emptyColumns(data, width, height), width);
-  const rows = split(emptyRows(data, width, height), height);
-  return { columns, rows, frames: drawnFrames(data, width, height, columns, rows) };
+  const inked = inkTest(onDark);
+  const columns = split(emptyColumns(data, width, height, inked), width);
+  const rows = split(emptyRows(data, width, height, inked), height);
+  return { columns, rows, frames: drawnFrames(data, width, height, columns, rows, inked) };
 }
 
 // Le point au SOL d'une vignette — abscisse du milieu de l'ombre et sa ligne la
@@ -185,20 +210,20 @@ async function decode(url) {
   return { data, width: canvas.width, height: canvas.height };
 }
 
-function emptyColumns(data, width, height) {
+function emptyColumns(data, width, height, inked) {
   const ink = new Uint32Array(width);
   for (let y = 0; y < height; y += 1) {
     const row = y * width;
-    for (let x = 0; x < width; x += 1) if (data[(row + x) * 4 + 3] !== 0) ink[x] += 1;
+    for (let x = 0; x < width; x += 1) if (inked(data, row + x)) ink[x] += 1;
   }
   return ink.map((n) => (n <= GUTTER_INK ? 1 : 0));
 }
 
-function emptyRows(data, width, height) {
+function emptyRows(data, width, height, inked) {
   const ink = new Uint32Array(height);
   for (let y = 0; y < height; y += 1) {
     const row = y * width;
-    for (let x = 0; x < width; x += 1) if (data[(row + x) * 4 + 3] !== 0) ink[y] += 1;
+    for (let x = 0; x < width; x += 1) if (inked(data, row + x)) ink[y] += 1;
   }
   return ink.map((n) => (n <= GUTTER_INK ? 1 : 0));
 }
@@ -244,22 +269,22 @@ function bandCount(empty) {
 // pas les cases vides INTERMÉDIAIRES comme une fin : une planche peut avoir une
 // pose entièrement transparente au milieu (un clignotement), et s'arrêter là
 // amputerait l'animation.
-function drawnFrames(data, width, height, columns, rows) {
+function drawnFrames(data, width, height, columns, rows, inked) {
   const cellW = Math.floor(width / columns);
   const cellH = Math.floor(height / rows);
   let last = -1;
   for (let index = 0; index < columns * rows; index += 1) {
     const x0 = (index % columns) * cellW;
     const y0 = Math.floor(index / columns) * cellH;
-    if (hasInk(data, width, x0, y0, cellW, cellH)) last = index;
+    if (hasInk(data, width, x0, y0, cellW, cellH, inked)) last = index;
   }
   return Math.max(1, last + 1);
 }
 
-function hasInk(data, width, x0, y0, w, h) {
+function hasInk(data, width, x0, y0, w, h, inked) {
   for (let y = y0; y < y0 + h; y += 1) {
     const row = y * width;
-    for (let x = x0; x < x0 + w; x += 1) if (data[(row + x) * 4 + 3] !== 0) return true;
+    for (let x = x0; x < x0 + w; x += 1) if (inked(data, row + x)) return true;
   }
   return false;
 }

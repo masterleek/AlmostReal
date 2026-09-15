@@ -1117,6 +1117,19 @@ button:hover { border-color: var(--accent); }
 
 .battle-gesture-fallback .battle-inline-hint { flex: 1 1 220px; }
 
+/* L'effet d'impact : un aperçu à gauche, ses réglages à droite — même
+   disposition qu'une planche de personnage, parce que c'est la même sorte
+   d'image et les mêmes mesures. */
+.battle-range { display: flex; flex-direction: column; gap: 6px; }
+.battle-range > .battle-inline-hint { margin: 0; }
+
+.battle-vfx { display: flex; flex-direction: column; gap: 6px; }
+
+/* Une planche ADDITIVE est peinte sur fond noir : posée sur un fond clair, elle
+   montre un carré. Sur du noir, l'aperçu donne exactement ce que l'addition
+   donnera en jeu — le fond n'ajoute rien, seule la lumière passe. */
+.battle-vfx-add { background: #000; border-radius: 4px; }
+
 /* La lecture en clair d'une action, sous son nom dans l'index : plus discrète
    que l'id, qu'elle ne doit pas concurrencer. */
 .battle-index-summary {

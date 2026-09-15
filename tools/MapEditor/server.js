@@ -525,12 +525,26 @@ function parseGdAnimationStates(content) {
   return states.length ? states : null;
 }
 
-// Nom de planche qu'une ACTION joue quand elle n'en déclare pas — lu dans son
-// propre défaut, `get("animation", …)`, plutôt que fixé ici. Le défaut peut
+// Nom de planche qu'une ACTION joue quand elle ne déclare pas `field` — lu dans
+// son propre défaut, `get("<field>", …)`, plutôt que fixé ici. Le défaut peut
 // être écrit en clair ou renvoyer à une constante d'état, qu'on résout alors
 // dans la liste déjà lue.
-function parseGdActionAnimationDefault(content, states) {
-  const match = content.match(/get\("animation",\s*(?:"([^"]+)"|([A-Z][A-Z0-9_]*))\)/);
+//
+// DEUX CHAMPS MARCHENT AINSI : le geste (`animation`) et la pose tenue pendant
+// la séquence de rythme (`rhythm_animation`). Une seule lecture pour les deux,
+// parce que c'est une seule règle côté moteur (cf. BattleAssault._sheet_for) :
+// deux parseurs finiraient par se contredire là où le moteur, lui, n'a qu'un
+// comportement.
+function parseGdActionAnimationDefault(content, states, field) {
+  // Le nom du champ SUIVI de son défaut, sans exiger la forme de l'appel : le
+  // moteur l'a d'abord lu par `get("animation", ANIM_ATTACK)`, puis par un
+  // `_sheet_for(unit, action, "animation", ANIM_ATTACK)` commun aux deux
+  // champs. Les deux écritures disent la même chose, et un parseur accroché à
+  // l'une d'elles se serait tu au premier remaniement — silencieusement, en
+  // retombant sur son repli.
+  const match = content.match(
+    new RegExp(String.raw`"${field}",\s*(?:"([^"]+)"|([A-Z][A-Z0-9_]*))\s*\)`)
+  );
   if (!match) return null;
   if (match[1]) return match[1];
   const named = states.find((state) => state.constant === match[2]);
@@ -597,6 +611,21 @@ function parseGdNoteIcons(content) {
   return Object.keys(icons).length ? icons : null;
 }
 
+// Les valeurs d'un VOCABULAIRE FERMÉ porté par des constantes nommées
+// (`const RANGE_MELEE := "melee"`), dans l'ordre où le moteur les déclare.
+//
+// Un `const RANGES: PackedStringArray = [RANGE_MELEE, RANGE_RANGED]` ne contient
+// aucune chaîne : le lire par `parseGdStringArray` rendrait une liste vide.
+// C'est donc les constantes elles-mêmes qu'on lit — comme pour les états
+// d'animation, et pour la même raison : une faute de frappe dans un catalogue
+// tombe dans la branche par défaut d'un `match`, sans erreur.
+function parseGdStringConstants(content, prefix) {
+  const values = [];
+  const pattern = new RegExp(String.raw`^const\s+${prefix}[A-Z0-9_]*\s*:?=\s*"([^"]+)"`, "gm");
+  for (const match of content.matchAll(pattern)) values.push(match[1]);
+  return values.length ? values : null;
+}
+
 function parseGdDictionaryKeys(content, name) {
   const match = content.match(
     new RegExp(String.raw`const\s+${name}[^=]*=\s*\{([\s\S]*?)\n\}`)
@@ -657,7 +686,11 @@ app.get("/api/battle/vocabulary", async (req, res) => {
     else if (state.note.length > seen.note.length) seen.note = state.note;
     return kept;
   }, []);
-  const actionDefault = parseGdActionAnimationDefault(assault, animationStates);
+  const ranges = parseGdStringConstants(assault, "RANGE_");
+  const actionDefault = parseGdActionAnimationDefault(assault, animationStates, "animation");
+  const rhythmDefault = parseGdActionAnimationDefault(
+    assault, animationStates, "rhythm_animation"
+  );
   // LE TEMPS QUE FAIT LA BARRE, lu dans ses propres constantes. C'est ce qui
   // permet à l'éditeur de dire ce qu'une séquence DURE et à quelle tolérance
   // elle se juge, au lieu de n'afficher qu'un nombre de notes — deux Ekos à
@@ -684,6 +717,7 @@ app.get("/api/battle/vocabulary", async (req, res) => {
       { key: "move_back", constant: "ANIM_RETURN", note: "retour à l'emplacement" },
     ],
     action_animation_default: actionDefault || "attack",
+    rhythm_animation_default: rhythmDefault || "rhythm",
     moments: moments || ["announce", "rhythm", "approach", "gesture", "hit", "return"],
     // Repli volontairement PLUS PAUVRE que les commentaires du .gd : il dit
     // l'essentiel sans prétendre être à jour. Une copie détaillée finirait par
@@ -719,6 +753,7 @@ app.get("/api/battle/vocabulary", async (req, res) => {
       window_perfect: 5.0, window_great: 21.0, window_good: 32.0,
     },
     targets: ["enemy", "enemies", "ally", "allies", "self"],
+    ranges: ranges || ["melee", "ranged"],
     damage_types: ["direct", "injury"],
     behaviours: ["random", "aggressive", "defensive", "focused"],
     parsed: {
@@ -727,8 +762,11 @@ app.get("/api/battle/vocabulary", async (req, res) => {
       unit_moments: Boolean(unitMoments),
       unit_moment_notes: Boolean(unitMomentNotes),
       notes: Boolean(notes),
+      action_animation_default: Boolean(actionDefault),
       note_icons: Boolean(noteIcons),
       rhythm: timingsRead,
+      rhythm_animation_default: Boolean(rhythmDefault),
+      ranges: Boolean(ranges),
     },
   });
 });
