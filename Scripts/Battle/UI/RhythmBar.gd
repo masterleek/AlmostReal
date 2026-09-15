@@ -307,10 +307,14 @@ func play(sequence: PackedStringArray, side: int) -> Array:
 	visible = true
 	if sequence.is_empty():
 		return []
-	_build_notes(sequence)
+	# L'ÉTAT D'ABORD, LES NOTES ENSUITE : `_build_notes` les pose désormais à
+	# leur place, et cette place se calcule depuis `_elapsed` et `_pending`.
+	# Les remettre à zéro après aurait fait bâtir la séquence sur les valeurs de
+	# la précédente.
 	_judgements = []
 	_pending = 0
 	_elapsed = 0.0
+	_build_notes(sequence)
 	_running = true
 	set_process(true)
 	await finished
@@ -328,9 +332,7 @@ func rest() -> void:
 	if _glow_pulse != null and _glow_pulse.is_valid():
 		_glow_pulse.kill()
 	_glow.visible = false
-	for note in _notes:
-		(note["node"] as Node).queue_free()
-	_notes.clear()
+	_clear_notes()
 
 ## Monte et démonte la barre, aux bornes de l'assaut. Elle n'existe pas pendant
 ## la préparation : le menu occupe déjà le bas de l'écran.
@@ -353,9 +355,7 @@ func close() -> void:
 ## ──────────────────────────────────────────────────────────────────────────
 
 func _build_notes(sequence: PackedStringArray) -> void:
-	for note in _notes:
-		(note["node"] as Node).queue_free()
-	_notes.clear()
+	_clear_notes()
 	# La première note part du bord de l'écran : son temps d'arrivée est
 	# exactement le temps qu'il lui faut pour parcourir une demi-barre.
 	var lead_in := CENTRE.x / NOTE_SPEED
@@ -369,6 +369,37 @@ func _build_notes(sequence: PackedStringArray) -> void:
 			"node": node,
 			"time": lead_in + i * NOTE_INTERVAL,
 		})
+	# POSÉES TOUT DE SUITE, et pas à la première image de `_process`.
+	#
+	# Un Sprite2D ajouté sans position est dessiné à l'ORIGINE de son parent, et
+	# la barre écrit ses enfants en coordonnées de design absolues : son origine
+	# est donc le coin HAUT-GAUCHE de l'écran. Le temps d'une image, à chaque
+	# action, une touche apparaissait là-haut — loin de la barre, au milieu du
+	# décor. Un nœud doit naître à sa place ; le faire placer par la boucle qui
+	# suit, c'est accepter une image fausse à chaque fois.
+	_place_notes()
+
+## Retire les notes AVANT de les libérer. `queue_free()` est différé à la fin de
+## l'image : sans le retrait, les notes de la séquence précédente restent
+## enfants — donc dessinées — le temps d'une image par-dessus les nouvelles.
+func _clear_notes() -> void:
+	for note in _notes:
+		var node := note["node"] as Node
+		remove_child(node)
+		node.queue_free()
+	_notes.clear()
+
+## Chaque note à sa distance de l'anneau, et masquée dès qu'elle est jugée.
+##
+## Appelée à la CONSTRUCTION et à chaque image : c'est la même vérité, et la
+## première image n'a aucune raison d'y échapper. Une note déjà jugée s'efface
+## plutôt que de continuer sa route — elle n'a plus rien à dire, et deux notes
+## visibles à la fois embrouillent.
+func _place_notes() -> void:
+	for i in _notes.size():
+		var node := _notes[i]["node"] as Sprite2D
+		node.position = Vector2(CENTRE.x + _offset_of(i), CENTRE.y)
+		node.visible = i >= _pending
 
 func _make_note(id: String) -> Sprite2D:
 	var texture: Texture2D = (
@@ -387,12 +418,7 @@ func _process(delta: float) -> void:
 	if not _running:
 		return
 	_elapsed += delta
-	for i in _notes.size():
-		var node := _notes[i]["node"] as Sprite2D
-		node.position = Vector2(CENTRE.x + _offset_of(i), CENTRE.y)
-		# Une note déjà jugée s'efface plutôt que de continuer sa route : elle
-		# n'a plus rien à dire, et deux notes visibles à la fois embrouillent.
-		node.visible = i >= _pending
+	_place_notes()
 	# La note en tête a-t-elle dépassé la dernière fenêtre sans être touchée ?
 	while _pending < _notes.size() and _offset_of(_pending) * _direction() < -WINDOW_GOOD:
 		_resolve(BattleRules.Judgement.MISS)

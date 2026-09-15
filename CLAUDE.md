@@ -1177,6 +1177,16 @@ pas partir en guerre contre des choix déjà faits et documentés dans ce repo :
   demande d'échantillonner sur plusieurs SECONDES, ou de se synchroniser sur les
   images réelles (`await new Promise(r => requestAnimationFrame(r))`) plutôt que
   sur l'horloge. Une mesure sur 700 ms conclut « rien ne bouge » à tort.
+- **Un nœud doit NAÎTRE à sa place.** Les notes de la barre de rythme étaient
+  ajoutées sans position et placées par `_process` à l'image suivante : le temps
+  d'une image, à chaque action, une touche était dessinée à l'origine de la barre
+  — qui écrit ses enfants en coordonnées de design absolues, donc dans le COIN
+  HAUT-GAUCHE de l'écran, loin de la barre. Un défaut d'une seule image se voit
+  quand il se répète à chaque action, et il ne se trouve pas en relisant
+  `_process`, qui est juste. Remède : une fonction de placement appelée à la
+  CONSTRUCTION comme à chaque image — une seule vérité, dont la première image
+  n'a aucune raison d'être exemptée. Corollaire : l'état dont dépend cette pose
+  (`_elapsed`, `_pending`) se remet à zéro AVANT de bâtir la liste, pas après.
 - **Reconstruire une liste de nœuds : `remove_child()` AVANT `queue_free()`.**
   La libération est différée à la fin de la frame, donc les anciens nœuds
   restent enfants — et donc affichés par-dessus les nouveaux — le temps d'une
