@@ -96,6 +96,24 @@ async function persist(section) {
   }
 }
 
+// Un changement quelconque redessine la liste ET enregistre : les entrées
+// s'influencent (cocher un Eko ajoute une case ailleurs, changer le moment d'un
+// son le déplace de liste), et redessiner seulement le champ touché laisserait
+// le reste mentir.
+//
+// `extra` nomme les catalogues touchés EN PLUS de celui qu'on parcourt. Le
+// geste d'une action vit dans le bloc `animations` de chaque personnage : la
+// page Ekos écrit donc aussi dans units.json — mais seulement depuis les
+// commandes qui y touchent, pour ne pas renvoyer tout le catalogue des unités à
+// chaque frappe dans un champ d'Eko.
+function refresher(...extra) {
+  const sections = [...new Set([activeSection, ...extra])];
+  return async () => {
+    renderList();
+    for (const section of sections) await persist(section);
+  };
+}
+
 // ──────────────────────────────────────────────────────────────────────────
 //  Briques de formulaire
 // ──────────────────────────────────────────────────────────────────────────
@@ -748,10 +766,18 @@ function allAnimationNames() {
   return [...names].sort();
 }
 
+// Valeur sentinelle de la liste « Planche » : elle ne peut pas entrer en
+// collision avec un nom de planche, qui passe par ID_PATTERN.
+const NEW_ANIMATION = "+";
+
 // `fields` dit quels champs cette action-là possède : une attaque de base n'a
 // ni coût en PA ni mode de ciblage (elle vise toujours un adversaire), un objet
 // n'a pas de coût en PA, un Eko a tout.
-function actionFields(action, fields, animations, onChanged) {
+//
+// `suggestion` est le nom proposé quand l'auteur crée un geste depuis ici —
+// l'identifiant de l'action, qui est la convention naturelle (l'Eko « aubaine »
+// joue la planche « aubaine »). Vide, la liste ne propose pas d'en créer un.
+function actionFields(action, fields, animations, onChanged, suggestion = "") {
   const grid = el("div", "battle-grid");
 
   if (fields.includes("ap_cost")) {
@@ -814,11 +840,20 @@ function actionFields(action, fields, animations, onChanged) {
   if (heals) markIgnored(natureField, "Ignorée : cette action soigne.");
   grid.appendChild(natureField);
 
+  // LE NOM D'UN GESTE SE CRÉE ICI, et pas seulement dans la fiche d'un
+  // personnage. La liste ne pouvait offrir que les planches DÉJÀ déclarées
+  // quelque part : donner un geste propre à un Eko obligeait donc à aller
+  // d'abord en inventer un chez chaque personnage, pour revenir le choisir ici.
+  // C'est pourtant sur l'action que la question se pose — « Aubaine ne doit pas
+  // faire le même geste qu'une attaque » — et le tableau ci-dessous permet
+  // ensuite de donner sa planche à chacun sans quitter la page.
+  const choices = suggestion ? [...animations, NEW_ANIMATION] : animations;
   grid.appendChild(
     field(
       "Planche",
-      selectInput(animations, action.animation, (v) => {
-        if (v) action.animation = v;
+      selectInput(choices, action.animation, (v) => {
+        if (v === NEW_ANIMATION) nameNewAnimation(action, suggestion);
+        else if (v) action.animation = v;
         else delete action.animation;
         onChanged();
       }, { empty: "(pas en avant)", labelOf: animationOptionLabel }),
@@ -829,12 +864,30 @@ function actionFields(action, fields, animations, onChanged) {
   return grid;
 }
 
+// Demande un nom de geste et le pose sur l'action. Un refus (annulation, nom
+// invalide) laisse l'action telle quelle : l'appelant redessine de toute façon,
+// donc la liste revient d'elle-même sur la valeur d'avant.
+function nameNewAnimation(action, suggestion) {
+  const name = prompt(
+    "Nom du geste de cette action. Chaque personnage qui la lance jouera SA "
+      + "planche portant ce nom :",
+    suggestion
+  );
+  if (!name) return;
+  if (!ID_PATTERN.test(name)) {
+    alert("Nom invalide : minuscules, chiffres et « _ » seulement.");
+    return;
+  }
+  action.animation = name;
+}
+
 // MÊME VOCABULAIRE QUE LA PAGE UNITÉS. Une action ne porte pas une planche,
 // elle porte le NOM d'une planche que l'unité qui agit doit déclarer — c'est
 // exactement la liaison que le champ « État » montre de l'autre côté. Les
 // libellés sont donc les mêmes des deux bords, sinon la même chaîne s'appelle
 // « Repos — idle » ici et « idle » là.
 function animationOptionLabel(key) {
+  if (key === NEW_ANIMATION) return "+ nouveau geste…";
   const label = momentLabels.animation_labels?.[key];
   if (label) return `${label} — ${key}`;
   return key === actionAnimationDefault
@@ -893,6 +946,105 @@ function actionCoverageLine(action, performers) {
   return line;
 }
 
+// CE QUE CHACUN MONTRE QUAND IL LANCE CETTE ACTION, et de quoi le régler sans
+// quitter la page.
+//
+// POURQUOI ICI, alors que la planche vit dans la fiche du personnage. Une
+// action ne PORTE pas un geste, elle en NOMME un (`animation`) ; c'est chaque
+// unité qui déclare la planche de ce nom, avec sa propre grille et son propre
+// ancrage (cf. BattleAssault._gesture_for). La question se pose donc dans ce
+// sens-là — « quand Noah lance Aubaine, qu'est-ce qu'on voit ? » — et y
+// répondre obligeait jusqu'ici à ouvrir les unités une par une. C'est le
+// pendant exact du tableau « Son du geste, par Eko » de la fiche d'unité, vu de
+// l'autre bord.
+//
+// C'est aussi ce qui manquait pour que le réglage soit FAISABLE d'ici : la
+// ligne d'information annonçait « aucun geste pour iris » sans offrir le geste
+// qui l'aurait corrigé.
+function gestureTable(action, performers, onChanged) {
+  const block = el("div", "battle-block");
+  const name = action.animation || actionAnimationDefault;
+  block.appendChild(
+    sectionTitle(
+      "Geste, par personnage",
+      `la planche que chacun joue sous le nom « ${name} »`
+    )
+  );
+  if (performers.length === 0) {
+    block.appendChild(el("p", "battle-inline-hint", "Personne ne lance cette action."));
+    return block;
+  }
+  const table = el("div", "battle-gestures");
+  for (const id of performers) table.appendChild(gestureLine(id, name, onChanged));
+  block.appendChild(table);
+  return block;
+}
+
+// Une ligne du tableau : qui, et ce qu'il joue. Trois cas, et un seul d'entre
+// eux se règle vraiment ici — les deux autres disent ce que le MOTEUR fera à la
+// place, parce qu'aucun des deux ne lève d'erreur en jeu.
+function gestureLine(unitId, name, onChanged) {
+  const unit = entriesOf("units")[unitId];
+  const line = el("div", "battle-gesture");
+  const head = el("div", "battle-gesture-head");
+  const open = el("button", "battle-eko-link", localizedName("units", unitId).label || unitId);
+  open.type = "button";
+  open.title = `Ouvrir « ${unitId} »`;
+  open.onclick = () => goToEntry("units", unitId);
+  head.appendChild(open);
+  // L'ID À CÔTÉ DU NOM, comme partout ailleurs : « Noah » est le nom de jeu,
+  // `noah` est la clé qu'on retrouve dans units.json et dans les cases à cocher.
+  head.appendChild(el("span", "battle-index-id", unitId));
+  line.appendChild(head);
+  if (!unit) {
+    head.appendChild(el("span", "battle-warning", "absent du catalogue"));
+    return line;
+  }
+
+  if (unit.animations?.[name]) {
+    head.appendChild(el("span", "battle-badge", "geste propre"));
+    line.appendChild(animationBlock(unitId, unit, name, onChanged, { state: false }));
+    return line;
+  }
+
+  const note = el("div", "battle-gesture-fallback");
+  // Le moteur retombe sur l'ATTAQUE DU PERSONNAGE quand l'action nomme une
+  // planche qu'il n'a pas — et sur rien du tout s'il n'a pas celle-là non plus
+  // (cf. BattleAssault._gesture_for). Les deux sont des fonctionnements
+  // normaux ; seul le second mérite du rouge.
+  const fallback = unit.animations?.[actionAnimationDefault];
+  if (fallback) {
+    head.appendChild(el("span", "battle-badge", "repli"));
+    note.appendChild(staticFrame(fallback, sheetUrl(fallback.sheet), 40));
+    note.appendChild(
+      el("span", "battle-inline-hint",
+        `Pas de planche « ${name} » : il joue son geste d'attaque `
+        + `« ${actionAnimationDefault} ».`)
+    );
+  } else {
+    head.appendChild(el("span", "battle-warning", "aucun geste"));
+    note.appendChild(
+      el("span", "battle-inline-hint",
+        `Ni « ${name} » ni « ${actionAnimationDefault} » : il frappe sans rien `
+        + "montrer, d'un simple pas en avant.")
+    );
+  }
+  const add = el("button", "battle-chip-add", `+ planche « ${name} »`);
+  add.type = "button";
+  add.title = `Donner à ${unitId} une planche propre à cette action.`;
+  add.onclick = () => {
+    if (!unit.animations) unit.animations = {};
+    unit.animations[name] = blankSheet(true);
+    // Dépliée d'office : elle est vide, et la seule chose à faire ensuite est
+    // d'y importer une image.
+    openSheets.add(`units:${unitId}:${name}`);
+    onChanged();
+  };
+  note.appendChild(add);
+  line.appendChild(note);
+  return line;
+}
+
 // Les personnages qui peuvent lancer cette action : eux seuls doivent déclarer
 // sa planche.
 function performersOf(section, id) {
@@ -921,7 +1073,8 @@ function unreachableLine(action) {
 // liste unique de l'unité, avec la voix du personnage. Un Eko ou un objet, lui,
 // n'a qu'une famille et garde ses sons dans son propre bloc.
 function actionBlock(
-  title, action, fields, animations, onChanged, { sounds = true, performers = [] } = {}
+  title, action, fields, animations, onChanged,
+  { sounds = true, performers = [], suggestion = "", onGestureChanged = null } = {}
 ) {
   const block = el("div", "battle-block");
   // MÊME INTERTITRE QUE LES AUTRES SECTIONS. Il y en avait trois formes pour
@@ -930,8 +1083,16 @@ function actionBlock(
   // pas le même rythme de lecture qu'une unité, alors qu'elle dit la même
   // chose : des réglages, un geste, des sons.
   block.appendChild(sectionTitle(title));
-  block.appendChild(actionFields(action, fields, animations, onChanged));
-  block.appendChild(actionCoverageLine(action, performers));
+  block.appendChild(actionFields(action, fields, animations, onChanged, suggestion));
+  // La fiche d'une UNITÉ montre déjà toutes ses planches juste au-dessus : y
+  // répéter le tableau ne dirait rien de neuf, la ligne d'information suffit.
+  // Sur un Eko ou un objet, au contraire, c'est le seul endroit d'où l'on voit
+  // — et règle — le geste de chacun de ceux qui le lancent.
+  block.appendChild(
+    onGestureChanged
+      ? gestureTable(action, performers, onGestureChanged)
+      : actionCoverageLine(action, performers)
+  );
   block.appendChild(sectionTitle("Séquence de rythme"));
   block.appendChild(sequenceEditor(action, onChanged));
   if (sounds) {
@@ -1110,6 +1271,22 @@ const SHEET_FIELDS = [
   ["fps", "Cadence (fps)", { min: 1 }],
 ];
 
+// Planche NEUVE, en attendant l'image. `sheet` reste VIDE, et c'est délibéré :
+// proposer le premier fichier du dossier — ce que faisait « + planche » —
+// affecte en silence la planche d'un AUTRE personnage, et l'aperçu montre alors
+// quelque chose de plausible et de faux. Une grille 1 × 1 est le seul découpage
+// vrai d'une planche qu'on n'a pas encore mesurée, et il se corrige en deux
+// champs ; l'import, lui, relève la vraie grille du même geste.
+//
+// `gesture` est vrai pour une planche créée depuis une ACTION : un geste se
+// joue UNE fois, là où un état (repos, attente) tourne en boucle. Le défaut du
+// moteur étant le bouclage, l'oublier fige le personnage en fin de geste.
+function blankSheet(gesture = false) {
+  const config = { sheet: "", columns: 1, rows: 1, frames: 1, fps: 6 };
+  if (gesture) config.loop = false;
+  return config;
+}
+
 function animationSummary(config) {
   const count = Math.max(1, Number(config.frames || 1));
   const parts = [
@@ -1125,7 +1302,7 @@ function sheetUrl(path) {
   return sheetFiles.find((f) => f.path === path)?.url || null;
 }
 
-function animationsEditor(unit, onChanged) {
+function animationsEditor(unitId, unit, onChanged) {
   const wrap = el("div", "battle-anims");
   if (!unit.animations) unit.animations = {};
   const names = Object.keys(unit.animations);
@@ -1148,7 +1325,7 @@ function animationsEditor(unit, onChanged) {
     );
   }
   for (const name of names) {
-    wrap.appendChild(animationBlock(unit, name, onChanged));
+    wrap.appendChild(animationBlock(unitId, unit, name, onChanged));
   }
 
   const add = el("button", "battle-chip-add", "+ planche");
@@ -1167,12 +1344,8 @@ function animationsEditor(unit, onChanged) {
       alert(`« ${name} » existe déjà.`);
       return;
     }
-    // Grille 1×1 par défaut : c'est le seul découpage vrai pour une planche
-    // qu'on n'a pas encore mesurée, et il se corrige en deux champs.
-    unit.animations[name] = {
-      sheet: sheetFiles[0]?.path || "",
-      columns: 1, rows: 1, frames: 1, fps: 6,
-    };
+    unit.animations[name] = blankSheet();
+    openSheets.add(`units:${unitId}:${name}`);
     onChanged();
   };
   wrap.appendChild(add);
@@ -1182,9 +1355,9 @@ function animationsEditor(unit, onChanged) {
 // Une planche REPLIÉE garde son aperçu et son résumé : c'est la galerie des
 // animations de l'unité, qui se parcourt à l'œil. Dépliée, elle ouvre ses dix
 // champs — six planches dépliées d'un coup faisaient l'essentiel du mur.
-function animationBlock(unit, name, onChanged) {
+function animationBlock(unitId, unit, name, onChanged, { state = true } = {}) {
   const config = unit.animations[name];
-  const key = `units:${selection.units}:${name}`;
+  const key = `units:${unitId}:${name}`;
   const open = openSheets.has(key);
   const block = el("div", "battle-block battle-anim");
   if (open) block.classList.add("open");
@@ -1247,8 +1420,12 @@ function animationBlock(unit, name, onChanged) {
   const settings = el("div", "battle-anim-fields");
   column.appendChild(settings);
 
-  settings.appendChild(stateLine(unit, name, onChanged));
-  settings.appendChild(sheetLine(unit, config, name, onChanged));
+  // L'ÉTAT NE SE CHANGE PAS DEPUIS UNE ACTION. Renommer la planche la
+  // détacherait de l'action qu'on est en train de régler, sans rien dire — et
+  // le bloc disparaîtrait sous la main de l'auteur. La liaison se change par le
+  // champ « Planche » de l'action, qui est de l'autre bord de la même chaîne.
+  if (state) settings.appendChild(stateLine(unitId, unit, name, onChanged));
+  settings.appendChild(sheetLine(unitId, unit, config, name, onChanged));
 
   const grid = el("div", "battle-grid");
   for (const [key, label, options] of SHEET_FIELDS) {
@@ -1303,7 +1480,7 @@ function animationBlock(unit, name, onChanged) {
 // Cette liste rend donc visible ce que la clé du fichier cachait : renommer
 // « atk » en « attack » est un geste anodin dans un éditeur de texte, et il
 // détache la planche de tout ce qui la réclamait.
-function stateLine(unit, name, onChanged) {
+function stateLine(unitId, unit, name, onChanged) {
   const line = el("div", "battle-anim-state-line");
   const taken = new Set(Object.keys(unit.animations).filter((n) => n !== name));
   const known = animationStates.map((s) => s.key);
@@ -1320,7 +1497,7 @@ function stateLine(unit, name, onChanged) {
       onChanged();
       return;
     }
-    renameAnimation(unit, name, value);
+    renameAnimation(unitId, unit, name, value);
     onChanged();
   }, {
     labelOf: (key) => {
@@ -1375,7 +1552,7 @@ function actionsUsing(unit, name) {
 // ce nom, et elle appartient à la même unité — il n'y a pas d'ambiguïté. Les
 // Ekos, eux, sont PARTAGÉS entre personnages : les réécrire depuis ici
 // changerait la planche de tout le monde.
-function renameAnimation(unit, from, to) {
+function renameAnimation(unitId, unit, from, to) {
   const rebuilt = {};
   for (const [key, value] of Object.entries(unit.animations)) {
     rebuilt[key === from ? to : key] = value;
@@ -1384,15 +1561,15 @@ function renameAnimation(unit, from, to) {
   if (unit.basic_attack && unit.basic_attack.animation === from) {
     unit.basic_attack.animation = to;
   }
-  const oldKey = `units:${selection.units}:${from}`;
-  if (openSheets.delete(oldKey)) openSheets.add(`units:${selection.units}:${to}`);
+  const oldKey = `units:${unitId}:${from}`;
+  if (openSheets.delete(oldKey)) openSheets.add(`units:${unitId}:${to}`);
 }
 
 // Choix de la planche, et import d'une nouvelle. Les deux vont ensemble : c'est
 // en cherchant un fichier dans la liste qu'on découvre qu'il n'y est pas, et
 // envoyer l'auteur copier un PNG à la main dans Sprites/Battle — puis rouvrir
 // Godot pour l'importer — casse net ce qu'il était en train de faire.
-function sheetLine(unit, config, name, onChanged) {
+function sheetLine(unitId, unit, config, name, onChanged) {
   const line = el("div", "battle-sheet-line");
   line.appendChild(
     field(
@@ -1407,7 +1584,7 @@ function sheetLine(unit, config, name, onChanged) {
       )
     )
   );
-  line.appendChild(importButton(unit, config, name, onChanged));
+  line.appendChild(importButton(unitId, unit, config, name, onChanged));
   // Une planche que Godot n'a pas importée existe sur le disque et reste
   // INVISIBLE EN JEU : le dire ici, là où on la choisit, plutôt que de laisser
   // l'auteur découvrir un personnage vide au combat.
@@ -1432,12 +1609,11 @@ function sheetLabel(path) {
 // Le nom de destination suit la convention du dossier : <unité>_<planche>.png
 // (noah_idle.png, iris_win_before.png). Proposé, pas imposé — l'auteur peut
 // garder le nom d'origine, qui est souvent un numéro d'export (313000404_atk).
-function suggestedSheetName(name) {
-  const unit = selection.units || "unite";
-  return `${unit}_${name}.png`.toLowerCase().replace(/[^a-z0-9_.-]/g, "_");
+function suggestedSheetName(unitId, name) {
+  return `${unitId || "unite"}_${name}.png`.toLowerCase().replace(/[^a-z0-9_.-]/g, "_");
 }
 
-function importButton(unit, config, name, onChanged) {
+function importButton(unitId, unit, config, name, onChanged) {
   const button = el("button", "text-btn", "Importer une planche…");
   button.type = "button";
   button.title = "Déposer un PNG dans Sprites/Battle et l'affecter à cette planche.";
@@ -1452,7 +1628,7 @@ function importButton(unit, config, name, onChanged) {
     picker.value = "";
     if (!file) return;
     const wanted = prompt(
-      "Nom du fichier dans Sprites/Battle :", suggestedSheetName(name)
+      "Nom du fichier dans Sprites/Battle :", suggestedSheetName(unitId, name)
     );
     if (!wanted) return;
     button.disabled = true;
@@ -1913,7 +2089,7 @@ function renderUnit(id, unit, refresh) {
   row.appendChild(
     sectionTitle("Planches", "grille et ancrage se relèvent à l'atelier")
   );
-  row.appendChild(animationsEditor(unit, refresh));
+  row.appendChild(animationsEditor(id, unit, refresh));
 
   if (!unit.basic_attack) unit.basic_attack = {};
   row.appendChild(
@@ -2130,6 +2306,9 @@ function behaviourBlock(id, unit, refresh) {
 }
 
 function renderAction(section, id, action, refresh) {
+  // Le geste d'une action s'écrit dans units.json, pas dans le catalogue qu'on
+  // parcourt : cette commande-là enregistre donc les DEUX fichiers.
+  const refreshGesture = refresher("units");
   const row = el("div", "battle-row");
   row.appendChild(rowHead(section, id, null));
   row.appendChild(textLines(section, id, refresh));
@@ -2138,7 +2317,13 @@ function renderAction(section, id, action, refresh) {
   if (section === "ekos") row.appendChild(knownByLine(id, performers));
   const fields = section === "ekos" ? ["ap_cost", "target", "heal"] : ["target", "heal"];
   row.appendChild(
-    actionBlock("Effet", action, fields, allAnimationNames(), refresh, { performers })
+    actionBlock("Effet", action, fields, allAnimationNames(), refresh, {
+      performers,
+      // Un Eko qui veut son propre geste le nomme comme lui : c'est la
+      // convention naturelle, et elle se relit d'un coup d'œil dans units.json.
+      suggestion: id,
+      onGestureChanged: refreshGesture,
+    })
   );
   return row;
 }
@@ -2303,14 +2488,7 @@ function renderList() {
   const entries = entriesOf(activeSection);
   const ids = Object.keys(entries);
 
-  // Un changement quelconque redessine la liste ET sauvegarde : les entrées
-  // s'influencent (cocher un Eko ajoute une case ailleurs, changer le moment
-  // d'un son le déplace de liste), et redessiner seulement le champ touché
-  // laisserait le reste mentir.
-  const refresh = async () => {
-    renderList();
-    await persist(activeSection);
-  };
+  const refresh = refresher();
 
   const browser = el("div", "battle-browser");
   const index = el("nav", "battle-index");

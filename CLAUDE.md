@@ -1050,6 +1050,28 @@ pas partir en guerre contre des choix déjà faits et documentés dans ce repo :
   par : noah — absente chez iris » côté action. C'est ce qui rend visible le
   seul cas qui casse sans erreur : une action qui réclame une planche que le
   personnage n'a pas.
+- **Une liaison par NOM doit aussi pouvoir se CRÉER des deux bords.** Le champ
+  « Planche » d'une action ne proposait que les noms DÉJÀ déclarés quelque
+  part : donner un geste propre à un Eko obligeait à aller d'abord l'inventer
+  dans la fiche de chaque personnage, pour revenir le choisir sur l'Eko — alors
+  que c'est sur l'action que la question se pose (« Aubaine ne doit pas faire le
+  même geste qu'une attaque »). La liste offre donc « + nouveau geste… »
+  (proposé au nom de l'action), et le tableau « Geste, par personnage » déplie
+  sous l'action la planche de chacun de ceux qui la lancent, import, grille et
+  ancrage compris — pendant exact de « Son du geste, par Eko » côté unité. Deux
+  corollaires : depuis ce tableau l'« État » de la planche est MASQUÉ (le
+  renommer détacherait l'action qu'on est en train de régler, et le bloc
+  disparaîtrait sous la main) ; et la page Ekos écrit alors dans units.json, ce
+  que seules les commandes du tableau font — enregistrer les deux catalogues à
+  chaque frappe dans un champ d'Eko renverrait tout le catalogue des unités pour
+  rien.
+- **Une planche NEUVE part sans image, pas avec la première du dossier.**
+  « + planche » affectait `sheetFiles[0]`, c'est-à-dire en silence la planche
+  d'un autre personnage : l'aperçu montre alors quelque chose de plausible et de
+  faux, et rien ne dit qu'il faut le remplacer. `sheet: ""` affiche « Aucune
+  image » et le bloc s'ouvre d'office sur son bouton d'import. Créée depuis une
+  ACTION, elle part en plus `loop: false` — un geste se joue une fois, et le
+  défaut du moteur (le bouclage) fige le personnage en fin de geste.
 - **Un « état » d'animation n'existe que si le moteur le JOUE.** Ajouter une
   entrée dans `units.json` ou une ligne dans l'éditeur ne crée rien : il faut un
   `const ANIM_X := "x"` et un appel à `play_sheet()` au bon endroit du déroulé.

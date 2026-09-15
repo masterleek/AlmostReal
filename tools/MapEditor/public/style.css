@@ -1092,6 +1092,31 @@ button:hover { border-color: var(--accent); }
 
 .battle-eko-sound-file { display: inline-flex; align-items: center; gap: 4px; }
 
+/* Le pendant exact du tableau ci-dessus, vu de l'autre bord : le geste que
+   chaque personnage joue quand il lance CETTE action. Une ligne par lanceur —
+   son nom, un badge qui dit ce qu'il a, puis soit sa planche dépliable, soit ce
+   que le moteur jouera à la place et le bouton qui crée la manquante. */
+.battle-gestures { display: flex; flex-direction: column; gap: 8px; }
+
+.battle-gesture { display: flex; flex-direction: column; gap: 4px; }
+
+.battle-gesture-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+/* Le cas « il n'a pas cette planche » : en TIRETS, parce que rien de ce qui est
+   montré là n'existe dans le fichier — c'est ce que le moteur fera faute de
+   mieux, pas un réglage. */
+.battle-gesture-fallback {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 6px 8px;
+  border-radius: 4px;
+  border: 1px dashed var(--border);
+}
+
+.battle-gesture-fallback .battle-inline-hint { flex: 1 1 220px; }
+
 /* La lecture en clair d'une action, sous son nom dans l'index : plus discrète
    que l'id, qu'elle ne doit pas concurrencer. */
 .battle-index-summary {
