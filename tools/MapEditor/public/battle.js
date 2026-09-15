@@ -1025,7 +1025,14 @@ function actionFields(action, fields, animations, onChanged, suggestion = "") {
   if (heals) markIgnored(natureField, "Ignorée : cette action soigne.");
   grid.appendChild(natureField);
 
-  grid.appendChild(sheetField(action, ACTION_SHEETS.gesture, animations, suggestion, onChanged));
+  // UN OBJET N'A PAS DE GESTE QUI LUI SOIT PROPRE (cf. actionBlock et
+  // BattleAssault.ITEM_GESTURE_FIELD) : boire une potion ou jeter une bombe
+  // rejoue toujours LA MÊME planche, réglée une fois par personnage sur sa
+  // fiche Unités — pas de champ ici, donc, pour ne pas laisser croire qu'il y
+  // en a un par objet.
+  if (fields.includes("gesture")) {
+    grid.appendChild(sheetField(action, ACTION_SHEETS.gesture, animations, suggestion, onChanged));
+  }
   return grid;
 }
 
@@ -1153,7 +1160,7 @@ function actionCoverageLine(action, performers, spec) {
 // C'est aussi ce qui manquait pour que le réglage soit FAISABLE d'ici : la
 // ligne d'information annonçait « aucun geste pour iris » sans offrir le geste
 // qui l'aurait corrigé.
-function sheetTable(action, performers, onChanged, spec) {
+function sheetTable(action, performers, onChanged, spec, selfLabel) {
   const block = el("div", "battle-block");
   const name = action[spec.field] || spec.fallback();
   block.appendChild(sectionTitle(spec.title, `${spec.note} — sous le nom « ${name} »`));
@@ -1163,7 +1170,7 @@ function sheetTable(action, performers, onChanged, spec) {
   }
   const table = el("div", "battle-gestures");
   for (const id of performers) {
-    table.appendChild(performerSheetLine(id, name, onChanged, spec));
+    table.appendChild(performerSheetLine(id, name, onChanged, spec, selfLabel));
   }
   block.appendChild(table);
   return block;
@@ -1172,7 +1179,7 @@ function sheetTable(action, performers, onChanged, spec) {
 // Une ligne du tableau : qui, et ce qu'il joue. Trois cas, et un seul d'entre
 // eux se règle vraiment ici — les deux autres disent ce que le MOTEUR fera à la
 // place, parce qu'aucun des deux ne lève d'erreur en jeu.
-function performerSheetLine(unitId, name, onChanged, spec) {
+function performerSheetLine(unitId, name, onChanged, spec, selfLabel) {
   const unit = entriesOf("units")[unitId];
   const line = el("div", "battle-gesture");
   const head = el("div", "battle-gesture-head");
@@ -1192,7 +1199,39 @@ function performerSheetLine(unitId, name, onChanged, spec) {
 
   if (unit.animations?.[name]) {
     head.appendChild(el("span", "battle-badge", "planche propre"));
-    line.appendChild(animationBlock(unitId, unit, name, onChanged, { state: false }));
+    // LECTURE SEULE. C'est une RÉFÉRENCE PARTAGÉE, pas une copie propre à cette
+    // action : `config` est le même objet que celui affiché sur la fiche de
+    // l'unité, et une planche est un asset qui peut légitimement servir à
+    // plusieurs actions à la fois (une attaque de base, plusieurs Ekos…). La
+    // partager n'est donc pas le problème — l'éditer d'ici, à l'aveugle sur qui
+    // d'autre la regarde, l'était. La sélection se fait plus haut (le champ
+    // « Planche » de l'action) : elle CHANGE la référence sans jamais toucher
+    // à ce qu'elle désigne. Grille, ancrage et fichier restent réglables
+    // uniquement sur Unités > Planches, où l'effet sur chaque action qui la
+    // cite se voit d'un coup d'œil.
+    const config = unit.animations[name];
+    const note = el("div", "battle-gesture-owned");
+    note.appendChild(staticFrame(config, sheetUrl(config.sheet), 40));
+    const info = el("div", "battle-gesture-owned-info");
+    info.appendChild(
+      el("span", "battle-inline-hint",
+        `${sheetLabel(config.sheet) || "(aucun fichier)"} — ${animationSummary(config)}`)
+    );
+    const openUnit = el("button", "text-btn", `Modifier sur la fiche de ${unitId}…`);
+    openUnit.type = "button";
+    openUnit.onclick = () => goToEntry("units", unitId);
+    info.appendChild(openUnit);
+    // QUI D'AUTRE LA JOUE : une information, pas un avertissement — un asset
+    // partagé entre plusieurs actions est le fonctionnement normal, pas un
+    // accident à signaler en rouge.
+    const others = actionsUsing(unit, name, spec).filter((label) => label !== selfLabel);
+    if (others.length > 0) {
+      info.appendChild(
+        el("span", "battle-inline-hint", `Aussi jouée par : ${others.join(", ")}.`)
+      );
+    }
+    note.appendChild(info);
+    line.appendChild(note);
     return line;
   }
 
@@ -1279,7 +1318,7 @@ function unreachableLine(action) {
 // contact. Le TABLEAU par personnage, lui, disparaît — c'est un bloc haut, et
 // le garder pour dire « ceci ne sert à rien » occuperait l'écran au lieu de
 // l'informer.
-function rangeBlock(action, performers, animations, suggestion, onChanged, onGestureChanged) {
+function rangeBlock(action, performers, animations, suggestion, onChanged, onGestureChanged, selfLabel) {
   const wrap = el("div", "battle-range");
   const heals = Number(action.heal || 0) > 0;
   const ranged = action.range === "ranged";
@@ -1321,7 +1360,7 @@ function rangeBlock(action, performers, animations, suggestion, onChanged, onGes
     return wrap;
   }
   wrap.appendChild(
-    byPerformer(action, performers, onChanged, onGestureChanged, ACTION_SHEETS.approach)
+    byPerformer(action, performers, onChanged, onGestureChanged, ACTION_SHEETS.approach, selfLabel)
   );
   return wrap;
 }
@@ -1482,9 +1521,9 @@ function vfxOffsetLine(config, onChanged) {
 // répéter le tableau ne dirait rien de neuf. Sur un Eko ou un objet, au
 // contraire, c'est le seul endroit d'où l'on voit — et règle — ce que joue
 // chacun de ceux qui le lancent.
-function byPerformer(action, performers, onChanged, onGestureChanged, spec) {
+function byPerformer(action, performers, onChanged, onGestureChanged, spec, selfLabel) {
   return onGestureChanged
-    ? sheetTable(action, performers, onGestureChanged, spec)
+    ? sheetTable(action, performers, onGestureChanged, spec, selfLabel)
     : actionCoverageLine(action, performers, spec);
 }
 
@@ -1493,7 +1532,10 @@ function byPerformer(action, performers, onChanged, onGestureChanged, spec) {
 // n'a qu'une famille et garde ses sons dans son propre bloc.
 function actionBlock(
   title, action, fields, animations, onChanged,
-  { sounds = true, performers = [], suggestion = "", onGestureChanged = null } = {}
+  {
+    sounds = true, performers = [], suggestion = "", onGestureChanged = null,
+    selfLabel = null,
+  } = {}
 ) {
   const block = el("div", "battle-block");
   // MÊME INTERTITRE QUE LES AUTRES SECTIONS. Il y en avait trois formes pour
@@ -1503,7 +1545,11 @@ function actionBlock(
   // chose : des réglages, un geste, des sons.
   block.appendChild(sectionTitle(title));
   block.appendChild(actionFields(action, fields, animations, onChanged, suggestion));
-  block.appendChild(byPerformer(action, performers, onChanged, onGestureChanged, ACTION_SHEETS.gesture));
+  if (fields.includes("gesture")) {
+    block.appendChild(
+      byPerformer(action, performers, onChanged, onGestureChanged, ACTION_SHEETS.gesture, selfLabel)
+    );
+  }
   block.appendChild(sectionTitle("Séquence de rythme"));
   block.appendChild(sequenceEditor(action, onChanged));
 
@@ -1523,11 +1569,13 @@ function actionBlock(
   }
   pose.appendChild(poseField);
   block.appendChild(pose);
-  block.appendChild(byPerformer(action, performers, onChanged, onGestureChanged, ACTION_SHEETS.rhythm));
+  block.appendChild(
+    byPerformer(action, performers, onChanged, onGestureChanged, ACTION_SHEETS.rhythm, selfLabel)
+  );
 
   block.appendChild(sectionTitle("Déplacement", "comment l'unité rejoint sa cible"));
   block.appendChild(
-    rangeBlock(action, performers, animations, suggestion, onChanged, onGestureChanged)
+    rangeBlock(action, performers, animations, suggestion, onChanged, onGestureChanged, selfLabel)
   );
 
   block.appendChild(
@@ -1680,10 +1728,24 @@ function rowHead(section, id, badge) {
   del.type = "button";
   del.title = `Supprimer cette ${SECTIONS[section].singular}`;
   del.onclick = async () => {
-    if (!confirm(`Supprimer « ${id} » ?`)) return;
+    // UN EKO SUPPRIMÉ RESTE CONNU DES PERSONNAGES QUI LE COCHAIENT : ekos.json
+    // et units.json sont deux fichiers différents, et vider le premier ne
+    // touche pas le second. Sans ce nettoyage, l'Eko disparaît de l'éditeur
+    // mais reste choisissable en jeu — vide de tout effet, son nom retombant
+    // sur l'id brut faute de texte.
+    const knownBy = section === "ekos" ? performersOf("ekos", id) : [];
+    const warning = knownBy.length > 0
+      ? `\n\nEncore connu de : ${knownBy.join(", ")}. Il sera aussi retiré de leur liste d'Ekos.`
+      : "";
+    if (!confirm(`Supprimer « ${id} » ?${warning}`)) return;
     delete entriesOf(section)[id];
+    for (const unitId of knownBy) {
+      const unit = entriesOf("units")[unitId];
+      unit.ekos = (unit.ekos || []).filter((eko) => eko !== id);
+    }
     renderList();
     await persist(section);
+    if (knownBy.length > 0) await persist("units");
   };
   head.appendChild(del);
   return head;
@@ -1794,7 +1856,7 @@ function animationsEditor(unitId, unit, onChanged) {
 // Une planche REPLIÉE garde son aperçu et son résumé : c'est la galerie des
 // animations de l'unité, qui se parcourt à l'œil. Dépliée, elle ouvre ses dix
 // champs — six planches dépliées d'un coup faisaient l'essentiel du mur.
-function animationBlock(unitId, unit, name, onChanged, { state = true } = {}) {
+function animationBlock(unitId, unit, name, onChanged) {
   const config = unit.animations[name];
   const key = `units:${unitId}:${name}`;
   const open = openSheets.has(key);
@@ -1859,12 +1921,8 @@ function animationBlock(unitId, unit, name, onChanged, { state = true } = {}) {
   const settings = el("div", "battle-anim-fields");
   column.appendChild(settings);
 
-  // L'ÉTAT NE SE CHANGE PAS DEPUIS UNE ACTION. Renommer la planche la
-  // détacherait de l'action qu'on est en train de régler, sans rien dire — et
-  // le bloc disparaîtrait sous la main de l'auteur. La liaison se change par le
-  // champ « Planche » de l'action, qui est de l'autre bord de la même chaîne.
-  if (state) settings.appendChild(stateLine(unitId, unit, name, onChanged));
-  settings.appendChild(sheetLine(unitId, unit, config, name, onChanged));
+  settings.appendChild(stateLine(unitId, unit, name, onChanged));
+  settings.appendChild(sheetLine(unitId, unit, config, name, onChanged, { scope: "grouped" }));
 
   const grid = el("div", "battle-grid");
   for (const [key, label, options] of SHEET_FIELDS) {
@@ -1968,17 +2026,27 @@ function stateLine(unitId, unit, name, onChanged) {
 }
 
 // Qui réclame une planche par ce nom : l'attaque de base de l'unité affichée,
-// et les Ekos du catalogue. Les objets n'en nomment pas.
+// les Ekos du catalogue, et — pour le seul champ du geste — le réglage unique
+// qui vaut pour tous les objets (`spec.field`, "animation" par défaut : c'est
+// le seul cas qui avait un appelant jusqu'ici, d'où le défaut).
+//
+// LES OBJETS N'ONT PLUS DE CHAMP CHACUN (cf. BattleAssault.ITEM_GESTURE_FIELD) :
+// un seul réglage, sur l'unité, vaut pour tous — inutile de les parcourir un
+// par un, et sans objet pour cette unité de toute façon (`_champs.animation`
+// dans items.json).
 //
 // L'unité est passée en paramètre plutôt que relue dans `catalogs` : c'est le
 // même objet que celui qu'on est en train d'éditer, donc à jour même avant
 // l'enregistrement.
-function actionsUsing(unit, name) {
+function actionsUsing(unit, name, spec = ACTION_SHEETS.gesture) {
   const users = [];
-  const declared = unit.basic_attack?.animation || actionAnimationDefault;
+  const declared = unit.basic_attack?.[spec.field] || spec.fallback();
   if (declared === name) users.push("l'attaque de base");
+  if (spec === ACTION_SHEETS.gesture && (unit.item_gesture || spec.fallback()) === name) {
+    users.push("les objets");
+  }
   for (const [id, eko] of Object.entries(entriesOf("ekos"))) {
-    if ((eko.animation || actionAnimationDefault) === name) users.push(id);
+    if ((eko[spec.field] || spec.fallback()) === name) users.push(id);
   }
   return users;
 }
@@ -2008,18 +2076,64 @@ function renameAnimation(unitId, unit, from, to) {
 // en cherchant un fichier dans la liste qu'on découvre qu'il n'y est pas, et
 // envoyer l'auteur copier un PNG à la main dans Sprites/Battle — puis rouvrir
 // Godot pour l'importer — casse net ce qu'il était en train de faire.
-function sheetLine(unitId, unit, config, name, onChanged) {
+// LES IMAGES QUI SERVENT DÉJÀ DE PLANCHE À UN PERSONNAGE, sans doublon.
+//
+// C'est la seule définition honnête de « mes planches » : le dossier
+// `Sprites/Battle` contient aussi le décor et les effets, qui ne sont des
+// planches de personne. Elle se déduit du catalogue plutôt que d'un nommage de
+// fichier — `noah_*` marcherait aujourd'hui et se démentirait au premier export
+// qui s'appelle `313000404_atk`.
+function unitSheets() {
+  const paths = new Set();
+  for (const unit of Object.values(entriesOf("units"))) {
+    for (const config of Object.values(unit.animations || {})) {
+      if (config.sheet) paths.add(config.sheet);
+    }
+  }
+  return [...paths].sort();
+}
+
+// Ce que la liste « Fichier » propose, selon l'endroit d'où on la regarde.
+//
+//   « grouped » — tout le dossier, mais les planches d'abord et le reste sous
+//                 son propre intertitre. C'est la fiche d'UNITÉ : c'est par là
+//                 qu'un fichier DEVIENT une planche, on ne peut donc pas y
+//                 cacher ce qui n'en est pas encore une.
+//   « all »     — le dossier tel quel, pour ce qui n'est pas une planche de
+//                 personnage (l'effet d'impact, qui vise justement l'inverse).
+//
+// Aucune action n'en propose : le tableau « par personnage » d'une action ne
+// choisit plus de fichier du tout (cf. performerSheetLine) — la sélection se
+// fait par NOM, sur le champ « Planche » de l'action, une référence partagée
+// et jamais une copie.
+function sheetChoices(scope) {
+  const all = sheetFiles.map((f) => f.path);
+  if (scope === "all") return { values: all };
+  const mine = unitSheets();
+  const others = all.filter((path) => !mine.includes(path));
+  if (others.length === 0) return { values: mine };
+  return {
+    values: all,
+    groups: [
+      { label: "Planches des personnages", values: mine },
+      { label: "Autres fichiers du dossier", values: others },
+    ],
+  };
+}
+
+function sheetLine(unitId, unit, config, name, onChanged, { scope = "all" } = {}) {
   const line = el("div", "battle-sheet-line");
+  const choices = sheetChoices(scope);
   line.appendChild(
     field(
       "Fichier",
       selectInput(
-        sheetFiles.map((f) => f.path), config.sheet || "",
+        choices.values, config.sheet || "",
         (value) => {
           config.sheet = value;
           onChanged();
         },
-        { labelOf: sheetLabel }
+        { labelOf: sheetLabel, groups: choices.groups || null }
       )
     )
   );
@@ -2501,6 +2615,26 @@ function anchorLine(unit, name, config, onChanged) {
   return line;
 }
 
+// La planche des objets, à la différence du champ « Planche » d'un Eko, ne
+// vise QUE les planches de CE personnage — elle se résout toujours chez lui
+// (cf. BattleAssault._gesture_for), lui en proposer d'autres n'aurait aucun
+// sens.
+function itemGestureField(unit, onChanged) {
+  const names = Object.keys(unit.animations || {}).sort();
+  return field(
+    "Planche des objets",
+    selectInput(names, unit.item_gesture || "", (v) => {
+      if (v) unit.item_gesture = v;
+      else delete unit.item_gesture;
+      onChanged();
+    }, {
+      empty: `(planche « ${actionAnimationDefault} », par défaut)`,
+      labelOf: animationOptionLabel,
+    }),
+    "Jouée en utilisant n'importe quel objet du sac — toujours la même, quel que soit l'objet choisi."
+  );
+}
+
 function renderUnit(id, unit, refresh) {
   const row = el("div", "battle-row");
   row.appendChild(rowHead("units", id, unit.behaviour ? "ennemi" : null));
@@ -2535,7 +2669,7 @@ function renderUnit(id, unit, refresh) {
 
   if (!unit.basic_attack) unit.basic_attack = {};
   row.appendChild(
-    actionBlock("Attaque de base", unit.basic_attack, ["heal"], sheets, refresh, {
+    actionBlock("Attaque de base", unit.basic_attack, ["heal", "gesture"], sheets, refresh, {
       sounds: false,
       performers: [id],
       // Le nom du personnage sert de préfixe aux fichiers qu'on importe depuis
@@ -2543,6 +2677,18 @@ function renderUnit(id, unit, refresh) {
       suggestion: id,
     })
   );
+
+  // UN SEUL RÉGLAGE POUR TOUS LES OBJETS : contrairement à un Eko, un objet n'a
+  // pas de geste qui lui soit propre — boire une potion ou jeter une bombe se
+  // joue de la même façon. Le régler ici, sur le personnage, le garantit
+  // structurellement plutôt que par convention répétée sur chaque objet (cf.
+  // BattleAssault.ITEM_GESTURE_FIELD).
+  row.appendChild(
+    sectionTitle("Objets", "la planche que ce personnage joue en utilisant n'importe quel objet")
+  );
+  const itemGesture = el("div", "battle-grid");
+  itemGesture.appendChild(itemGestureField(unit, refresh));
+  row.appendChild(itemGesture);
 
   // UNE SEULE liste pour tous les sons du personnage : ceux de son geste
   // d'attaque et ceux qui lui appartiennent en propre. Elle est posée au niveau
@@ -2760,7 +2906,11 @@ function renderAction(section, id, action, refresh) {
   const performers = performersOf(section, id);
   row.appendChild(el("p", "battle-action-summary", actionSummary(section, action)));
   if (section === "ekos") row.appendChild(knownByLine(id, performers));
-  const fields = section === "ekos" ? ["ap_cost", "target", "heal"] : ["target", "heal"];
+  // UN OBJET N'A PAS DE CHAMP « GESTE » : contrairement à un Eko, il joue
+  // toujours LA MÊME planche, réglée une fois par personnage sur Unités (cf.
+  // BattleAssault.ITEM_GESTURE_FIELD) — "gesture" n'entre donc pas dans ses
+  // champs.
+  const fields = section === "ekos" ? ["ap_cost", "target", "heal", "gesture"] : ["target", "heal"];
   row.appendChild(
     actionBlock("Effet", action, fields, allAnimationNames(), refresh, {
       performers,
@@ -2768,6 +2918,10 @@ function renderAction(section, id, action, refresh) {
       // convention naturelle, et elle se relit d'un coup d'œil dans units.json.
       suggestion: id,
       onGestureChanged: refreshGesture,
+      // POUR NE PAS S'AVERTIR ELLE-MÊME : `actionsUsing` compte CETTE action
+      // parmi celles qui portent le nom courant — sans ça, toute planche
+      // propre se dirait « partagée avec » elle-même.
+      selfLabel: id,
     })
   );
   return row;

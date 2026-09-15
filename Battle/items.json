@@ -4,7 +4,6 @@
     "potion": {
       "target": "ally",
       "heal": 30,
-      "animation": "atk",
       "sequence": [
         "cross"
       ]
@@ -12,7 +11,6 @@
     "grand_baume": {
       "target": "allies",
       "heal": 15,
-      "animation": "atk",
       "sequence": [
         "cross",
         "circle"
@@ -22,7 +20,6 @@
       "target": "enemies",
       "power": 12,
       "damage_type": "direct",
-      "animation": "atk",
       "sequence": [
         "square",
         "square"
@@ -32,7 +29,6 @@
       "target": "enemy",
       "power": 22,
       "damage_type": "direct",
-      "animation": "atk",
       "sequence": [
         "triangle"
       ]
@@ -40,6 +36,7 @@
   },
   "_champs": {
     "sequence": "touches de la barre de rythme, dans l'ordre : cross | circle | square | triangle | up | down | left | right. Toute action qui passe par l'assaut en a une, objets compris (choix de l'auteur).",
-    "sounds": "liste des sons de l'action. Chaque entree : 'at' = le moment de l'assaut ou le son part (announce | rhythm | approach | gesture | hit | return ; 'hit' par defaut, cf. SOUND_MOMENTS dans Scripts/Battle/BattleAssault.gd), et 'sound' = UN chemin res:// ou PLUSIEURS. Plusieurs chemins sont des VARIANTES du meme son (noah_att1/att2/att3), tirees au hasard ; pour jouer deux sons au meme moment, mettre deux entrees. 'approach' et 'return' n'existent que pour une action offensive, 'rhythm' que pour une action qui a une 'sequence' : un son accroche a un moment que l'action n'atteint pas ne se joue jamais. Meme champ que sur 'basic_attack' dans units.json."
+    "sounds": "liste des sons de l'action. Chaque entree : 'at' = le moment de l'assaut ou le son part (announce | rhythm | approach | gesture | hit | return ; 'hit' par defaut, cf. SOUND_MOMENTS dans Scripts/Battle/BattleAssault.gd), et 'sound' = UN chemin res:// ou PLUSIEURS. Plusieurs chemins sont des VARIANTES du meme son (noah_att1/att2/att3), tirees au hasard ; pour jouer deux sons au meme moment, mettre deux entrees. 'approach' et 'return' n'existent que pour une action offensive, 'rhythm' que pour une action qui a une 'sequence' : un son accroche a un moment que l'action n'atteint pas ne se joue jamais. Meme champ que sur 'basic_attack' dans units.json.",
+    "animation": "un objet n'a PAS ce champ : tout objet joue la meme planche de geste, reglee une fois pour toutes par personnage (champ 'item_gesture' dans units.json, pas ici)."
   }
 }

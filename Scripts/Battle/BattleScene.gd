@@ -1018,6 +1018,13 @@ func _on_menu_cancelled() -> void:
 ## Entrées d'Ekos de l'allié actif. Le coût est affiché en losanges, et passe
 ## en losanges ÉTEINTS quand l'allié n'a plus assez de PA — c'est déjà le sens
 ## que cet asset porte sur la ligne de PA du HUD.
+##
+## UN ID QUE ekos.json NE CONNAÎT PLUS EST SAUTÉ, AVEC UN AVERTISSEMENT :
+## `unit.ekos` (units.json) et le catalogue des Ekos (ekos.json) sont deux
+## fichiers différents, et rien ne les tient synchronisés d'un bord à l'autre —
+## un Eko supprimé du second peut très bien rester coché sur une unité dans le
+## premier. Sans ce filtre, l'assaut montrerait une rangée vide de tout effet,
+## choisissable par erreur.
 func _eko_entries() -> Array[Dictionary]:
 	var unit := _active_unit()
 	var entries: Array[Dictionary] = []
@@ -1025,6 +1032,9 @@ func _eko_entries() -> Array[Dictionary]:
 		return entries
 	for id in BattleData.get_unit_ekos(unit.id):
 		var eko: Dictionary = BattleData.get_eko(id)
+		if eko.is_empty():
+			push_warning("BattleScene: '%s' connaît l'Eko '%s', absent de ekos.json" % [unit.id, id])
+			continue
 		var cost: int = int(eko.get("ap_cost", 0))
 		entries.append({
 			"id": id,
@@ -1032,19 +1042,28 @@ func _eko_entries() -> Array[Dictionary]:
 			"cost": cost,
 			"affordable": unit.can_pay(cost),
 			"damage_type": String(eko.get("damage_type", "")),
+			"heal": int(eko.get("heal", 0)),
 		})
 	return entries
 
 ## Un objet ne coûte pas de PA : la colonne de droite y affiche la QUANTITÉ en
 ## réserve à la place des losanges.
+##
+## UN OBJET ÉPUISÉ N'ENTRE PAS DANS LA LISTE : l'afficher à quantité 0
+## proposerait de choisir un objet qu'on ne peut pas utiliser — la pastille n'a
+## pas de losanges éteints comme un coût en PA insuffisant pour le dire.
 func _item_entries() -> Array[Dictionary]:
 	var entries: Array[Dictionary] = []
 	for id: String in _inventory:
+		var quantity: int = int(_inventory[id])
+		if quantity <= 0:
+			continue
 		entries.append({
 			"id": id,
 			"text_id": "item.%s.name" % id,
-			"quantity": int(_inventory[id]),
+			"quantity": quantity,
 			"damage_type": String(BattleData.get_item(id).get("damage_type", "")),
+			"heal": int(BattleData.get_item(id).get("heal", 0)),
 		})
 	return entries
 
@@ -1130,8 +1149,10 @@ func _on_sublist_confirmed(id: String) -> void:
 	)
 	var cost: int = int(definition.get("ap_cost", 0))
 	# Deux refus différents selon la liste : un Eko demande des PA, un objet
-	# demande d'en avoir encore en réserve. Dans les deux cas la ligne le disait
-	# déjà — losanges éteints ou « x0 » — le son ne fait que confirmer.
+	# demande d'en avoir encore en réserve. Pour un Eko la ligne le disait déjà
+	# en losanges éteints ; un objet épuisé, lui, ne figure plus du tout dans la
+	# liste (cf. _item_entries), donc ce filet ne sert plus qu'à un décompte
+	# retombé à 0 pendant que la liste était déjà ouverte.
 	var available := (
 		int(_inventory.get(id, 0)) > 0 if _sublist_kind == BattleData.SOURCE_ITEM
 		else unit != null and unit.can_pay(cost)

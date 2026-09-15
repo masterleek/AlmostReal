@@ -100,13 +100,27 @@ const RANGE_RANGED := "ranged"
 const RANGES: PackedStringArray = [RANGE_MELEE, RANGE_RANGED]
 
 ## Planche du GESTE d'attaque, celle du PERSONNAGE. Une action peut nommer la
-## sienne (`animation` dans ekos.json / items.json / basic_attack), et c'est ce
-## qui permet à deux Ekos d'avoir deux gestes ; mais quand elle n'en nomme pas,
-## ou quand elle en nomme une que ce personnage-là ne déclare pas, on retombe
-## ici. Sans ce repli, un Eko partagé entre deux héros exige que tous deux aient
-## une planche du même nom — et le jour où l'un renomme la sienne, il attaque
-## sans geste, en silence.
+## sienne (`animation` dans ekos.json / basic_attack), et c'est ce qui permet à
+## deux Ekos d'avoir deux gestes ; mais quand elle n'en nomme pas, ou quand elle
+## en nomme une que ce personnage-là ne déclare pas, on retombe ici. Sans ce
+## repli, un Eko partagé entre deux héros exige que tous deux aient une planche
+## du même nom — et le jour où l'un renomme la sienne, il attaque sans geste, en
+## silence.
+##
+## UN OBJET N'A PAS DE `animation` À LUI : cf. ITEM_GESTURE_FIELD, qui le
+## remplace pour cette seule source.
 const ANIM_ATTACK := "attack"
+
+## Champ de units.json qui nomme LA planche que ce personnage joue en utilisant
+## N'IMPORTE QUEL objet — un seul réglage par personnage, pas un par objet.
+##
+## UN OBJET N'A PAS DE GESTE QUI LUI SOIT PROPRE, contrairement à un Eko :
+## boire une potion, jeter une bombe ou une fiole se joue de la même façon.
+## Avant ce champ, chaque objet portait sa propre copie du même nom
+## (`"animation": "atk"` répété dans items.json) — rien ne garantissait qu'elles
+## restent identiques, et rien n'empêchait l'une d'elles de pointer ailleurs
+## sans le vouloir. Un seul champ, sur l'unité, le garantit structurellement.
+const ITEM_GESTURE_FIELD := "item_gesture"
 
 ## Planche tenue PENDANT LA SÉQUENCE DE RYTHME, avant que l'unité ne bouge.
 ##
@@ -447,8 +461,17 @@ func _sequence_of(unit: BattleUnit, action: Dictionary) -> PackedStringArray:
 ## plusieurs personnages : il nomme un geste (`animation`), chacun le joue avec
 ## sa propre planche et sa propre fourchette de frames. Une planche absente
 ## n'est pas une erreur : l'unité frappe sans geste (cf. _play_gesture).
+##
+## UN OBJET NE NOMME RIEN LUI-MÊME : sa source dit seulement qu'il en est un
+## (cf. BattleData.SOURCE_ITEM), et le repli devient ITEM_GESTURE_FIELD — réglé
+## une fois sur l'unité — plutôt que ANIM_ATTACK. `_sheet_for` retombe ensuite
+## sur ANIM_ATTACK si CE repli-là est aussi absent : un personnage qui n'a
+## jamais réglé sa planche d'objets frappe quand même avec un geste.
 func _gesture_for(unit: BattleUnit, action: Dictionary) -> Dictionary:
-	return _sheet_for(unit, action, "animation", ANIM_ATTACK)
+	var fallback := ANIM_ATTACK
+	if String(action.get("source", "")) == BattleData.SOURCE_ITEM:
+		fallback = String(BattleData.get_unit(unit.id).get(ITEM_GESTURE_FIELD, ANIM_ATTACK))
+	return _sheet_for(unit, action, "animation", fallback)
 
 ## Planche tenue pendant la séquence de rythme, même règle que le geste : c'est
 ## l'ACTION qui la nomme (`rhythm_animation`), le PERSONNAGE qui la déclare, et

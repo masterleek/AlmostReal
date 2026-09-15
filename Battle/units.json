@@ -56,8 +56,7 @@
             59,
             93
           ],
-          "_comment": "Geste d'attaque. L'auteur n'en retient que les frames 1 a 4 comptees a partir de 1, soit first_frame 0 et frames 4 : l'animation s'arrete la, elle ne joue pas la planche entiere (20 frames). hit_frame 2 : l'arc de lame apparait a cette frame, c'est la que le coup porte. anchor releve sur l'ellipse d'ombre de la PREMIERE frame, par recalage du gabarit d'ombre de idle.",
-          "first_frame": 0
+          "_comment": "Geste d'attaque. L'auteur n'en retient que les frames 1 a 4 comptees a partir de 1, soit first_frame 0 et frames 4 : l'animation s'arrete la, elle ne joue pas la planche entiere (20 frames). hit_frame 2 : l'arc de lame apparait a cette frame, c'est la que le coup porte. anchor releve sur l'ellipse d'ombre de la PREMIERE frame, par recalage du gabarit d'ombre de idle."
         },
         "win_before": {
           "sheet": "res://Sprites/Battle/noah_win_before.png",
@@ -107,13 +106,46 @@
             56
           ],
           "_comment": "Retour a l'emplacement apres l'assaut, meme planche que 'approach'."
+        },
+        "rhythm": {
+          "sheet": "res://Sprites/Battle/noah_rhythm.png",
+          "columns": 3,
+          "rows": 2,
+          "frames": 4,
+          "fps": 15,
+          "anchor": [
+            37,
+            90
+          ]
+        },
+        "att_eko": {
+          "sheet": "res://Sprites/Battle/noah_use_spell.png",
+          "columns": 3,
+          "rows": 2,
+          "frames": 4,
+          "fps": 15,
+          "loop": false,
+          "anchor": [
+            39,
+            100
+          ]
+        },
+        "rhythm_cac": {
+          "sheet": "res://Sprites/Battle/noah_ready_attack.png",
+          "columns": 1,
+          "rows": 1,
+          "frames": 1,
+          "fps": 6,
+          "anchor": [
+            13,
+            67
+          ]
         }
       },
       "ekos": [
         "fulgura",
         "brise",
         "tempeste",
-        "elan",
         "rosee",
         "aubaine"
       ],
@@ -138,8 +170,10 @@
             "at": "rhythm",
             "sound": "res://Audio/Battle/Voices/noah_lets_go.wav"
           }
-        ]
+        ],
+        "rhythm_animation": "rhythm_cac"
       },
+      "item_gesture": "att_eko",
       "sounds": [
         {
           "at": "turn",

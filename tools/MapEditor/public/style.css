@@ -1117,6 +1117,30 @@ button:hover { border-color: var(--accent); }
 
 .battle-gesture-fallback .battle-inline-hint { flex: 1 1 220px; }
 
+/* Le cas « il a bien cette planche » : en TRAIT PLEIN, à la différence du repli
+   ci-dessus — elle existe, et son FICHIER se choisit d'ici, parmi celles déjà
+   importées pour un personnage ; sa grille et son ancrage, eux, ne se règlent
+   que sur la fiche de l'unité (cf. le commentaire dans performerSheetLine). */
+.battle-gesture-owned {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+}
+
+.battle-gesture-owned-info {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  flex: 1 1 220px;
+  min-width: 0;
+}
+
+.battle-gesture-owned-info .battle-field { width: 100%; }
+
 /* L'effet d'impact : un aperçu à gauche, ses réglages à droite — même
    disposition qu'une planche de personnage, parce que c'est la même sorte
    d'image et les mêmes mesures. */

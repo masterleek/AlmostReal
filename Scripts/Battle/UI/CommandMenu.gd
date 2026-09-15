@@ -111,22 +111,28 @@ const LIST_MAX_VISIBLE := 7
 ## Icône de l'action, à cheval sur le bord gauche de la pastille et présente sur
 ## chaque rangée (cf. menu_long_list.png).
 ##
-## LES DEUX VARIANTES NE DIFFÈRENT QUE PAR LA COULEUR DE L'ÉCLAIR, et cette
-## couleur dit CE QUE L'ACTION INFLIGE — pas un identifiant abstrait. Les
-## fichiers le prouvent : le bleu de la première est #007BFF, exactement la
-## couleur des rayures de blessure de la jauge de PV (cf. HpBar) ; le rouge de
-## la seconde est #FF3700.
+## LES DEUX ÉCLAIRS NE DIFFÈRENT QUE PAR LEUR COULEUR, et cette couleur dit CE
+## QUE L'ACTION INFLIGE — pas un identifiant abstrait. Les fichiers le
+## prouvent : le bleu du premier est #007BFF, exactement la couleur des
+## rayures de blessure de la jauge de PV (cf. HpBar) ; le rouge du second est
+## #FF3700. Le troisième est une forme différente (une croix verte) et pas une
+## troisième couleur : un soin ne fait rien « à retenir » au sens des deux
+## autres, il rend des PV plutôt que d'en retirer, et le mélanger à l'éclair
+## laisserait croire à des dégâts qu'il n'inflige pas.
 ##
 ## C'est pour ça qu'aucun champ « type » n'est plus stocké dans les catalogues :
 ## il redisait `damage_type` dans une autre notation, et les deux avaient fini
 ## par se contredire (« fulgura » portait l'éclair bleu tout en infligeant des
-## dégâts directs). L'icône se DÉDUIT donc, elle ne se déclare pas.
+## dégâts directs). L'icône se DÉDUIT donc, elle ne se déclare pas — le soin
+## suit la même règle : c'est `heal > 0`, pas un champ à part, qui la choisit
+## (cf. _type_icon).
 ##
 ## À VENIR : l'auteur prévoit de vrais types élémentaires (foudre, feu…). Ils
 ## changeront la FORME de l'éclair ; la couleur, elle, continuera de dire la
 ## nature des dégâts. Les deux informations sont indépendantes.
 const ICON_INJURY := preload("res://UI/Battle/ic_type_action_1.svg")
 const ICON_DIRECT := preload("res://UI/Battle/ic_type_action_2.svg")
+const ICON_HEAL := preload("res://UI/Battle/ic_type_action_3.svg")
 ## Relevé sur menu_long_list.png, qui est en PNG et à l'échelle de design —
 ## contrairement aux maquettes de scène, en JPEG, dont la compression décale
 ## d'un pixel le bord des petits aplats. Rangée 0 : coin de pastille en
@@ -326,10 +332,11 @@ func setup(entries: Array[Dictionary], selected: int = 0) -> void:
 		label.rotation_degrees = _row_tilt_deg
 		add_child(label)
 		_entries[i]["label"] = label
-		# L'icône est MONTÉE dès que l'entrée a une nature de dégâts, même au menu
-		# racine où elle reste normalement cachée : c'est `_refresh` qui décide
-		# de l'afficher, et le mode réduit l'allume (cf. _shows_type_icon).
-		var icon_texture := _damage_icon(String(_entries[i].get("damage_type", "")))
+		# L'icône est MONTÉE dès que l'entrée a une nature de dégâts ou soigne,
+		# même au menu racine où elle reste normalement cachée : c'est `_refresh`
+		# qui décide de l'afficher, et le mode réduit l'allume (cf.
+		# _shows_type_icon).
+		var icon_texture := _type_icon(_entries[i])
 		if icon_texture != null:
 			# SVG déjà à la résolution de l'écran : rien à agrandir.
 			var icon := PixelScale.sprite_native(icon_texture)
@@ -371,17 +378,24 @@ func setup(entries: Array[Dictionary], selected: int = 0) -> void:
 	add_child(_cursor)
 	_refresh()
 
-## Icône correspondant à la nature des dégâts. `null` pour une action qui
-## n'inflige RIEN — un soin n'est ni « blessure » ni « direct », et lui coller
-## l'une des deux couleurs annoncerait des dégâts qu'elle ne fait pas. Sa rangée
-## reste donc sans icône en attendant que l'auteur tranche.
+## Icône de l'entrée : ce qu'elle SOIGNE d'abord, ce qu'elle INFLIGE sinon.
 ##
-## Une nature INCONNUE rend `null` elle aussi, sans avertir : le champ vient du
-## JSON et l'avertissement est déjà émis par BattleData à la lecture. La rangée
-## sort alors sans icône plutôt que d'emporter l'affichage — une donnée fautive
-## doit se voir, pas casser l'écran.
-func _damage_icon(damage_type: String) -> Texture2D:
-	match damage_type:
+## LE SOIN PASSE AVANT LA NATURE DES DÉGÂTS, exactement comme _effect_of
+## (BattleAssault) bascule sur `heal` dès qu'il est positif et ne lit plus
+## `damage_type` — la même règle vaut ici, sur la même donnée, pour ne pas
+## laisser une planche à `heal: 18, damage_type: "direct"` (un carrefour que le
+## moteur permet, cf. BattleAssault._effect_of) montrer l'éclair rouge d'un
+## coup qu'elle ne porte pas.
+##
+## `null` pour une entrée qui ne soigne pas et n'inflige rien de connu — le
+## menu racine, qui n'a pas de nature à montrer, ou une nature INCONNUE, rendue
+## `null` sans avertir : le champ vient du JSON et l'avertissement est déjà émis
+## par BattleData à la lecture. La rangée sort alors sans icône plutôt que
+## d'emporter l'affichage — une donnée fautive doit se voir, pas casser l'écran.
+func _type_icon(entry: Dictionary) -> Texture2D:
+	if int(entry.get("heal", 0)) > 0:
+		return ICON_HEAL
+	match String(entry.get("damage_type", "")):
 		"injury":
 			return ICON_INJURY
 		"direct":

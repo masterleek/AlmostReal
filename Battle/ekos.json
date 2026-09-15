@@ -21,23 +21,25 @@
         "circle"
       ],
       "damage_type": "direct",
-      "animation": "atk",
+      "animation": "att_eko",
       "sounds": [
         {
-          "at": "approach",
-          "sound": "res://Audio/Battle/Voices/noah_now.wav",
+          "at": "hit",
+          "sound": "res://Audio/Battle/Voices/noah_att2.wav",
           "units": [
             "noah"
           ]
-        },
-        {
-          "at": "approach",
-          "sound": "res://Audio/Battle/Voices/iris_lets_go.wav",
-          "units": [
-            "iris"
-          ]
         }
-      ]
+      ],
+      "impact_vfx": {
+        "sheet": "res://Sprites/Battle/vfx_hit.png",
+        "columns": 3,
+        "rows": 1,
+        "frames": 3,
+        "fps": 15,
+        "blend": "add"
+      },
+      "range": "ranged"
     },
     "tempeste": {
       "ap_cost": 2,
@@ -81,89 +83,6 @@
         "square",
         "triangle"
       ],
-      "animation": "atk"
-    },
-    "elan": {
-      "ap_cost": 3,
-      "target": "self",
-      "sequence": [
-        "cross",
-        "cross",
-        "circle",
-        "circle"
-      ],
-      "animation": "atk"
-    },
-    "test_1": {
-      "ap_cost": 2,
-      "target": "enemies",
-      "power": 6,
-      "_test": true,
-      "damage_type": "direct",
-      "animation": "atk"
-    },
-    "test_2": {
-      "ap_cost": 3,
-      "target": "ally",
-      "power": 7,
-      "_test": true,
-      "damage_type": "direct",
-      "animation": "atk"
-    },
-    "test_3": {
-      "ap_cost": 1,
-      "target": "enemy",
-      "power": 8,
-      "_test": true,
-      "damage_type": "direct",
-      "animation": "atk"
-    },
-    "test_4": {
-      "ap_cost": 2,
-      "target": "enemies",
-      "power": 9,
-      "_test": true,
-      "damage_type": "direct",
-      "animation": "atk"
-    },
-    "test_5": {
-      "ap_cost": 3,
-      "target": "ally",
-      "power": 10,
-      "_test": true,
-      "damage_type": "direct",
-      "animation": "atk"
-    },
-    "test_6": {
-      "ap_cost": 1,
-      "target": "enemy",
-      "power": 11,
-      "_test": true,
-      "damage_type": "direct",
-      "animation": "atk"
-    },
-    "test_7": {
-      "ap_cost": 2,
-      "target": "enemies",
-      "power": 12,
-      "_test": true,
-      "damage_type": "direct",
-      "animation": "atk"
-    },
-    "test_8": {
-      "ap_cost": 3,
-      "target": "ally",
-      "power": 13,
-      "_test": true,
-      "damage_type": "direct",
-      "animation": "atk"
-    },
-    "test_9": {
-      "ap_cost": 1,
-      "target": "enemy",
-      "power": 14,
-      "_test": true,
-      "damage_type": "direct",
       "animation": "atk"
     }
   }
