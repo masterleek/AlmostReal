@@ -445,6 +445,7 @@ button:hover { border-color: var(--accent); }
 #props-modal-overlay,
 #systems-modal-overlay,
 #rect-picker-overlay,
+#anim-modal-overlay,
 #frame-picker-overlay {
   position: fixed;
   inset: 0;
@@ -458,7 +459,10 @@ button:hover { border-color: var(--accent); }
 #atlas-picker-overlay,
 #rect-picker-overlay { z-index: 110; }
 /* Au-dessus de la page « Combat », qui n'est pas une fenêtre mais occupe tout
-   le plan de travail. */
+   le plan de travail — et le sélecteur de vignettes (frame-picker) doit
+   pouvoir s'ouvrir PAR-DESSUS cette fenêtre (« Voir la planche… » y reste
+   accessible), d'où un cran de plus. */
+#anim-modal-overlay { z-index: 115; }
 #frame-picker-overlay { z-index: 120; }
 
 #tiles-modal-overlay.hidden,
@@ -466,7 +470,14 @@ button:hover { border-color: var(--accent); }
 #props-modal-overlay.hidden,
 #systems-modal-overlay.hidden,
 #rect-picker-overlay.hidden,
+#anim-modal-overlay.hidden,
 #frame-picker-overlay.hidden { display: none; }
+
+/* La fenêtre de planche a besoin de place pour l'aperçu ET les champs côte à
+   côte (.battle-anim-body, cf. plus bas) — plus large que le gabarit par
+   défaut de .crud-modal (480px), pensé pour une simple liste. */
+#anim-modal { width: 640px; max-width: 92vw; }
+#anim-modal-body { overflow-y: auto; }
 
 #tiles-modal,
 .crud-modal {
@@ -1182,6 +1193,17 @@ button:hover { border-color: var(--accent); }
    puis la description qu'on ne fait que lire. */
 .battle-texts { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
 
+/* Nom et description à côté de Statistiques, sur la fiche d'une unité : deux
+   blocs COMPLETS (chacun son propre intertitre), pas deux moitiés d'un même
+   bloc. « Nom et description » garde sa largeur naturelle (ses colonnes sont
+   en pixels fixes, cf. .battle-text-line-short) ; « Statistiques » prend le
+   reste — ses six champs ont besoin de place, contrairement à deux lignes de
+   texte. Repasse en colonne sous ~520px, où les deux côte à côte
+   écraseraient les six champs de stats en accordéon. */
+.battle-identity-row { display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start; }
+.battle-identity-row > .battle-texts { flex: 0 0 auto; margin-bottom: 0; }
+.battle-identity-row > .battle-identity-stats { flex: 1 1 260px; min-width: 220px; }
+
 .battle-text-line {
   display: grid;
   grid-template-columns: 70px 220px 1fr;
@@ -1210,15 +1232,25 @@ button:hover { border-color: var(--accent); }
 }
 /* ---------- Planches d'animation ---------- */
 
-.battle-anims { display: flex; flex-direction: column; gap: 8px; }
+/* Une planche-contact : les vignettes carrées se posent côte à côte et
+   passent à la ligne. Chacune ouvre ses réglages dans une fenêtre à part
+   (cf. #anim-modal-overlay) plutôt que de se déplier sur place. */
+.battle-anims { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start; }
 
-/* L'aperçu à gauche, les champs à droite : il répond à ce qu'on règle, il doit
-   rester sous les yeux pendant qu'on le règle. */
+.battle-anim { display: flex; flex-direction: column; gap: 4px; }
+
 /* Une valeur qui n'est pas dans le fichier, seulement le défaut du moteur : à
    distinguer d'une valeur écrite, sinon on croit que le catalogue la porte. */
 .battle-input-default { color: #9aa0ab; font-style: italic; }
 
+/* `.battle-anim-body`/`.battle-anim-head`/`.battle-anim-settings` : aperçu à
+   gauche, réglages à droite — gabarit partagé par le bloc « Impact »
+   (vfxBlock, posé dans la page) et par la fenêtre de réglages d'une planche
+   d'unité (openAnimModal, posée dans #anim-modal-overlay). La
+   planche-contact elle-même, réduite à sa vignette, ne les utilise plus
+   (cf. .battle-anim-thumb/.battle-anim-caption). */
 .battle-anim-body { display: flex; gap: 12px; align-items: flex-start; }
+.battle-anim-head { display: flex; align-items: center; gap: 8px; }
 .battle-anim-settings { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
 
 .sheet-preview {
@@ -1238,6 +1270,60 @@ button:hover { border-color: var(--accent); }
   border-radius: 3px;
   display: block;
 }
+
+/* La vignette EST le bouton qui ouvre la fenêtre de réglages : carrée et fixe
+   (le `.sheet-preview` qu'elle contient peut être plus petit que le carré —
+   une planche haute ou large ne le remplit jamais tout à fait — d'où le
+   centrage). */
+.battle-anim-thumb {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  width: 112px;
+  height: 112px;
+  overflow: hidden;
+}
+
+.battle-anim-thumb:hover { border-color: var(--accent); }
+
+/* En médaillon sur le coin de la vignette, comme .frame-remove (même rôle :
+   retirer une image qu'on regarde) — mais posé un peu plus DEDANS (2px et non
+   -6px) pour rester sur la vignette carrée plutôt que de déborder dans
+   l'espace entre deux planches voisines, où il serait pris pour appartenir à
+   la mauvaise. */
+.battle-anim-delete {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  z-index: 1;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border-radius: 50%;
+  background: #3a1f1f;
+  border: 1px solid #d98a8a;
+  color: #d98a8a;
+  font-size: 11px;
+  line-height: 1;
+}
+
+.battle-anim-delete:hover { color: #ff6b6b; border-color: #ff6b6b; }
+
+/* La légende, sous la vignette — nom et, s'il y a lieu, l'avertissement
+   d'ancrage, qui doit rester lisible planche REPLIÉE. */
+.battle-anim-caption {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: 112px;
+}
+
+.battle-anim-caption .battle-id { font-size: 13px; }
+.battle-anim-caption .battle-warning { font-size: 11px; }
 
 .battle-anim-frames {
   display: flex;
@@ -1535,6 +1621,11 @@ button:hover { border-color: var(--accent); }
   border-bottom: 1px solid var(--border);
 }
 
+/* Un geste à l'extrémité droite du titre, pas une information alignée avec
+   lui : `align-self` l'affranchit de la ligne de base du texte, sur laquelle
+   un bouton n'a rien de naturel à poser. */
+.battle-section-head > .battle-chip-add { margin-left: auto; align-self: center; }
+
 .battle-section-title {
   font-size: 11px;
   letter-spacing: 0.08em;
@@ -1542,33 +1633,6 @@ button:hover { border-color: var(--accent); }
   color: #9aa0ab;
   margin: 0;
 }
-
-/* Une planche repliée garde son aperçu : c'est la galerie des animations. */
-.battle-anim-head { display: flex; align-items: center; gap: 8px; }
-
-.battle-anim-toggle {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex: 1;
-  min-width: 0;
-  background: none;
-  border: none;
-  color: var(--text);
-  cursor: pointer;
-  padding: 2px 0;
-  text-align: left;
-}
-
-.battle-anim-caret { color: #9aa0ab; font-size: 10px; width: 10px; }
-.battle-anim-fields { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
-.battle-anim:not(.open) .battle-anim-body { align-items: center; }
-/* Repliée, la ligne se lit d'un trait : nom puis résumé, collés. Étalés sur
-   toute la largeur, l'œil devait traverser le bloc pour apparier les deux. */
-.battle-anim:not(.open) .battle-anim-toggle { flex: none; }
-.battle-anim:not(.open) .battle-anim-head { justify-content: space-between; }
-.battle-anim-toggle .battle-id { font-size: 13px; }
-
 
 .battle-index-add { width: 100%; margin-top: 6px; }
 

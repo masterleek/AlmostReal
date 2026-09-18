@@ -35,6 +35,15 @@ const listEl = document.getElementById("battle-list");
 const hintEl = document.getElementById("battle-hint");
 const tabsEl = document.getElementById("battle-section-tabs");
 
+// La fenêtre de réglages d'une planche d'unité (cf. openAnimModal) : posée une
+// fois dans le HTML, HORS de la colonne détail — `renderList()` la reconstruit
+// à chaque modification, et une fenêtre qui vivrait dedans se fermerait sous
+// la main à la première frappe dans un de ses champs.
+const animModalOverlay = document.getElementById("anim-modal-overlay");
+const animModalTitle = document.getElementById("anim-modal-title");
+const animModalClose = document.getElementById("anim-modal-close");
+const animModalBody = document.getElementById("anim-modal-body");
+
 // Chaque section connaît son fichier, la clé du dictionnaire qu'il contient, et
 // le préfixe des ids Localization qui lui donnent ses libellés.
 const SECTIONS = {
@@ -150,10 +159,14 @@ function markIgnored(node, why) {
   return node;
 }
 
-function sectionTitle(text, note) {
+function sectionTitle(text, note, action = null) {
   const head = el("div", "battle-section-head");
   head.appendChild(el("h4", "battle-section-title", text));
   if (note) head.appendChild(el("span", "battle-inline-hint", note));
+  // POUSSÉE AU BOUT PAR `margin-left: auto` (cf. .battle-section-action) :
+  // c'est un geste, pas une information, il n'a rien à faire aligné avec le
+  // texte du titre.
+  if (action) head.appendChild(action);
   return head;
 }
 
@@ -1813,22 +1826,32 @@ function animationsEditor(unitId, unit, onChanged) {
       el("span", "battle-warning", "Aucune planche : l'unité n'a rien à afficher en combat.")
     );
   }
-  // Ce que le moteur RÉCLAME et que l'unité n'a pas. Un état manquant ne lève
-  // aucune erreur en jeu : le personnage garde simplement la planche qu'il
-  // avait, ou ne bouge pas. Le dire ici est le seul endroit où ça se voit.
-  const missing = animationStates.filter((st) => !(st.key in unit.animations));
-  if (missing.length) {
-    wrap.appendChild(
-      el("p", "battle-inline-hint battle-anim-missing",
-        "États sans planche : "
-        + missing.map((st) => momentLabels.animation_labels?.[st.key] || st.key).join(", ")
-        + ".")
-    );
-  }
   for (const name of names) {
     wrap.appendChild(animationBlock(unitId, unit, name, onChanged));
   }
+  return wrap;
+}
 
+// Ce que le moteur RÉCLAME et que l'unité n'a pas. Un état manquant ne lève
+// aucune erreur en jeu : le personnage garde simplement la planche qu'il
+// avait, ou ne bouge pas. Le dire ici est le seul endroit où ça se voit.
+//
+// À PART DE LA GRILLE, et pas dedans : une grille de vignettes carrées n'a pas
+// de place pour une phrase, et c'est une information sur l'UNITÉ (ce qui lui
+// manque), pas sur une planche qu'elle a.
+function missingSheetsLine(unit) {
+  const missing = animationStates.filter((st) => !(st.key in (unit.animations || {})));
+  if (!missing.length) return null;
+  return el("p", "battle-inline-hint battle-anim-missing",
+    "États sans planche : "
+    + missing.map((st) => momentLabels.animation_labels?.[st.key] || st.key).join(", ")
+    + ".");
+}
+
+// POSÉ SUR LA LIGNE DU TITRE « Planches », pas au pied de la grille : une
+// grille de vignettes côte à côte n'a plus de « fin de liste » évidente où
+// poser un bouton d'ajout — le titre, lui, reste toujours au même endroit.
+function addSheetButton(unitId, unit, onChanged) {
   const add = el("button", "battle-chip-add", "+ planche");
   add.type = "button";
   add.onclick = () => {
@@ -1841,6 +1864,7 @@ function animationsEditor(unitId, unit, onChanged) {
       alert("Nom invalide : minuscules, chiffres et « _ » seulement.");
       return;
     }
+    if (!unit.animations) unit.animations = {};
     if (unit.animations[name]) {
       alert(`« ${name} » existe déjà.`);
       return;
@@ -1849,46 +1873,47 @@ function animationsEditor(unitId, unit, onChanged) {
     openSheets.add(`units:${unitId}:${name}`);
     onChanged();
   };
-  wrap.appendChild(add);
-  return wrap;
+  return add;
 }
 
-// Une planche REPLIÉE garde son aperçu et son résumé : c'est la galerie des
-// animations de l'unité, qui se parcourt à l'œil. Dépliée, elle ouvre ses dix
-// champs — six planches dépliées d'un coup faisaient l'essentiel du mur.
+// Une planche est une vignette carrée dans une grille — la galerie des
+// animations de l'unité, qui se parcourt à l'œil, côte à côte comme les
+// planches d'un contact-sheet. Ses réglages s'ouvrent dans une FENÊTRE
+// (openAnimModal) plutôt qu'en dépliant le bloc sur place : un dépliement
+// décalait toutes les planches voisines pendant qu'on en règle une seule, et
+// perdait sa place dans la grille en la refermant.
 function animationBlock(unitId, unit, name, onChanged) {
   const config = unit.animations[name];
   const key = `units:${unitId}:${name}`;
-  const open = openSheets.has(key);
-  const block = el("div", "battle-block battle-anim");
-  if (open) block.classList.add("open");
+  const block = el("div", "battle-anim");
 
-  const body = el("div", "battle-anim-body");
-  const preview = animationPreview(config, sheetUrl(config.sheet), open);
-  if (config.sheet) {
-    preview.classList.add("sheet-preview-openable");
-    preview.title = "Voir la planche entière";
-    preview.onclick = () => openSheet(config, name, onChanged);
-  }
-  body.appendChild(preview);
+  // LA VIGNETTE EST LE BOUTON : dans une grille de carrés, c'est l'image qu'on
+  // clique, pas une ligne de texte à côté. Le bouton de suppression est un
+  // enfant à elle, en médaillon sur son coin, et coupe la propagation pour ne
+  // pas ouvrir la fenêtre au passage.
+  const thumb = el("div", "battle-anim-thumb");
+  thumb.title = `Régler cette planche — ${animationSummary(config)}`;
+  thumb.appendChild(animationPreview(config, sheetUrl(config.sheet), false));
+  thumb.onclick = () => openAnimModal(unitId, unit, name, onChanged);
+  const drop = el("button", "battle-anim-delete", "🗑");
+  drop.type = "button";
+  drop.title = "Retirer cette planche";
+  drop.onclick = (evt) => {
+    evt.stopPropagation();
+    if (!confirm(`Retirer la planche « ${name} » de cette unité ?`)) return;
+    delete unit.animations[name];
+    openSheets.delete(key);
+    onChanged();
+  };
+  thumb.appendChild(drop);
+  block.appendChild(thumb);
 
-  const column = el("div", "battle-anim-settings");
-  body.appendChild(column);
-  block.appendChild(body);
-
-  const head = el("div", "battle-anim-head");
-  const toggle = el("button", "battle-anim-toggle");
-  toggle.type = "button";
-  toggle.appendChild(el("span", "battle-anim-caret", open ? "▾" : "▸"));
-  toggle.appendChild(el("span", "battle-id", name));
-  toggle.appendChild(el("span", "battle-inline-hint", animationSummary(config)));
-  // L'AVERTISSEMENT EST DANS L'EN-TÊTE, donc visible planche REPLIÉE, et il est
-  // DANS le bouton : le geste qu'il appelle est justement d'ouvrir la planche.
-  // Le réserver aux champs d'ancrage le rendrait invisible — ces blocs sont
-  // repliés par défaut, et on n'ouvre pas celui qu'on ne soupçonne pas.
+  // LE NOM SOUS LA VIGNETTE, comme la légende d'une planche-contact.
+  const caption = el("div", "battle-anim-caption");
+  caption.appendChild(el("span", "battle-id", name));
   const warning = el("span", "battle-warning");
   warning.hidden = true;
-  toggle.appendChild(warning);
+  caption.appendChild(warning);
   anchorDrift(unit, name, config).then((drift) => {
     if (!drift) return;
     warning.hidden = false;
@@ -1899,68 +1924,124 @@ function animationBlock(unitId, unit, name, onChanged) {
       : `Déclaré ${drift.declared.join(" / ")}, relevé sur l'ombre `
         + `${drift.measured.join(" / ")}.`;
   });
-  toggle.onclick = () => {
-    if (open) openSheets.delete(key);
-    else openSheets.add(key);
-    onChanged();
-  };
-  head.appendChild(toggle);
-  const drop = el("button", "modal-map-delete", "🗑");
-  drop.type = "button";
-  drop.title = "Retirer cette planche";
-  drop.onclick = () => {
-    if (!confirm(`Retirer la planche « ${name} » de cette unité ?`)) return;
-    delete unit.animations[name];
-    openSheets.delete(key);
-    onChanged();
-  };
-  head.appendChild(drop);
-  column.appendChild(head);
+  block.appendChild(caption);
 
-  if (!open) return block;
-  const settings = el("div", "battle-anim-fields");
-  column.appendChild(settings);
+  // UNE PLANCHE FRAÎCHEMENT CRÉÉE (« + planche », ou depuis le tableau « Geste,
+  // par personnage » d'un Eko/Objet) s'ouvre d'office : elle est vide, et la
+  // seule chose à faire ensuite est d'y importer une image. Le drapeau ne sert
+  // qu'une fois — on le consomme ici plutôt que de rouvrir la fenêtre à chaque
+  // redessin de la liste.
+  if (openSheets.delete(key)) openAnimModal(unitId, unit, name, onChanged);
 
-  settings.appendChild(stateLine(unitId, unit, name, onChanged));
-  settings.appendChild(sheetLine(unitId, unit, config, name, onChanged, { scope: "grouped" }));
-
-  const grid = el("div", "battle-grid");
-  for (const [key, label, options] of SHEET_FIELDS) {
-    grid.appendChild(
-      objectNumberField(config, key, label, { ...options, onCommit: onChanged })
-    );
-  }
-  settings.appendChild(grid);
-  settings.appendChild(gridLine(unit, name, config, onChanged));
-
-  settings.appendChild(framesLine(config, name, onChanged));
-
-  const options = el("div", "battle-grid");
-  // Le bouclage est une propriété de la PLANCHE : un repos tourne en rond, un
-  // geste se joue une fois. Absent = vrai, comme dans le moteur.
-  options.appendChild(
-    field(
-      "En boucle",
-      checkboxInput(config.loop !== false, (checked) => {
-        if (checked) delete config.loop;
-        else config.loop = false;
-        onChanged();
-      }),
-      "Décoché : la planche se joue une seule fois (un geste d'attaque, une intro de victoire)."
-    )
-  );
-  // `hit_frame` ne vaut que pour une planche de GESTE : c'est la vignette où le
-  // coup porte. Facultatif — à défaut, le moteur prend le milieu.
-  options.appendChild(
-    objectNumberField(config, "hit_frame", "Vignette d'impact", {
-      optional: true, min: 0, onCommit: onChanged,
-      title: "Vignette où le coup porte, comptée dans l'extrait. Vide = le milieu du geste.",
-    })
-  );
-  settings.appendChild(options);
-
-  settings.appendChild(anchorLine(unit, name, config, onChanged));
   return block;
+}
+
+// LA FENÊTRE DE RÉGLAGES D'UNE PLANCHE — aperçu à gauche, champs à droite,
+// posée une fois dans le HTML (cf. anim-modal-overlay) plutôt que rattachée à
+// la vignette : la colonne détail est reconstruite à chaque modification
+// (cf. renderList), une fenêtre qui vivrait dedans se fermerait sous la main
+// au premier commit.
+function closeAnimModal() {
+  animModalOverlay.classList.add("hidden");
+  animModalBody.replaceChildren();
+}
+
+animModalClose.onclick = () => closeAnimModal();
+animModalOverlay.onclick = (evt) => {
+  if (evt.target === animModalOverlay) closeAnimModal();
+};
+document.addEventListener("keydown", (evt) => {
+  if (evt.key === "Escape" && !animModalOverlay.classList.contains("hidden")) closeAnimModal();
+});
+
+function openAnimModal(unitId, unit, initialName, outerOnChanged) {
+  let name = initialName;
+  // Le repère qui survit à un renommage : `config` reste le MÊME OBJET quand
+  // `stateLine` renomme la planche (cf. renameAnimation, qui ne fait que
+  // déplacer la valeur vers une autre clé). Il faut le lire ICI, AVANT le
+  // commit — dans `changed()`, la clé `name` a déjà disparu de
+  // `unit.animations` au moment où on l'appelle (le renommage s'est produit
+  // avant l'appel), donc `unit.animations[name]` y renverrait déjà `undefined`.
+  let config = unit.animations[name];
+
+  // Un commit doit à la fois PERSISTER (l'appelant reconstruit aussi la grille
+  // de vignettes derrière la fenêtre) et RAFRAÎCHIR cette fenêtre, qui vit hors
+  // de cette grille et ne serait donc pas reconstruite par le seul appel à
+  // `outerOnChanged`.
+  const changed = () => {
+    outerOnChanged();
+    const found = Object.keys(unit.animations).find((k) => unit.animations[k] === config);
+    if (found) name = found;
+    render();
+  };
+
+  function render() {
+    config = unit.animations[name];
+    // Supprimée pendant que la fenêtre était ouverte sur elle (depuis un autre
+    // onglet, via le verrou optimiste) : rien à montrer.
+    if (!config) {
+      closeAnimModal();
+      return;
+    }
+    animModalTitle.textContent = `Planche « ${name} »`;
+
+    const body = el("div", "battle-anim-body");
+
+    const preview = animationPreview(config, sheetUrl(config.sheet), true);
+    if (config.sheet) {
+      preview.classList.add("sheet-preview-openable");
+      preview.title = "Voir la planche entière";
+      preview.onclick = () => openSheet(config, name, changed);
+    }
+    body.appendChild(preview);
+
+    const column = el("div", "battle-anim-settings");
+    column.appendChild(stateLine(unitId, unit, name, changed));
+    column.appendChild(sheetLine(unitId, unit, config, name, changed, { scope: "grouped" }));
+
+    const grid = el("div", "battle-grid");
+    for (const [key, label, options] of SHEET_FIELDS) {
+      grid.appendChild(
+        objectNumberField(config, key, label, { ...options, onCommit: changed })
+      );
+    }
+    column.appendChild(grid);
+    column.appendChild(gridLine(unit, name, config, changed));
+
+    column.appendChild(framesLine(config, name, changed));
+
+    const options = el("div", "battle-grid");
+    // Le bouclage est une propriété de la PLANCHE : un repos tourne en rond, un
+    // geste se joue une fois. Absent = vrai, comme dans le moteur.
+    options.appendChild(
+      field(
+        "En boucle",
+        checkboxInput(config.loop !== false, (checked) => {
+          if (checked) delete config.loop;
+          else config.loop = false;
+          changed();
+        }),
+        "Décoché : la planche se joue une seule fois (un geste d'attaque, une intro de victoire)."
+      )
+    );
+    // `hit_frame` ne vaut que pour une planche de GESTE : c'est la vignette où
+    // le coup porte. Facultatif — à défaut, le moteur prend le milieu.
+    options.appendChild(
+      objectNumberField(config, "hit_frame", "Vignette d'impact", {
+        optional: true, min: 0, onCommit: changed,
+        title: "Vignette où le coup porte, comptée dans l'extrait. Vide = le milieu du geste.",
+      })
+    );
+    column.appendChild(options);
+
+    column.appendChild(anchorLine(unit, name, config, changed));
+    body.appendChild(column);
+
+    animModalBody.replaceChildren(body);
+  }
+
+  render();
+  animModalOverlay.classList.remove("hidden");
 }
 
 // Les vignettes se choisissent SUR L'IMAGE : `first_frame` et `frames`
@@ -2638,8 +2719,15 @@ function itemGestureField(unit, onChanged) {
 function renderUnit(id, unit, refresh) {
   const row = el("div", "battle-row");
   row.appendChild(rowHead("units", id, unit.behaviour ? "ennemi" : null));
-  row.appendChild(textLines("units", id, refresh));
 
+  // NOM ET DESCRIPTION À CÔTÉ DE STATISTIQUES : deux blocs complets, chacun
+  // son propre intertitre — cf. .battle-identity-row, qui les remet en
+  // colonne dès que la fiche devient trop étroite pour les six champs de
+  // stats.
+  const identity = el("div", "battle-identity-row");
+  identity.appendChild(textLines("units", id, refresh));
+
+  const statsBlock = el("div", "battle-identity-stats");
   const stats = el("div", "battle-grid battle-stats");
   if (!unit.stats) unit.stats = {};
   for (const [key, label] of STAT_FIELDS) {
@@ -2654,8 +2742,10 @@ function renderUnit(id, unit, refresh) {
       )
     );
   }
-  row.appendChild(sectionTitle("Statistiques"));
-  row.appendChild(stats);
+  statsBlock.appendChild(sectionTitle("Statistiques"));
+  statsBlock.appendChild(stats);
+  identity.appendChild(statsBlock);
+  row.appendChild(identity);
 
   // Les planches sont en LECTURE SEULE : leur grille, leur ancrage et leur
   // fourchette de frames se relèvent au pixel sur l'image (cf. CLAUDE.md), ce
@@ -2663,8 +2753,13 @@ function renderUnit(id, unit, refresh) {
   // inviterait à poser des valeurs plausibles et fausses.
   const sheets = Object.keys(unit.animations || {});
   row.appendChild(
-    sectionTitle("Planches", "grille et ancrage se relèvent à l'atelier")
+    sectionTitle(
+      "Planches", "grille et ancrage se relèvent à l'atelier",
+      addSheetButton(id, unit, refresh)
+    )
   );
+  const missing = missingSheetsLine(unit);
+  if (missing) row.appendChild(missing);
   row.appendChild(animationsEditor(id, unit, refresh));
 
   if (!unit.basic_attack) unit.basic_attack = {};

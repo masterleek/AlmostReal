@@ -16,11 +16,13 @@ const previews = new Set();
 let ticking = false;
 
 // Deux tailles, parce que l'aperçu ne sert pas à la même chose selon l'état.
-// REPLIÉ, il sert à retrouver une planche parmi six : petit suffit, et six
-// grands aperçus empilés recréent le mur qu'on vient de démonter. DÉPLIÉ, on
-// juge le découpage et la cadence : il lui faut de la place. Les bornes tiennent
-// compte des cellules réelles, de 46×68 (iris/win) à 339×103 (iris/win_before).
-const BOX_COLLAPSED = [180, 96];
+// REPLIÉ, il tient dans la vignette carrée de la planche-contact (cf.
+// .battle-anim-thumb, 112×112 dans battle.js) — la borne laisse la place, sous
+// le dessin, au bouton « ↻ Rejouer » d'une planche qui ne boucle pas. DÉPLIÉ,
+// on juge le découpage et la cadence : il lui faut de la place. Les bornes
+// tiennent compte des cellules réelles, de 46×68 (iris/win) à 339×103
+// (iris/win_before).
+const BOX_COLLAPSED = [96, 70];
 const BOX_OPEN = [260, 148];
 // Les planches sont du pixel-art : on ne les agrandit qu'en facteur ENTIER,
 // sinon une colonne de pixels sur deux double de largeur et la silhouette
@@ -141,8 +143,10 @@ export function animationPreview(config, url, open = false) {
       again.className = "text-btn";
       again.textContent = "↻ Rejouer";
       again.onclick = (evt) => {
-        // L'aperçu ouvre la planche entière au clic (cf. battle.js) : sans
-        // cela, « rejouer » ouvrirait une fenêtre au lieu de rejouer.
+        // CE QUE FAIT L'APERÇU AU CLIC DÉPEND DE L'APPELANT (cf. battle.js :
+        // ouvrir la planche en grand, ou déplier/replier le bloc) — dans les
+        // deux cas, sans stopPropagation() « rejouer » déclencherait CE geste
+        // au lieu de relancer l'animation.
         evt.stopPropagation();
         preview.startedAt = performance.now();
         start();
