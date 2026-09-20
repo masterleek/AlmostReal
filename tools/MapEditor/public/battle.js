@@ -1997,7 +1997,7 @@ function openAnimModal(unitId, unit, initialName, outerOnChanged) {
 
     const column = el("div", "battle-anim-settings");
     column.appendChild(stateLine(unitId, unit, name, changed));
-    column.appendChild(sheetLine(unitId, unit, config, name, changed, { scope: "grouped" }));
+    column.appendChild(sheetLine(unitId, unit, config, name, changed, { scope: "grouped", allowImport: false }));
 
     const grid = el("div", "battle-grid");
     for (const [key, label, options] of SHEET_FIELDS) {
@@ -2007,8 +2007,6 @@ function openAnimModal(unitId, unit, initialName, outerOnChanged) {
     }
     column.appendChild(grid);
     column.appendChild(gridLine(unit, name, config, changed));
-
-    column.appendChild(framesLine(config, name, changed));
 
     const options = el("div", "battle-grid");
     // Le bouclage est une propriété de la PLANCHE : un repos tourne en rond, un
@@ -2202,7 +2200,7 @@ function sheetChoices(scope) {
   };
 }
 
-function sheetLine(unitId, unit, config, name, onChanged, { scope = "all" } = {}) {
+function sheetLine(unitId, unit, config, name, onChanged, { scope = "all", allowImport = true } = {}) {
   const line = el("div", "battle-sheet-line");
   const choices = sheetChoices(scope);
   line.appendChild(
@@ -2218,7 +2216,9 @@ function sheetLine(unitId, unit, config, name, onChanged, { scope = "all" } = {}
       )
     )
   );
-  line.appendChild(importButton(unitId, unit, config, name, onChanged));
+  if (allowImport) {
+    line.appendChild(importButton(unitId, unit, config, name, onChanged));
+  }
   // Une planche que Godot n'a pas importée existe sur le disque et reste
   // INVISIBLE EN JEU : le dire ici, là où on la choisit, plutôt que de laisser
   // l'auteur découvrir un personnage vide au combat.
@@ -2646,7 +2646,7 @@ function anchorLine(unit, name, config, onChanged) {
   // le cas majoritaire, et jusqu'ici seul un changement de grille déclenchait la
   // mesure : une planche posée avant ce relevé n'avait aucun moyen d'y accéder,
   // sinon en cassant sa propre grille pour la refaire.
-  const measure = el("button", "text-btn", "Relever sur l'ombre");
+  const measure = el("button", "text-btn", "Aligner ombre");
   measure.type = "button";
   measure.disabled = !config.sheet || name === ANCHOR_REFERENCE;
   measure.title = name === ANCHOR_REFERENCE
@@ -2658,7 +2658,7 @@ function anchorLine(unit, name, config, onChanged) {
     const anchor = await measureAnchor(unit, name, config);
     if (anchor === null) {
       measure.disabled = false;
-      measure.textContent = "Relever sur l'ombre";
+      measure.textContent = "Aligner ombre";
       alert(
         "L'ancrage n'a pas pu être relevé : aucune ombre reconnaissable sur "
         + `cette planche ou sur « ${ANCHOR_REFERENCE} ». Règle les deux champs à la main.`
@@ -2684,7 +2684,7 @@ function anchorLine(unit, name, config, onChanged) {
       + ` — l'ancrage en place dessine ${describeDrift(drift)}.`;
   });
 
-  const clear = el("button", "text-btn", "Défaut (centre-bas)");
+  const clear = el("button", "text-btn", "Reset ancrage");
   clear.type = "button";
   clear.disabled = !declared;
   clear.title = "Retire l'ancrage déclaré : le moteur reprend le centre-bas de la cellule.";

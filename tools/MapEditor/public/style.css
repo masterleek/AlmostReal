@@ -1325,12 +1325,6 @@ button:hover { border-color: var(--accent); }
 .battle-anim-caption .battle-id { font-size: 13px; }
 .battle-anim-caption .battle-warning { font-size: 11px; }
 
-.battle-anim-frames {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
 
 /* Le libellé de la ligne des vignettes vit hors d'un .battle-field : il faut
    donc lui redonner la taille des autres, sinon il passe pour un titre. */
@@ -1477,6 +1471,10 @@ button:hover { border-color: var(--accent); }
    puisque rien dans le dessin ne l'annonce. */
 .sheet-preview-openable { cursor: zoom-in; }
 
+/* « ↻ Rejouer » (planche qui ne boucle pas) prend toute la largeur de
+   l'aperçu déplié plutôt que de rester à la largeur de son texte. */
+.sheet-preview-openable .text-btn { align-self: stretch; }
+
 /* Le relevé du découpage et ce qu'il donne, sur une ligne : le bouton agit, la
    note dit ce qu'on obtient — y compris quand personne n'a cliqué. */
 .battle-anim-grid-line {
@@ -1498,7 +1496,7 @@ button:hover { border-color: var(--accent); }
   flex-wrap: wrap;
 }
 
-.battle-anim-state-line > .battle-field { flex: 0 1 300px; }
+.battle-anim-state-line > .battle-field { flex: 0 1 457px; }
 .battle-anim-state-line > .battle-inline-hint { flex: 1 1 200px; padding-bottom: 5px; }
 
 /* Ce que le moteur réclame et qui manque : une phrase au-dessus de la liste,
