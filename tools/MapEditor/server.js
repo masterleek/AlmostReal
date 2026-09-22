@@ -437,6 +437,47 @@ app.post(
   }
 );
 
+// Renomme le FICHIER d'une planche sur le disque — pas la clé qui la désigne
+// dans une fiche (cf. renameAnimation côté client, sur `unit.animations`). Le
+// chemin res:// est l'identifiant que units.json, ekos.json ET items.json
+// portent tous les trois (`animations[*].sheet`, `impact_vfx.sheet`) : c'est au
+// CLIENT de réécrire ces références une fois le fichier déplacé, lui seul
+// ayant les trois catalogues en mémoire — ici on ne fait que déplacer le
+// fichier et laisser l'import Godot se refaire dessus.
+app.post("/api/battle/sheets/rename", async (req, res) => {
+  const from = String(req.body?.from || "");
+  const to = String(req.body?.to || "");
+  if (!isValidSheetName(from) || !isValidSheetName(to)) {
+    return res.status(400).json({
+      error: "Nom de planche invalide : lettres, chiffres, _ et -, extension .png.",
+    });
+  }
+  const source = path.join(BATTLE_SHEETS_DIR, from);
+  const target = path.join(BATTLE_SHEETS_DIR, to);
+  if (!fsSync.existsSync(source)) {
+    return res.status(404).json({ error: `« ${from} » est introuvable.` });
+  }
+  if (from !== to && fsSync.existsSync(target) && req.query.overwrite !== "1") {
+    return res.status(409).json({ error: `« ${to} » existe déjà.` });
+  }
+  try {
+    await fs.rename(source, target);
+    // L'ancien .import décrit encore l'ANCIEN chemin dans `source_file` : le
+    // garder tromperait Godot plus qu'il ne l'aiderait. On le retire et on
+    // relance la passe d'import, exactement comme au premier dépôt du fichier.
+    await fs.rm(source + ".import", { force: true });
+  } catch (err) {
+    return res.status(500).json({ error: String(err) });
+  }
+  const imported = await importWithGodot();
+  const rel = path.relative(SPRITES_DIR, target).split(path.sep).join("/");
+  res.json({
+    path: "res://Sprites/" + rel,
+    url: "/sprites/" + rel,
+    imported: imported && fsSync.existsSync(target + ".import"),
+  });
+});
+
 // Passe d'import de Godot, ATTENDUE : tant qu'elle n'a pas tourné, le fichier
 // existe sur le disque mais le jeu ne sait pas le charger. On rend la main
 // seulement quand c'est fait, pour que la réponse puisse le dire honnêtement.

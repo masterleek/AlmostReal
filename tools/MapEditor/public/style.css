@@ -1201,8 +1201,13 @@ button:hover { border-color: var(--accent); }
    texte. Repasse en colonne sous ~520px, où les deux côte à côte
    écraseraient les six champs de stats en accordéon. */
 .battle-identity-row { display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start; }
-.battle-identity-row > .battle-texts { flex: 0 0 auto; margin-bottom: 0; }
-.battle-identity-row > .battle-identity-stats { flex: 1 1 260px; min-width: 220px; }
+/* Les deux enfants sont désormais des .battle-fold (cf. foldableSection) :
+   « Nom et description » en premier, « Statistiques » en second — repéré par
+   position plutôt que par une classe à eux, qu'un bloc pliable générique n'a
+   pas de raison de porter. */
+.battle-identity-row > .battle-fold { margin-bottom: 0; }
+.battle-identity-row > .battle-fold:first-child { flex: 0 0 auto; }
+.battle-identity-row > .battle-fold:last-child { flex: 1 1 260px; min-width: 220px; }
 
 .battle-text-line {
   display: grid;
@@ -1701,6 +1706,63 @@ button:hover { border-color: var(--accent); }
 }
 
 .battle-block-title { font-size: 12px; font-weight: 600; margin: 0; }
+
+/* Gros blocs PLIABLES de la fiche d'unité (cf. foldableSection dans
+   battle.js) : Nom et description, Statistiques, Planches, Attaque de base,
+   Objets, Sons, Ekos connus, Comportement — sept à huit blocs qui
+   s'enchaînaient avec le même filet gris et finissaient par se confondre au
+   défilement. Un filet de couleur sur la marge ET sur le titre fait
+   reconnaître un bloc avant même de lire son nom ; `--fold-color` est posé en
+   ligne, par bloc, plutôt que dupliqué en huit règles ici. */
+.battle-fold {
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--fold-color, var(--accent));
+  border-radius: 4px;
+  background: var(--panel);
+  padding: 8px 10px;
+}
+
+.battle-fold-headrow { display: flex; align-items: center; gap: 8px; }
+
+/* Un <button> plein cadre, mais qui ne RESSEMBLE pas à un bouton : c'est le
+   titre de la section, cliquable pour plier/déplier — pas une action à part
+   qu'il faudrait distinguer visuellement du reste de l'en-tête. */
+.battle-fold-toggle {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.battle-fold-toggle .battle-section-title { color: var(--fold-color, var(--accent)); }
+.battle-fold-toggle:hover .battle-section-title { color: var(--text); }
+
+.battle-fold-chevron {
+  color: var(--fold-color, var(--accent));
+  font-size: 10px;
+  flex: 0 0 auto;
+}
+
+.battle-fold-action { flex: 0 0 auto; }
+
+.battle-fold-body { margin-top: 8px; display: flex; flex-direction: column; gap: 8px; }
+/* `[hidden]` a la même spécificité que `.battle-fold-body` seul, et une règle
+   D'AUTEUR gagne toujours contre celle du navigateur à spécificité égale,
+   quel que soit l'ordre dans CE fichier : sans cette règle, `display: flex`
+   ci-dessus écrasait silencieusement `body.hidden = true` posé en JS, et un
+   bloc replié restait affiché. */
+.battle-fold-body[hidden] { display: none; }
+
+.battle-fold-group { display: flex; flex-direction: column; gap: 8px; }
 
 .battle-sequence,
 .battle-checks {

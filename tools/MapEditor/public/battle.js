@@ -7,6 +7,7 @@ import {
   getBattleVocabulary,
   getBattleSheets,
   uploadBattleSheet,
+  renameBattleSheet,
   uploadBattleSound,
   getBattleMomentLabels,
   saveBattleMomentLabels,
@@ -100,6 +101,10 @@ const selection = { units: null, ekos: null, items: null };
 // Planches dépliées, par « section:unité:planche ». Hors du DOM parce que la
 // liste est reconstruite à chaque modification.
 const openSheets = new Set();
+// Gros blocs REPLIÉS de la fiche d'unité (« units:<id>:<bloc> »), même raison
+// que `openSheets` : un bloc est OUVERT par défaut, le replier est un choix
+// explicite qui doit survivre au redessin de la liste.
+const collapsedBlocks = new Set();
 
 function entriesOf(section) {
   return catalogs[section]?.[SECTIONS[section].container] || {};
@@ -168,6 +173,67 @@ function sectionTitle(text, note, action = null) {
   // texte du titre.
   if (action) head.appendChild(action);
   return head;
+}
+
+// Couleur de repère par GROS bloc de la fiche d'unité. Sept blocs qui
+// s'enchaînent avec le même filet et le même intertitre finissent par se
+// confondre au défilement — une teinte propre à chacun, répétée sur la marge
+// ET sur le titre, fait reconnaître « Planches » avant même de lire le mot.
+const FOLD_COLORS = {
+  identity: "#7bc67e",
+  stats: "#5ec8c0",
+  sheets: "#b98af0",
+  attack: "#f0765a",
+  items: "#5aa9e6",
+  sounds: "#e8c25a",
+  ekos: "#e08ab0",
+  behaviour: "#e0973f",
+};
+
+// UN GROS BLOC DE LA FICHE, PLIABLE. Contrairement à `sectionTitle` (un simple
+// intertitre au fil du formulaire), celui-ci cache et montre tout son contenu
+// — c'est ce que demande une fiche qui empile Nom et description, Planches,
+// Attaque de base, Objets, Sons, Ekos connus et Comportement : dépliés d'un
+// coup, ils donnent la colonne de plusieurs milliers de pixels que le
+// MAÎTRE/DÉTAIL de cette page existe justement pour éviter (cf. CLAUDE.md).
+//
+// L'état plié/déplié vit dans `collapsedBlocks`, PAS dans le DOM : la liste
+// entière est reconstruite à chaque modification (même raison que
+// `openSheets`), et un état posé sur le nœud disparaîtrait au premier champ
+// modifié ailleurs sur la fiche.
+function foldableSection(blockKey, id, title, content, { note, action } = {}) {
+  const key = `units:${id}:${blockKey}`;
+  const collapsed = collapsedBlocks.has(key);
+
+  const wrap = el("div", "battle-fold");
+  wrap.style.setProperty("--fold-color", FOLD_COLORS[blockKey] || "var(--accent)");
+
+  const headRow = el("div", "battle-fold-headrow");
+  const toggle = el("button", "battle-fold-toggle");
+  toggle.type = "button";
+  toggle.setAttribute("aria-expanded", String(!collapsed));
+  toggle.appendChild(el("span", "battle-fold-chevron", collapsed ? "▸" : "▾"));
+  toggle.appendChild(el("h4", "battle-section-title", title));
+  if (note) toggle.appendChild(el("span", "battle-inline-hint", note));
+  toggle.onclick = () => {
+    if (collapsedBlocks.has(key)) collapsedBlocks.delete(key);
+    else collapsedBlocks.add(key);
+    renderList();
+  };
+  headRow.appendChild(toggle);
+  // POSÉ À CÔTÉ DU BOUTON DE PLI, jamais dedans : un geste (« + planche ») n'a
+  // rien à faire dans la cible qui replie tout le bloc.
+  if (action) {
+    action.classList.add("battle-fold-action");
+    headRow.appendChild(action);
+  }
+  wrap.appendChild(headRow);
+
+  const body = el("div", "battle-fold-body");
+  body.hidden = collapsed;
+  body.appendChild(content);
+  wrap.appendChild(body);
+  return wrap;
 }
 
 function field(labelText, control, title) {
@@ -1547,7 +1613,7 @@ function actionBlock(
   title, action, fields, animations, onChanged,
   {
     sounds = true, performers = [], suggestion = "", onGestureChanged = null,
-    selfLabel = null,
+    selfLabel = null, skipTitle = false,
   } = {}
 ) {
   const block = el("div", "battle-block");
@@ -1556,7 +1622,11 @@ function actionBlock(
   // `battle-section-title` sur la page Unités — et la page Ekos n'avait donc
   // pas le même rythme de lecture qu'une unité, alors qu'elle dit la même
   // chose : des réglages, un geste, des sons.
-  block.appendChild(sectionTitle(title));
+  //
+  // `skipTitle` s'efface pour la fiche d'unité : « Attaque de base » y est déjà
+  // le titre du bloc PLIABLE qui contient tout ceci (cf. renderUnit), le
+  // répéter ici l'aurait affiché deux fois d'affilée.
+  if (!skipTitle) block.appendChild(sectionTitle(title));
   block.appendChild(actionFields(action, fields, animations, onChanged, suggestion));
   if (fields.includes("gesture")) {
     block.appendChild(
@@ -1681,18 +1751,29 @@ async function persistTexts() {
 // La DESCRIPTION est en lecture seule ici : elle se rédige (avec ses styles, ses
 // sauts de ligne) sur la page Textes, mais on doit la VOIR en réglant l'action,
 // puisqu'elle promet au joueur ce que les champs du dessous font vraiment.
-function textLines(section, id, refresh) {
+// `onlyLanguages` restreint les lignes affichées (cf. la fiche d'unité, qui ne
+// montre que le français) : les autres langues restent éditables depuis la
+// page Textes, ce champ ne fait que retirer une colonne devenue inutile ici.
+// `withTitle` s'efface quand l'appelant pose déjà son propre intertitre
+// au-dessus (cf. le bloc pliable « Nom et description » de la fiche d'unité) :
+// sans lui, les deux textes identiques se seraient suivis.
+function textLines(section, id, refresh, { onlyLanguages, withTitle = true } = {}) {
   const block = el("div", "battle-texts");
   const withDesc = section !== "units";
   const { textId: nameId } = localizedText(section, id, "name");
   const { textId: descId, entry: descEntry } = localizedText(section, id, "desc");
-  block.appendChild(
-    sectionTitle(
-      "Nom et description",
-      withDesc ? `${nameId} · ${descId} — partagés avec la page Textes` : `${nameId}`
-    )
-  );
-  for (const language of texts.languages || []) {
+  if (withTitle) {
+    block.appendChild(
+      sectionTitle(
+        "Nom et description",
+        withDesc ? `${nameId} · ${descId} — partagés avec la page Textes` : `${nameId}`
+      )
+    );
+  }
+  const languages = onlyLanguages
+    ? (texts.languages || []).filter((language) => onlyLanguages.includes(language.code))
+    : (texts.languages || []);
+  for (const language of languages) {
     const code = language.code;
     // Sans description — une unité n'en a pas — la ligne se resserre : garder la
     // troisième colonne laisserait un vide large comme la page à droite du nom.
@@ -2172,6 +2253,81 @@ function unitSheets() {
   return [...paths].sort();
 }
 
+// Réécrit un chemin `res://` PARTOUT où il est cité — les trois catalogues le
+// portent chacun à leur façon (`animations[*].sheet` et
+// `basic_attack.impact_vfx.sheet` chez une unité, `impact_vfx.sheet` chez un
+// Eko ou un objet) — et rend l'ensemble des sections effectivement modifiées,
+// pour que l'appelant sache lesquelles enregistrer.
+function retargetSheetReferences(oldPath, newPath) {
+  const touched = new Set();
+  for (const unit of Object.values(entriesOf("units"))) {
+    for (const config of Object.values(unit.animations || {})) {
+      if (config.sheet === oldPath) {
+        config.sheet = newPath;
+        touched.add("units");
+      }
+    }
+    if (unit.basic_attack?.impact_vfx?.sheet === oldPath) {
+      unit.basic_attack.impact_vfx.sheet = newPath;
+      touched.add("units");
+    }
+  }
+  for (const section of ["ekos", "items"]) {
+    for (const action of Object.values(entriesOf(section))) {
+      if (action.impact_vfx?.sheet === oldPath) {
+        action.impact_vfx.sheet = newPath;
+        touched.add(section);
+      }
+    }
+  }
+  return touched;
+}
+
+// Renomme le FICHIER sur le disque — pas la clé d'une planche (cf.
+// renameAnimation, qui renomme une entrée de `unit.animations` et ne touche à
+// aucun fichier). Le chemin `res://` est l'identifiant PARTAGÉ entre les trois
+// catalogues : on enregistre donc ici même les sections qu'il touche, plutôt
+// que de compter sur le `onChanged` de l'appelant — celui-ci ne connaît que SA
+// propre section et laisserait les deux autres modifiées en mémoire sans
+// jamais les écrire sur le disque.
+async function renameSheetFile(oldPath, onChanged) {
+  const oldName = oldPath.split("/").pop();
+  const wanted = prompt("Nouveau nom du fichier dans Sprites/Battle :", oldName);
+  if (!wanted || wanted === oldName) return;
+  let result;
+  try {
+    try {
+      result = await renameBattleSheet(oldName, wanted);
+    } catch (err) {
+      // 409 : le nom de destination existe déjà. Seule erreur qui vaut une
+      // seconde chance — l'écraser ne se devine pas, une planche déjà utilisée
+      // ailleurs pourrait disparaître sous la main.
+      if (!String(err.message).includes("existe déjà")) throw err;
+      if (!confirm(`${err.message} L'écraser ?`)) return;
+      result = await renameBattleSheet(oldName, wanted, { overwrite: true });
+    }
+  } catch (err) {
+    alert(`Renommage impossible : ${err.message}`);
+    return;
+  }
+  const oldUrl = sheetUrl(oldPath);
+  sheetFiles = await getBattleSheets();
+  // Même geste qu'après un réimport (cf. importButton) : ce que ces caches
+  // mémorisaient sous l'ancienne URL décrit un fichier qui n'existe plus là.
+  forgetSheetSize(oldUrl);
+  forgetSheetPixels(oldUrl);
+  anchorChecks.clear();
+  const touched = retargetSheetReferences(oldPath, result.path);
+  if (!result.imported) {
+    alert(
+      "Le fichier est en place, mais Godot ne l'a pas importé : ouvre "
+      + "l'éditeur Godot une fois pour qu'il s'affiche en jeu."
+    );
+  }
+  for (const section of touched) await persist(section);
+  onChanged();
+}
+
 // Ce que la liste « Fichier » propose, selon l'endroit d'où on la regarde.
 //
 //   « grouped » — tout le dossier, mais les planches d'abord et le reste sous
@@ -2219,6 +2375,16 @@ function sheetLine(unitId, unit, config, name, onChanged, { scope = "all", allow
   if (allowImport) {
     line.appendChild(importButton(unitId, unit, config, name, onChanged));
   }
+  // Renommer le FICHIER (pas la planche — cf. stateLine) : le nom donné à
+  // l'import est souvent celui de l'export d'origine (313000404_atk.png), et
+  // s'en tenir à ça une fois la planche en place n'aide personne à s'y
+  // retrouver dans le dossier.
+  const rename = el("button", "text-btn", "Renommer…");
+  rename.type = "button";
+  rename.title = "Renommer ce fichier sur le disque et mettre à jour toutes les fiches qui le citent.";
+  rename.disabled = !config.sheet;
+  rename.onclick = () => renameSheetFile(config.sheet, onChanged);
+  line.appendChild(rename);
   // Une planche que Godot n'a pas importée existe sur le disque et reste
   // INVISIBLE EN JEU : le dire ici, là où on la choisit, plutôt que de laisser
   // l'auteur découvrir un personnage vide au combat.
@@ -2720,14 +2886,19 @@ function renderUnit(id, unit, refresh) {
   const row = el("div", "battle-row");
   row.appendChild(rowHead("units", id, unit.behaviour ? "ennemi" : null));
 
-  // NOM ET DESCRIPTION À CÔTÉ DE STATISTIQUES : deux blocs complets, chacun
-  // son propre intertitre — cf. .battle-identity-row, qui les remet en
-  // colonne dès que la fiche devient trop étroite pour les six champs de
-  // stats.
-  const identity = el("div", "battle-identity-row");
-  identity.appendChild(textLines("units", id, refresh));
+  // NOM ET DESCRIPTION À CÔTÉ DE STATISTIQUES : deux blocs complets, chacun sa
+  // propre couleur — cf. .battle-identity-row, qui les remet en colonne dès
+  // que la fiche devient trop étroite pour les six champs de stats.
+  const identityRow = el("div", "battle-identity-row");
+  identityRow.appendChild(
+    foldableSection(
+      "identity", id, "Nom et description",
+      // Titre géré par le bloc pliable lui-même — cf. `withTitle: false`.
+      textLines("units", id, refresh, { onlyLanguages: ["fr"], withTitle: false }),
+      { note: localizedText("units", id, "name").textId }
+    )
+  );
 
-  const statsBlock = el("div", "battle-identity-stats");
   const stats = el("div", "battle-grid battle-stats");
   if (!unit.stats) unit.stats = {};
   for (const [key, label] of STAT_FIELDS) {
@@ -2742,35 +2913,39 @@ function renderUnit(id, unit, refresh) {
       )
     );
   }
-  statsBlock.appendChild(sectionTitle("Statistiques"));
-  statsBlock.appendChild(stats);
-  identity.appendChild(statsBlock);
-  row.appendChild(identity);
+  identityRow.appendChild(foldableSection("stats", id, "Statistiques", stats));
+  row.appendChild(identityRow);
 
   // Les planches sont en LECTURE SEULE : leur grille, leur ancrage et leur
   // fourchette de frames se relèvent au pixel sur l'image (cf. CLAUDE.md), ce
   // qu'un formulaire web ne peut pas faire — proposer de les saisir à la main
   // inviterait à poser des valeurs plausibles et fausses.
   const sheets = Object.keys(unit.animations || {});
-  row.appendChild(
-    sectionTitle(
-      "Planches", "grille et ancrage se relèvent à l'atelier",
-      addSheetButton(id, unit, refresh)
-    )
-  );
+  const sheetsGroup = el("div", "battle-fold-group");
   const missing = missingSheetsLine(unit);
-  if (missing) row.appendChild(missing);
-  row.appendChild(animationsEditor(id, unit, refresh));
+  if (missing) sheetsGroup.appendChild(missing);
+  sheetsGroup.appendChild(animationsEditor(id, unit, refresh));
+  row.appendChild(
+    foldableSection("sheets", id, "Planches", sheetsGroup, {
+      note: "grille et ancrage se relèvent à l'atelier",
+      action: addSheetButton(id, unit, refresh),
+    })
+  );
 
   if (!unit.basic_attack) unit.basic_attack = {};
   row.appendChild(
-    actionBlock("Attaque de base", unit.basic_attack, ["heal", "gesture"], sheets, refresh, {
-      sounds: false,
-      performers: [id],
-      // Le nom du personnage sert de préfixe aux fichiers qu'on importe depuis
-      // ici (noah_impact.png) et de base aux noms de planche qu'on y crée.
-      suggestion: id,
-    })
+    foldableSection(
+      "attack", id, "Attaque de base",
+      actionBlock("Attaque de base", unit.basic_attack, ["heal", "gesture"], sheets, refresh, {
+        sounds: false,
+        performers: [id],
+        // Le nom du personnage sert de préfixe aux fichiers qu'on importe depuis
+        // ici (noah_impact.png) et de base aux noms de planche qu'on y crée.
+        suggestion: id,
+        // Titre géré par le bloc pliable lui-même.
+        skipTitle: true,
+      })
+    )
   );
 
   // UN SEUL RÉGLAGE POUR TOUS LES OBJETS : contrairement à un Eko, un objet n'a
@@ -2778,30 +2953,34 @@ function renderUnit(id, unit, refresh) {
   // joue de la même façon. Le régler ici, sur le personnage, le garantit
   // structurellement plutôt que par convention répétée sur chaque objet (cf.
   // BattleAssault.ITEM_GESTURE_FIELD).
-  row.appendChild(
-    sectionTitle("Objets", "la planche que ce personnage joue en utilisant n'importe quel objet")
-  );
   const itemGesture = el("div", "battle-grid");
   itemGesture.appendChild(itemGestureField(unit, refresh));
-  row.appendChild(itemGesture);
+  row.appendChild(
+    foldableSection("items", id, "Objets", itemGesture, {
+      note: "la planche que ce personnage joue en utilisant n'importe quel objet",
+    })
+  );
 
   // UNE SEULE liste pour tous les sons du personnage : ceux de son geste
   // d'attaque et ceux qui lui appartiennent en propre. Elle est posée au niveau
   // de l'unité et non dans le bloc « Attaque de base », qui n'en porte que la
   // moitié — c'est le moment choisi, et lui seul, qui dit de quoi il s'agit.
-  row.appendChild(sectionTitle("Sons", "geste de l'attaque et voix du personnage"));
+  const soundsGroup = el("div", "battle-fold-group");
   // Les moments inatteignables de l'attaque de base se disent ICI et pas dans
   // son bloc : c'est ici que sont ses sons.
   const unreachable = unreachableLine(unit.basic_attack);
-  if (unreachable) row.appendChild(unreachable);
+  if (unreachable) soundsGroup.appendChild(unreachable);
+  soundsGroup.appendChild(soundsEditor([actionFamily(unit.basic_attack), unitFamily(unit)], refresh));
   row.appendChild(
-    soundsEditor([actionFamily(unit.basic_attack), unitFamily(unit)], refresh)
+    foldableSection("sounds", id, "Sons", soundsGroup, {
+      note: "geste de l'attaque et voix du personnage",
+    })
   );
 
   // Ekos connus : des cases à cocher sur le catalogue réel, jamais une saisie
   // d'identifiant — un id qui n'existe pas ne produirait qu'une entrée de menu
   // vide, découverte en jeu.
-  row.appendChild(sectionTitle("Ekos connus"));
+  const ekosGroup = el("div", "battle-fold-group");
   const ekos = el("div", "battle-checks");
   const known = unit.ekos || [];
   for (const ekoId of Object.keys(entriesOf("ekos"))) {
@@ -2819,10 +2998,13 @@ function renderUnit(id, unit, refresh) {
     label.appendChild(el("span", null, ekoId));
     ekos.appendChild(label);
   }
-  row.appendChild(ekos);
-  row.appendChild(knownEkoSounds(id, unit));
+  ekosGroup.appendChild(ekos);
+  ekosGroup.appendChild(knownEkoSounds(id, unit));
+  row.appendChild(foldableSection("ekos", id, "Ekos connus", ekosGroup));
 
-  row.appendChild(behaviourBlock(id, unit, refresh));
+  row.appendChild(
+    foldableSection("behaviour", id, "Comportement (ennemi)", behaviourBlock(id, unit, refresh))
+  );
   return row;
 }
 
@@ -2929,7 +3111,9 @@ function behaviourBlock(id, unit, refresh) {
     refresh();
   };
   head.appendChild(box);
-  head.appendChild(el("span", "battle-block-title", "Comportement (ennemi)"));
+  // « Comportement (ennemi) » est déjà le titre du bloc PLIABLE qui contient
+  // ceci (cf. renderUnit) : cette case, elle, dit ce qu'elle FAIT.
+  head.appendChild(el("span", null, "Ennemi — a un comportement de combat"));
   block.appendChild(head);
 
   if (!unit.behaviour) return block;

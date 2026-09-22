@@ -199,6 +199,29 @@ export async function uploadBattleSheet(file, name, { overwrite = false } = {}) 
   return body;
 }
 
+// Renomme une planche déjà déposée. `from`/`to` sont des NOMS de fichier
+// (`noah_idle.png`), pas des chemins `res://` : c'est ce que porte l'invite qui
+// appelle cette fonction, et le chemin complet ne s'en déduit que côté serveur
+// (dossier fixe, `Sprites/Battle/`).
+export async function renameBattleSheet(from, to, { overwrite = false } = {}) {
+  const query = overwrite ? "?overwrite=1" : "";
+  const res = await fetch("/api/battle/sheets/rename" + query, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ from, to }),
+  });
+  let body = null;
+  try {
+    body = await res.json();
+  } catch {
+    body = null;
+  }
+  if (!res.ok) {
+    throw new Error(body?.error || `Renommage refusé (HTTP ${res.status}).`);
+  }
+  return body;
+}
+
 export async function getBattleVocabulary() {
   const res = await fetch("/api/battle/vocabulary");
   return res.json();
