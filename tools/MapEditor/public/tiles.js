@@ -1,5 +1,6 @@
 import { getTiles, saveTiles } from "./api.js";
 import { loadImage, scanOccupiedCells, CELL } from "./palette.js";
+import { DELETE_ICON } from "./icons.js";
 
 const overlay = document.getElementById("tiles-modal-overlay");
 const closeBtn = document.getElementById("tiles-modal-close");
@@ -159,8 +160,9 @@ function renderList() {
     fpsLabel.appendChild(fpsInput);
 
     const del = document.createElement("button");
-    del.className = "modal-map-delete";
-    del.textContent = "🗑";
+    del.className = "icon-delete-btn";
+    del.innerHTML = DELETE_ICON;
+    del.type = "button";
     del.title = "Supprimer cette tuile";
     del.onclick = async () => {
       if (!confirm(`Supprimer la tuile "${tile.name}" ?`)) return;

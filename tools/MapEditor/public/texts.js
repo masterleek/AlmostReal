@@ -1,6 +1,7 @@
 import { getTexts, saveTexts } from "./api.js";
 import { wrapSelectionBold, wrapSelectionColor, clearSelectionFormatting } from "./bbcode.js";
 import { openTextPreview } from "./text-preview.js";
+import { DELETE_ICON } from "./icons.js";
 
 const overlay = document.getElementById("texts-modal-overlay");
 const closeBtn = document.getElementById("texts-modal-close");
@@ -152,8 +153,9 @@ function renderRow(entry) {
   }
 
   const del = document.createElement("button");
-  del.className = "modal-map-delete";
-  del.textContent = "🗑";
+  del.className = "icon-delete-btn";
+  del.innerHTML = DELETE_ICON;
+  del.type = "button";
   del.title = "Supprimer ce texte";
   del.onclick = async () => {
     if (!confirm(`Supprimer le texte "${entry.id}" ?`)) return;

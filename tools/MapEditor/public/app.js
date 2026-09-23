@@ -1041,7 +1041,9 @@ async function init() {
   mapCanvas = new MapCanvas(canvasEl, image, propImage, propsCanvasEl, previewFrameEl, miniCanvasEl);
   mapCanvas.setTileDefs(paletteTiles);
   zoomLevelEl.textContent = `${mapCanvas.zoom}x`;
-  setMiniVisible(true);
+  // Réduite par défaut : elle cache un coin de la map tant qu'on ne l'a pas
+  // ouverte, et son bouton (l'œil) reste à portée pour l'afficher au besoin.
+  setMiniVisible(false);
   makeMiniDraggable();
   setTool("paint");
 

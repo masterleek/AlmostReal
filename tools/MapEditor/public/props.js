@@ -1,5 +1,6 @@
 import { getProps, saveProps } from "./api.js";
 import { loadImage } from "./palette.js";
+import { DELETE_ICON } from "./icons.js";
 
 const overlay = document.getElementById("props-modal-overlay");
 const closeBtn = document.getElementById("props-modal-close");
@@ -166,8 +167,9 @@ function renderList() {
     fpsLabel.appendChild(fpsInput);
 
     const del = document.createElement("button");
-    del.className = "modal-map-delete";
-    del.textContent = "🗑";
+    del.className = "icon-delete-btn";
+    del.innerHTML = DELETE_ICON;
+    del.type = "button";
     del.title = "Supprimer ce prop";
     del.onclick = async () => {
       if (!confirm(`Supprimer le prop "${prop.name}" ?`)) return;

@@ -50,13 +50,13 @@
           "rows": 6,
           "frames": 4,
           "fps": 15,
-          "loop": false,
           "hit_frame": 2,
           "anchor": [
             59,
             93
           ],
-          "_comment": "Geste d'attaque. L'auteur n'en retient que les frames 1 a 4 comptees a partir de 1, soit first_frame 0 et frames 4 : l'animation s'arrete la, elle ne joue pas la planche entiere (20 frames). hit_frame 2 : l'arc de lame apparait a cette frame, c'est la que le coup porte. anchor releve sur l'ellipse d'ombre de la PREMIERE frame, par recalage du gabarit d'ombre de idle."
+          "_comment": "Geste d'attaque. L'auteur n'en retient que les frames 1 a 4 comptees a partir de 1, soit first_frame 0 et frames 4 : l'animation s'arrete la, elle ne joue pas la planche entiere (20 frames). hit_frame 2 : l'arc de lame apparait a cette frame, c'est la que le coup porte. anchor releve sur l'ellipse d'ombre de la PREMIERE frame, par recalage du gabarit d'ombre de idle.",
+          "loop": false
         },
         "win_before": {
           "sheet": "res://Sprites/Battle/noah_win_before.png",
@@ -64,12 +64,12 @@
           "rows": 6,
           "frames": 17,
           "fps": 15,
-          "loop": false,
           "anchor": [
             19,
             89
           ],
-          "_comment": "Celebration de victoire, jouee UNE fois : Noah saute et retombe mains sur les hanches. 17 cases pleines sur 18 (grille 3x6, cellule 53x89), la derniere est vide. anchor relevee sur l'ellipse d'ombre de la DERNIERE frame (centre 26,5 / 75,5), celle qui enchaine sur 'win' : l'ombre ne derive que d'un pixel sur toute la planche. Le decalage ombre -> ancre (-7,5 / +13,5) est celui de idle, verifie identique sur atkeff et atk. fps 15 comme les planches de geste ; rien ne le fixe, c'est a l'auteur."
+          "_comment": "Celebration de victoire, jouee UNE fois : Noah saute et retombe mains sur les hanches. 17 cases pleines sur 18 (grille 3x6, cellule 53x89), la derniere est vide. anchor relevee sur l'ellipse d'ombre de la DERNIERE frame (centre 26,5 / 75,5), celle qui enchaine sur 'win' : l'ombre ne derive que d'un pixel sur toute la planche. Le decalage ombre -> ancre (-7,5 / +13,5) est celui de idle, verifie identique sur atkeff et atk. fps 15 comme les planches de geste ; rien ne le fixe, c'est a l'auteur.",
+          "loop": false
         },
         "win": {
           "sheet": "res://Sprites/Battle/noah_win.png",

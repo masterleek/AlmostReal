@@ -426,16 +426,27 @@ button:hover { border-color: var(--accent); }
   background: var(--bg);
 }
 
-.modal-map-delete {
-  background: none;
+/* Bouton de suppression PARTAGÉ par toute la ligne d'un catalogue (maps,
+   props, tuiles, textes, unités, Ekos, objets, sons, planches…) : médaillon
+   rouge plein et croix blanche (cf. DELETE_ICON, icons.js), posé normalement
+   dans le flux — pas en médaillon flottant sur une image, cf. .battle-anim-
+   delete pour ce cas-là, qui reste plus petit (18px) et en position absolue. */
+.icon-delete-btn {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: 50%;
+  background: #d9463c;
   border: none;
-  color: #d98a8a;
-  font-size: 16px;
-  line-height: 1;
-  padding: 2px 6px;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
 }
 
-.modal-map-delete:hover { color: #ff6b6b; }
+.icon-delete-btn:hover { background: #f0574c; }
 
 #modal-new-map-btn { width: 100%; }
 
@@ -1821,6 +1832,10 @@ button:hover { border-color: var(--accent); }
   border-radius: 3px;
   padding: 1px 5px;
 }
+
+/* « Allié » — même gabarit que .battle-badge, en bleu plutôt que le rouge
+   par défaut, pour se distinguer d'un coup d'œil du badge « Ennemi ». */
+.battle-badge-ally { color: #8ec5f0; border-color: #2d4f6b; }
 
 /* `auto-fit`, pas `auto-fill` : avec moins d'éléments que de colonnes
    possibles, `auto-fill` réserve quand même les colonnes vides et les champs

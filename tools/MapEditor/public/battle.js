@@ -18,6 +18,7 @@ import { pickFrames } from "./frame-picker.js";
 import { animationPreview, forgetSheetSize, sheetSize, staticFrame } from "./sheet-preview.js";
 import { forgetSheetPixels, measureGrid, measureGround } from "./sheet-grid.js";
 import { judgementWindows, rhythmPreview, sequenceTiming } from "./rhythm-preview.js";
+import { DELETE_ICON } from "./icons.js";
 
 // Page « Combat » : les trois catalogues de Battle/ (unités, Ekos, objets).
 //
@@ -316,9 +317,9 @@ function infoIcon(text, { warning = false } = {}) {
 }
 
 // Crayon utilisé pour tous les boutons « renommer » ponctuels (état, fichier) :
-// même famille que ANIM_DELETE_ICON (`stroke="currentColor"`, couleur posée par
-// le CSS du bouton), pour que les deux se reconnaissent comme un seul
-// vocabulaire d'icônes.
+// même famille que DELETE_ICON (cf. icons.js — `stroke="currentColor"`,
+// couleur posée par le CSS du bouton), pour que les deux se reconnaissent
+// comme un seul vocabulaire d'icônes.
 const RENAME_ICON =
   '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" '
   + 'stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">'
@@ -1074,7 +1075,8 @@ function soundRow(family, entry, index, families, ctx) {
   files.appendChild(addFile);
   row.appendChild(files);
 
-  const remove = el("button", "modal-map-delete", "🗑");
+  const remove = el("button", "icon-delete-btn");
+  remove.innerHTML = DELETE_ICON;
   remove.type = "button";
   remove.title = "Retirer ce son";
   remove.onclick = () => {
@@ -1624,7 +1626,8 @@ function vfxBlock(action, suggestion, onChanged) {
   const column = el("div", "battle-anim-settings");
   const head = el("div", "battle-anim-head");
   head.appendChild(el("span", "battle-inline-hint", vfxSummary(config)));
-  const drop = el("button", "modal-map-delete", "🗑");
+  const drop = el("button", "icon-delete-btn");
+  drop.innerHTML = DELETE_ICON;
   drop.type = "button";
   drop.title = "Retirer l'effet d'impact";
   drop.onclick = () => {
@@ -1924,18 +1927,36 @@ function textLines(section, id, refresh, { onlyLanguages, withTitle = true } = {
 // En-tête du panneau de droite. Le NOM DE JEU d'abord, en gros : c'est par lui
 // qu'on reconnaît une entrée, alors que l'identifiant n'est qu'une clé de
 // fichier — l'ancien en-tête ne montrait que celui-ci, en monospace.
-function rowHead(section, id, badge) {
+//
+// `showId` cache cette clé pour les UNITÉS : leur identifiant n'est que le nom
+// mis en minuscules (« noah » sous « Noah »), et l'afficher sous le titre
+// donnait l'impression que le nom était écrit deux fois. Le repli `label ||
+// id` du titre n'en a pas besoin : sans nom déclaré, l'identifiant s'affiche
+// déjà là, en gros.
+function rowHead(section, id, badge, { showId = true } = {}) {
   const head = el("div", "battle-detail-head");
   const titles = el("div", "battle-detail-titles");
   const { label } = localizedName(section, id);
   titles.appendChild(el("h3", "battle-detail-name", label || id));
-  const meta = el("div", "battle-detail-meta");
-  meta.appendChild(el("code", "battle-id", id));
-  if (badge) meta.appendChild(el("span", "battle-badge", badge));
-  titles.appendChild(meta);
+  if (showId || badge) {
+    const meta = el("div", "battle-detail-meta");
+    if (showId) meta.appendChild(el("code", "battle-id", id));
+    // `badge` reste une simple chaîne pour les appelants existants (Ekos,
+    // objets) ; un objet `{ text, tone }` permet une couleur à part — le bleu
+    // de « allié », à côté du rouge déjà utilisé par tous les autres badges.
+    if (badge) {
+      const { text, tone } = typeof badge === "string" ? { text: badge } : badge;
+      meta.appendChild(el("span", tone ? `battle-badge battle-badge-${tone}` : "battle-badge", text));
+    }
+    titles.appendChild(meta);
+  }
   head.appendChild(titles);
 
-  const del = el("button", "modal-map-delete", "🗑");
+  // MÊME MÉDAILLON ROUGE partout dans l'éditeur (cf. icons.js) — posé
+  // normalement dans le flux et non en survol d'une image : c'est le seul
+  // geste de cet en-tête.
+  const del = el("button", "icon-delete-btn");
+  del.innerHTML = DELETE_ICON;
   del.type = "button";
   del.title = `Supprimer cette ${SECTIONS[section].singular}`;
   del.onclick = async () => {
@@ -2074,13 +2095,6 @@ function addSheetButton(unitId, unit, onChanged) {
   return add;
 }
 
-// Croix blanche sur le médaillon rouge de suppression — même famille que les
-// icônes du HTML (`stroke="currentColor"`, la couleur vient du CSS du bouton),
-// mais construite ici : ce bouton naît en JS, pas dans le HTML statique.
-const ANIM_DELETE_ICON =
-  '<svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" '
-  + 'stroke-width="3" stroke-linecap="round"><path d="M5 5l14 14M19 5L5 19"/></svg>';
-
 // Une planche est une vignette carrée dans une grille — la galerie des
 // animations de l'unité, qui se parcourt à l'œil, côte à côte comme les
 // planches d'un contact-sheet. Ses réglages s'ouvrent dans une FENÊTRE
@@ -2115,7 +2129,7 @@ function animationBlock(unitId, unit, name, onChanged) {
   const drop = el("button", "battle-anim-delete");
   drop.type = "button";
   drop.title = "Retirer cette planche";
-  drop.innerHTML = ANIM_DELETE_ICON;
+  drop.innerHTML = DELETE_ICON;
   drop.onclick = (evt) => {
     evt.stopPropagation();
     if (!confirm(`Retirer la planche « ${name} » de cette unité ?`)) return;
@@ -2626,10 +2640,11 @@ async function renameSheetFile(oldPath, onChanged) {
 
 // Ce que la liste « Fichier » propose, selon l'endroit d'où on la regarde.
 //
-//   « grouped » — tout le dossier, mais les planches d'abord et le reste sous
-//                 son propre intertitre. C'est la fiche d'UNITÉ : c'est par là
-//                 qu'un fichier DEVIENT une planche, on ne peut donc pas y
-//                 cacher ce qui n'en est pas encore une.
+//   défaut (« grouped ») — seulement LES PLANCHES DE CE PERSONNAGE
+//                 (unitSheets()) : la popup de planche s'ouvre déjà sur un
+//                 état existant, y mélanger le reste du dossier ferait
+//                 chercher son fichier dans une liste que la plupart du temps
+//                 il n'a aucune raison de regarder.
 //   « all »     — le dossier tel quel, pour ce qui n'est pas une planche de
 //                 personnage (l'effet d'impact, qui vise justement l'inverse).
 //
@@ -2638,18 +2653,8 @@ async function renameSheetFile(oldPath, onChanged) {
 // fait par NOM, sur le champ « Planche » de l'action, une référence partagée
 // et jamais une copie.
 function sheetChoices(scope) {
-  const all = sheetFiles.map((f) => f.path);
-  if (scope === "all") return { values: all };
-  const mine = unitSheets();
-  const others = all.filter((path) => !mine.includes(path));
-  if (others.length === 0) return { values: mine };
-  return {
-    values: all,
-    groups: [
-      { label: "Planches des personnages", values: mine },
-      { label: "Autres fichiers du dossier", values: others },
-    ],
-  };
+  if (scope === "all") return { values: sheetFiles.map((f) => f.path) };
+  return { values: unitSheets() };
 }
 
 function sheetLine(unitId, unit, config, name, onChanged, { scope = "all", allowImport = true } = {}) {
@@ -3227,7 +3232,11 @@ function itemGestureField(unit, onChanged) {
 
 function renderUnit(id, unit, refresh) {
   const row = el("div", "battle-row");
-  row.appendChild(rowHead("units", id, unit.behaviour ? "ennemi" : null));
+  row.appendChild(rowHead(
+    "units", id,
+    unit.behaviour ? "ennemi" : { text: "allié", tone: "ally" },
+    { showId: false }
+  ));
 
   // NOM ET DESCRIPTION À CÔTÉ DE STATISTIQUES : deux blocs complets, chacun sa
   // propre couleur — cf. .battle-identity-row, qui les remet en colonne dès
@@ -3765,8 +3774,12 @@ function indexEntry(id, entry) {
     text.appendChild(el("span", "battle-index-summary", actionSummary(activeSection, entry)));
   }
   item.appendChild(text);
-  if (activeSection === "units" && entry.behaviour) {
-    item.appendChild(el("span", "battle-badge", "ennemi"));
+  if (activeSection === "units") {
+    item.appendChild(
+      entry.behaviour
+        ? el("span", "battle-badge", "ennemi")
+        : el("span", "battle-badge battle-badge-ally", "allié")
+    );
   }
   item.onclick = () => {
     selection[activeSection] = id;

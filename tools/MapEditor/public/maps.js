@@ -1,4 +1,5 @@
 import { listMaps, deleteMap, loadMap, saveMap, MapConflictError } from "./api.js";
+import { DELETE_ICON } from "./icons.js";
 
 // Liste de toutes les maps dans la popup "Maps" : clic = ouvrir, double-clic =
 // renommer, bouton = supprimer.
@@ -42,8 +43,9 @@ export async function renderMapBrowser(container, { onOpen, onDelete, onRename }
     };
 
     const del = document.createElement("button");
-    del.className = "modal-map-delete";
-    del.textContent = "🗑";
+    del.className = "icon-delete-btn";
+    del.innerHTML = DELETE_ICON;
+    del.type = "button";
     del.title = "Supprimer cette map";
     del.onclick = async (evt) => {
       evt.stopPropagation();
