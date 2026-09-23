@@ -475,9 +475,13 @@ button:hover { border-color: var(--accent); }
 
 /* La fenêtre de planche a besoin de place pour l'aperçu ET les champs côte à
    côte (.battle-anim-body, cf. plus bas) — plus large que le gabarit par
-   défaut de .crud-modal (480px), pensé pour une simple liste. */
-#anim-modal { width: 640px; max-width: 92vw; }
-#anim-modal-body { overflow-y: auto; }
+   défaut de .crud-modal (480px), pensé pour une simple liste.
+   HAUTEUR FIXE, comme la largeur : sans elle, la fenêtre changeait de gabarit
+   d'un état à l'autre (un geste sans bouclage affiche « ↻ Rejouer », un relevé
+   d'ancrage qui dérive affiche une phrase de plus…). Elle DÉBORDE au lieu de
+   s'agrandir (`#anim-modal-body` défile), plutôt que de rogner du contenu. */
+#anim-modal { width: 640px; max-width: 92vw; height: 400px; max-height: 88vh; }
+#anim-modal-body { overflow-y: auto; flex: 1; min-height: 0; }
 
 #tiles-modal,
 .crud-modal {
@@ -1276,6 +1280,41 @@ button:hover { border-color: var(--accent); }
   display: block;
 }
 
+/* La fenêtre de réglages d'une planche pose sa preview dans un CARRÉ FIXE,
+   même règle et même damier plein cadre que .battle-anim-thumb ci-dessous :
+   sans lui, la largeur de cette colonne suivait l'aspect de CHAQUE planche
+   (large et bas pour un geste, haut et étroit pour une autre), et la fenêtre
+   entière changeait de gabarit d'un état à l'autre. */
+.battle-anim-modal-preview {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  width: 260px;
+  height: 260px;
+  flex: none;
+  overflow: hidden;
+  background:
+    repeating-conic-gradient(#2a2e37 0% 25%, #23262e 0% 50%) 0 0 / 12px 12px;
+}
+
+/* Même raison que .battle-anim-thumb .sheet-preview-canvas : le canevas
+   redevient un calque transparent, sans damier ni bordure à lui, pour ne pas
+   doubler celui du carré qui le porte. */
+.battle-anim-modal-preview .sheet-preview-canvas { background: none; border: none; border-radius: 0; }
+
+.battle-anim-modal-preview.sheet-preview-openable { cursor: zoom-in; }
+.battle-anim-modal-preview:hover { border-color: var(--accent); }
+
+/* La colonne de gauche de la fenêtre : la preview, puis « En boucle » —
+   posée SOUS elle plutôt qu'au fil des champs numériques de droite, puisque
+   c'est un réglage de LECTURE de l'aperçu qu'on a sous les yeux. */
+.battle-anim-preview-column { display: flex; flex-direction: column; gap: 8px; width: 260px; flex: none; }
+
 /* La vignette EST le bouton qui ouvre la fenêtre de réglages : carrée et fixe
    (le `.sheet-preview` qu'elle contient peut être plus petit que le carré —
    une planche haute ou large ne le remplit jamais tout à fait — d'où le
@@ -1291,9 +1330,45 @@ button:hover { border-color: var(--accent); }
   width: 112px;
   height: 112px;
   overflow: hidden;
+  /* Le damier de transparence couvre TOUTE la vignette, pas seulement le
+     canevas ajusté à la cellule (cf. .sheet-preview-canvas ci-dessous) : une
+     planche plus petite que 112×112 laissait un cadre uni autour d'un petit
+     damier, comme un bord manquant. */
+  background:
+    repeating-conic-gradient(#2a2e37 0% 25%, #23262e 0% 50%) 0 0 / 12px 12px;
+}
+
+/* Le canevas redevient un calque transparent, sans damier ni bordure à lui :
+   les deux motifs, posés à des origines différentes (le canevas est CENTRÉ
+   dans la vignette), ne s'alignent pas et le raccord se serait vu. Seule LA
+   vignette « Planches » a ce contexte — le même canevas garde son damier
+   propre dans la fenêtre de réglages et l'effet d'impact, qui n'ont pas de
+   grand cadre autour pour le porter. */
+.battle-anim-thumb .sheet-preview-canvas {
+  background: none;
+  border: none;
+  border-radius: 0;
 }
 
 .battle-anim-thumb:hover { border-color: var(--accent); }
+
+/* Même médaillon que .battle-anim-delete juste à côté (18px, coin haut-droit),
+   mais neutre et posé JUSTE À GAUCHE d'elle (right: 2 + 18 + 4) : un fond
+   sombre propre, pas seulement l'icône nue, pour rester lisible quel que soit
+   le sprite en dessous. L'infobulle elle-même (survol/focus) est celle,
+   partagée, de .battle-info-icon (cf. infoIcon dans battle.js) — même
+   comportement que dans la fenêtre de réglages d'une planche. */
+.battle-anim-info {
+  position: absolute;
+  top: 2px;
+  right: 24px;
+  z-index: 1;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: rgba(20, 22, 28, 0.75);
+  color: #cfd3da;
+}
 
 /* En médaillon sur le coin de la vignette, comme .frame-remove (même rôle :
    retirer une image qu'on regarde) — mais posé un peu plus DEDANS (2px et non
@@ -1309,14 +1384,15 @@ button:hover { border-color: var(--accent); }
   height: 18px;
   padding: 0;
   border-radius: 50%;
-  background: #3a1f1f;
-  border: 1px solid #d98a8a;
-  color: #d98a8a;
-  font-size: 11px;
-  line-height: 1;
+  background: #d9463c;
+  border: none;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.battle-anim-delete:hover { color: #ff6b6b; border-color: #ff6b6b; }
+.battle-anim-delete:hover { background: #f0574c; }
 
 /* La légende, sous la vignette — nom et, s'il y a lieu, l'avertissement
    d'ancrage, qui doit rester lisible planche REPLIÉE. */
@@ -1501,8 +1577,10 @@ button:hover { border-color: var(--accent); }
   flex-wrap: wrap;
 }
 
-.battle-anim-state-line > .battle-field { flex: 0 1 457px; }
-.battle-anim-state-line > .battle-inline-hint { flex: 1 1 200px; padding-bottom: 5px; }
+/* `flex-grow: 1` (pas de largeur figée) : le select doit prendre TOUTE la
+   largeur disponible de la ligne, quelle que soit la largeur de la colonne de
+   réglages — désormais fixe elle aussi, cf. .battle-anim-modal-preview. */
+.battle-anim-state-line > .battle-field-with-action { flex: 1 1 auto; }
 
 /* Ce que le moteur réclame et qui manque : une phrase au-dessus de la liste,
    pas une alarme — une unité peut légitimement n'avoir qu'un repos. */
@@ -1522,7 +1600,7 @@ button:hover { border-color: var(--accent); }
   flex-wrap: wrap;
 }
 
-.battle-sheet-line > .battle-field { flex: 1 1 220px; }
+.battle-sheet-line > .battle-field-with-action { flex: 1 1 auto; }
 .battle-sheet-import { display: flex; align-items: center; padding-bottom: 3px; }
 .battle-sheet-import button[disabled] { opacity: 0.6; cursor: progress; }
 
@@ -1532,6 +1610,82 @@ button:hover { border-color: var(--accent); }
 
 /* Même rouge pâle que .battle-warning : c'est la couleur « ça ne va pas » de la page. */
 .battle-play-failed { border-color: #ffb4a2; color: #ffb4a2; }
+
+/* Le libellé d'un champ ET ce qui se pose à côté de lui (ici, l'icône
+   d'information de l'État) sur la MÊME ligne, l'un contre l'autre — pas
+   écartés aux deux bouts de la ligne, l'icône documente CE MOT-LÀ. */
+.battle-field-label-row { display: flex; align-items: center; justify-content: flex-start; gap: 6px; }
+
+/* Icône « i » d'infobulle : `cursor: help` annonce le survol avant même que le
+   texte de `title` n'apparaisse. Rouge pâle en cas d'avertissement, comme
+   .battle-warning, pour rester reconnaissable même réduite à une icône. */
+.battle-info-icon { display: inline-flex; align-items: center; justify-content: center; color: #9aa0ab; cursor: help; flex: none; }
+.battle-info-icon.battle-warning { color: #ffb4a2; }
+.battle-info-icon:hover, .battle-info-icon:focus-visible { color: var(--text); }
+
+/* La bulle elle-même (cf. showInfoTooltip dans battle.js) : posée en FIXE sur
+   <body>, jamais dans le flux du champ qu'elle documente — sinon le cadre
+   défilant de la fenêtre de réglages d'une planche (#anim-modal-body) la
+   rognerait dès qu'elle déborderait. `top`/`left` sont posés en JS, au survol,
+   depuis la position réelle de l'icône. */
+.battle-info-tooltip {
+  position: fixed;
+  z-index: 200;
+  max-width: 280px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 6px 9px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+}
+
+.battle-info-tooltip[hidden] { display: none; }
+
+/* Bouton réduit à une icône (crayon de renommage…) : même famille visuelle que
+   .text-btn, mais carré et sans libellé — posé À CÔTÉ d'un champ plutôt qu'en
+   dessous, il n'a pas la place pour un mot. */
+.battle-icon-btn {
+  background: none;
+  border: 1px solid var(--border);
+  color: #9aa0ab;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex: none;
+}
+
+.battle-icon-btn:hover { color: var(--text); border-color: var(--accent); }
+.battle-icon-btn[disabled] { opacity: 0.4; cursor: default; }
+
+/* Un champ (État, Fichier) et le bouton qui agit dessus (renommer…), alignés
+   sur la ligne de base du CHAMP — pas de son libellé, avec lequel le bouton
+   n'a rien à aligner. */
+.battle-field-with-action { display: flex; align-items: flex-end; gap: 6px; }
+.battle-field-with-action > .battle-field { flex: 1 1 auto; min-width: 0; }
+
+/* Même hauteur pour un `select`/`input` et le bouton crayon posé à côté : sans
+   `box-sizing: border-box`, la bordure et le padding s'ajoutent à la hauteur
+   déclarée au lieu d'y être compris, et les deux ne tombaient pas pile sur les
+   28px de .battle-icon-btn (25,5px mesurés). Scopé à la fenêtre de réglages
+   d'une planche plutôt que posé sur `.battle-input` globalement, qui sert des
+   champs bien plus nombreux ailleurs dans la page. */
+#anim-modal-body .battle-input { height: 28px; box-sizing: border-box; }
+
+/* « Automatique », « Reset ancrage », « Aligner ombre » : les trois gestes de
+   mesure de la fenêtre de réglages d'une planche, réunis sur une ligne qui
+   occupe TOUTE sa largeur — `flex: 1` sur chaque bouton, à parts égales,
+   plutôt que trois boutons de la largeur de leur texte suivis de vide. */
+.battle-anim-tools-line { display: flex; align-items: center; gap: 8px; }
+.battle-anim-tools-line button { flex: 1; }
 
 #battle-section-tabs { display: flex; gap: 4px; }
 
@@ -1668,9 +1822,16 @@ button:hover { border-color: var(--accent); }
   padding: 1px 5px;
 }
 
+/* `auto-fit`, pas `auto-fill` : avec moins d'éléments que de colonnes
+   possibles, `auto-fill` réserve quand même les colonnes vides et les champs
+   réels n'occupent alors qu'une fraction de la largeur (Ancrage X/Ancrage Y
+   s'arrêtaient ainsi aux deux tiers de la ligne). `auto-fit` réduit les pistes
+   vides à zéro et laisse les pistes réelles se partager TOUTE la largeur, à
+   parts égales — les deux ne se distinguent que dans ce cas, jamais quand il y
+   a assez d'éléments pour remplir la ligne. */
 .battle-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
   gap: 6px;
 }
 
@@ -1685,6 +1846,12 @@ button:hover { border-color: var(--accent); }
   font-size: 11px;
   color: #9aa0ab;
 }
+
+/* Case à cocher : le libellé décrit l'état de la case elle-même, les deux se
+   lisent d'un coup côte à côte — pas empilés comme un libellé au-dessus d'un
+   `select` qu'il décrit à distance (cf. .battle-field ci-dessus). */
+.battle-checkbox-field { flex-direction: row; align-items: center; gap: 6px; cursor: pointer; }
+.battle-checkbox-field .battle-field-label { color: var(--text); font-size: 12px; }
 
 .battle-input {
   background: var(--panel);

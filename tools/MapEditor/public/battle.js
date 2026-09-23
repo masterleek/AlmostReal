@@ -236,12 +236,113 @@ function foldableSection(blockKey, id, title, content, { note, action } = {}) {
   return wrap;
 }
 
-function field(labelText, control, title) {
+function field(labelText, control, title, { labelExtra } = {}) {
   const label = el("label", "battle-field");
-  label.appendChild(el("span", "battle-field-label", labelText));
+  // `labelExtra` (ex. une icône d'information) vit sur la MÊME LIGNE que le
+  // libellé, poussée à droite par la ligne elle-même — jamais dans le flux du
+  // libellé, qui resterait alors collé à elle au lieu d'être à l'opposé.
+  const labelRow = el("span", "battle-field-label-row");
+  labelRow.appendChild(el("span", "battle-field-label", labelText));
+  if (labelExtra) labelRow.appendChild(labelExtra);
+  label.appendChild(labelRow);
   label.appendChild(control);
   if (title) label.title = title;
   return label;
+}
+
+// Une icône « i » avec une infobulle CUSTOM, pas l'attribut `title` natif :
+// celui-ci ne s'est pas affiché de façon fiable au survol (testé), et de toute
+// façon ne se serait pas laissé styler. La bulle est un unique élément posé sur
+// <body>, en position FIXE — jamais un enfant du champ qu'elle documente — car
+// la fenêtre de réglages d'une planche scrolle (#anim-modal-body,
+// `overflow-y: auto`, ce qui rend aussi l'axe X `auto`) : une bulle absolue à
+// l'intérieur se ferait rogner dès qu'elle dépasserait ce cadre.
+const INFO_ICON =
+  '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" '
+  + 'stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
+  + '<circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16"/>'
+  + '<circle cx="12" cy="7.5" r="1" fill="currentColor" stroke="none"/></svg>';
+
+let infoTooltipEl = null;
+function infoTooltip() {
+  if (!infoTooltipEl) {
+    infoTooltipEl = el("div", "battle-info-tooltip");
+    infoTooltipEl.hidden = true;
+    document.body.appendChild(infoTooltipEl);
+  }
+  return infoTooltipEl;
+}
+
+function showInfoTooltip(anchor, text) {
+  const tooltip = infoTooltip();
+  tooltip.textContent = text;
+  tooltip.hidden = false;
+  const rect = anchor.getBoundingClientRect();
+  const spacing = 6;
+  // Sous l'icône par défaut, remontée au-dessus si elle déborderait en bas de
+  // l'écran — mesurée APRÈS avoir posé le texte, sinon on lirait la hauteur du
+  // contenu précédent.
+  const tipRect = tooltip.getBoundingClientRect();
+  let top = rect.bottom + spacing;
+  if (top + tipRect.height > window.innerHeight - spacing) {
+    top = rect.top - tipRect.height - spacing;
+  }
+  let left = rect.right - tipRect.width;
+  left = Math.max(spacing, Math.min(left, window.innerWidth - tipRect.width - spacing));
+  tooltip.style.top = `${top}px`;
+  tooltip.style.left = `${left}px`;
+}
+
+// Appelée au survol/focus suivant, mais aussi avant tout redessin d'une fiche
+// (cf. renderList, render() d'openAnimModal) : la bulle vit hors du sous-arbre
+// remplacé à chaque modification, et une icône retirée du DOM pendant qu'elle
+// est affichée ne déclenche jamais son propre `mouseleave` — sans cet appel,
+// elle resterait affichée, pointant sur un endroit vide de l'écran.
+function hideInfoTooltip() {
+  if (infoTooltipEl) infoTooltipEl.hidden = true;
+}
+
+function infoIcon(text, { warning = false } = {}) {
+  const icon = el("span", "battle-info-icon");
+  if (warning) icon.classList.add("battle-warning");
+  icon.innerHTML = INFO_ICON;
+  icon.tabIndex = 0;
+  icon.setAttribute("aria-label", text);
+  icon.addEventListener("mouseenter", () => showInfoTooltip(icon, text));
+  icon.addEventListener("mouseleave", hideInfoTooltip);
+  icon.addEventListener("focus", () => showInfoTooltip(icon, text));
+  icon.addEventListener("blur", hideInfoTooltip);
+  return icon;
+}
+
+// Crayon utilisé pour tous les boutons « renommer » ponctuels (état, fichier) :
+// même famille que ANIM_DELETE_ICON (`stroke="currentColor"`, couleur posée par
+// le CSS du bouton), pour que les deux se reconnaissent comme un seul
+// vocabulaire d'icônes.
+const RENAME_ICON =
+  '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" '
+  + 'stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">'
+  + '<path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>';
+
+function renameIconButton(title, onClick) {
+  const button = el("button", "battle-icon-btn");
+  button.type = "button";
+  button.innerHTML = RENAME_ICON;
+  button.title = title;
+  button.setAttribute("aria-label", title);
+  button.onclick = onClick;
+  return button;
+}
+
+// Colle un bouton (renommer, importer…) À DROITE d'un champ plutôt qu'à la
+// suite dans le flux : les deux partagent la même ligne de base que le champ,
+// pas celle de son libellé, pour rester alignés sur le `select`/`input` qu'ils
+// accompagnent.
+function fieldWithAction(fieldNode, action) {
+  const wrap = el("div", "battle-field-with-action");
+  wrap.appendChild(fieldNode);
+  wrap.appendChild(action);
+  return wrap;
 }
 
 // `optional` retire la clé quand la valeur retombe à 0, au lieu d'écrire un
@@ -289,6 +390,19 @@ function checkboxInput(checked, onCommit) {
   box.checked = checked;
   box.onchange = () => onCommit(box.checked);
   return box;
+}
+
+// `field()` pose le libellé AU-DESSUS du contrôle — juste pour un `select` ou
+// un `input` texte/nombre, dont le libellé décrit un contenu qu'on lit à côté.
+// Une case à cocher, elle, EST son propre état : l'empiler sous son libellé
+// laisse une ligne de texte seule au-dessus d'une case seule en dessous, deux
+// lignes pour ce qui se lit d'un coup d'œil sur une seule.
+function checkboxField(labelText, checked, onCommit, title) {
+  const wrap = el("label", "battle-field battle-checkbox-field");
+  wrap.appendChild(checkboxInput(checked, onCommit));
+  wrap.appendChild(el("span", "battle-field-label", labelText));
+  if (title) wrap.title = title;
+  return wrap;
 }
 
 // `empty` ajoute une entrée vide en tête : un champ FACULTATIF (un soin sur un
@@ -1010,6 +1124,7 @@ const ACTION_SHEETS = {
     title: "Geste, par personnage",
     note: "la planche que chacun joue quand le coup part",
     none: "il frappe sans rien montrer, d'un simple pas en avant",
+    short: "geste",
   },
   approach: {
     field: "approach_animation",
@@ -1021,6 +1136,7 @@ const ACTION_SHEETS = {
     title: "Déplacement, par personnage",
     note: "la planche que chacun joue en s'élançant",
     none: "il glisse jusqu'au contact sur la planche qu'il porte",
+    short: "déplacement",
   },
   rhythm: {
     field: "rhythm_animation",
@@ -1031,6 +1147,7 @@ const ACTION_SHEETS = {
     title: "Pose pendant la séquence, par personnage",
     note: "ce que chacun montre pendant qu'on joue les notes",
     none: "il garde la planche qu'il portait, comme avant",
+    short: "pose de rythme",
   },
 };
 
@@ -1957,6 +2074,13 @@ function addSheetButton(unitId, unit, onChanged) {
   return add;
 }
 
+// Croix blanche sur le médaillon rouge de suppression — même famille que les
+// icônes du HTML (`stroke="currentColor"`, la couleur vient du CSS du bouton),
+// mais construite ici : ce bouton naît en JS, pas dans le HTML statique.
+const ANIM_DELETE_ICON =
+  '<svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" '
+  + 'stroke-width="3" stroke-linecap="round"><path d="M5 5l14 14M19 5L5 19"/></svg>';
+
 // Une planche est une vignette carrée dans une grille — la galerie des
 // animations de l'unité, qui se parcourt à l'œil, côte à côte comme les
 // planches d'un contact-sheet. Ses réglages s'ouvrent dans une FENÊTRE
@@ -1976,9 +2100,22 @@ function animationBlock(unitId, unit, name, onChanged) {
   thumb.title = `Régler cette planche — ${animationSummary(config)}`;
   thumb.appendChild(animationPreview(config, sheetUrl(config.sheet), false));
   thumb.onclick = () => openAnimModal(unitId, unit, name, onChanged);
-  const drop = el("button", "battle-anim-delete", "🗑");
+
+  // MÊME ICÔNE, MÊME INFOBULLE que le champ « État » de la fenêtre de réglages
+  // (cf. stateDescription/infoIcon) : ce qui appelle cette planche se demande
+  // aussi depuis la grille, sans passer par la fenêtre. `stopPropagation`
+  // comme le bouton de suppression juste à côté — un clic dessus consulte
+  // l'infobulle, il n'ouvre pas la fenêtre par-dessus.
+  const description = stateDescription(unit, name);
+  const info = infoIcon(description.text, { warning: description.warning });
+  info.classList.add("battle-anim-info");
+  info.addEventListener("click", (evt) => evt.stopPropagation());
+  thumb.appendChild(info);
+
+  const drop = el("button", "battle-anim-delete");
   drop.type = "button";
   drop.title = "Retirer cette planche";
+  drop.innerHTML = ANIM_DELETE_ICON;
   drop.onclick = (evt) => {
     evt.stopPropagation();
     if (!confirm(`Retirer la planche « ${name} » de cette unité ?`)) return;
@@ -2025,6 +2162,7 @@ function animationBlock(unitId, unit, name, onChanged) {
 function closeAnimModal() {
   animModalOverlay.classList.add("hidden");
   animModalBody.replaceChildren();
+  hideInfoTooltip();
 }
 
 animModalClose.onclick = () => closeAnimModal();
@@ -2058,6 +2196,10 @@ function openAnimModal(unitId, unit, initialName, outerOnChanged) {
 
   function render() {
     config = unit.animations[name];
+    // La fiche est reconstruite en entier à chaque changement (cf. le
+    // commentaire de openAnimModal plus haut) : une bulle affichée sur l'icône
+    // d'information de l'ancienne fiche ne recevrait jamais son `mouseleave`.
+    hideInfoTooltip();
     // Supprimée pendant que la fenêtre était ouverte sur elle (depuis un autre
     // onglet, via le verrou optimiste) : rien à montrer.
     if (!config) {
@@ -2068,52 +2210,84 @@ function openAnimModal(unitId, unit, initialName, outerOnChanged) {
 
     const body = el("div", "battle-anim-body");
 
-    const preview = animationPreview(config, sheetUrl(config.sheet), true);
+    // CARRÉ FIXE, damier plein cadre — la même règle que la vignette de la
+    // liste (.battle-anim-thumb) : sans elle, la taille de cette colonne
+    // suivait l'aspect de CHAQUE planche (large et bas pour un geste, haut et
+    // étroit pour une autre), et la fenêtre entière changeait de gabarit d'un
+    // état à l'autre.
+    const previewBox = el("div", "battle-anim-modal-preview");
+    previewBox.appendChild(animationPreview(config, sheetUrl(config.sheet), true));
     if (config.sheet) {
-      preview.classList.add("sheet-preview-openable");
-      preview.title = "Voir la planche entière";
-      preview.onclick = () => openSheet(config, name, changed);
+      previewBox.classList.add("sheet-preview-openable");
+      previewBox.title = "Voir la planche entière";
+      previewBox.onclick = () => openSheet(config, name, changed);
     }
-    body.appendChild(preview);
+    const previewColumn = el("div", "battle-anim-preview-column");
+    previewColumn.appendChild(previewBox);
+    // « En boucle » vit SOUS LA PREVIEW qu'elle décrit, pas au fil des champs
+    // numériques de droite : c'est un réglage de LECTURE de l'aperçu qu'on a
+    // sous les yeux, pas une mesure de plus sur la grille.
+    previewColumn.appendChild(
+      checkboxField(
+        "En boucle",
+        config.loop !== false,
+        (checked) => {
+          if (checked) delete config.loop;
+          else config.loop = false;
+          changed();
+        },
+        "Décoché : la planche se joue une seule fois (un geste d'attaque, une intro de victoire)."
+      )
+    );
+    body.appendChild(previewColumn);
 
     const column = el("div", "battle-anim-settings");
     column.appendChild(stateLine(unitId, unit, name, changed));
     column.appendChild(sheetLine(unitId, unit, config, name, changed, { scope: "grouped", allowImport: false }));
 
-    const grid = el("div", "battle-grid");
-    for (const [key, label, options] of SHEET_FIELDS) {
-      grid.appendChild(
-        objectNumberField(config, key, label, { ...options, onCommit: changed })
-      );
-    }
-    column.appendChild(grid);
-    column.appendChild(gridLine(unit, name, config, changed));
-
-    const options = el("div", "battle-grid");
-    // Le bouclage est une propriété de la PLANCHE : un repos tourne en rond, un
-    // geste se joue une fois. Absent = vrai, comme dans le moteur.
-    options.appendChild(
-      field(
-        "En boucle",
-        checkboxInput(config.loop !== false, (checked) => {
-          if (checked) delete config.loop;
-          else config.loop = false;
-          changed();
-        }),
-        "Décoché : la planche se joue une seule fois (un geste d'attaque, une intro de victoire)."
-      )
+    // Colonnes/Lignes d'un côté, Cadence/Vignette d'impact de l'autre — deux
+    // paires plutôt que les quatre sur une seule ligne : resserrées à quatre,
+    // le libellé de « Vignette d'impact » n'avait pas la place et repassait à
+    // la ligne dans sa propre case.
+    const [columnsField, rowsField, fpsField] = SHEET_FIELDS;
+    const gridSize = el("div", "battle-grid");
+    gridSize.appendChild(
+      objectNumberField(config, columnsField[0], columnsField[1], { ...columnsField[2], onCommit: changed })
     );
-    // `hit_frame` ne vaut que pour une planche de GESTE : c'est la vignette où
-    // le coup porte. Facultatif — à défaut, le moteur prend le milieu.
-    options.appendChild(
+    gridSize.appendChild(
+      objectNumberField(config, rowsField[0], rowsField[1], { ...rowsField[2], onCommit: changed })
+    );
+    column.appendChild(gridSize);
+
+    // « Vignette d'impact » (hit_frame) REJOINT LA CADENCE sur cette même
+    // ligne — une question de mise en page, pas un lien avec le découpage :
+    // elle ne vaut que pour une planche de GESTE, propre à cette fenêtre
+    // (openAnimModal), donc ajoutée ICI et pas dans SHEET_FIELDS, partagé avec
+    // le bloc « Impact » (vfxBlock) qui n'a pas de hit_frame. À défaut, le
+    // moteur prend le milieu du geste.
+    const gridTiming = el("div", "battle-grid");
+    gridTiming.appendChild(
+      objectNumberField(config, fpsField[0], fpsField[1], { ...fpsField[2], onCommit: changed })
+    );
+    gridTiming.appendChild(
       objectNumberField(config, "hit_frame", "Vignette d'impact", {
         optional: true, min: 0, onCommit: changed,
         title: "Vignette où le coup porte, comptée dans l'extrait. Vide = le milieu du geste.",
       })
     );
-    column.appendChild(options);
+    column.appendChild(gridTiming);
+    // Les dimensions relevées ne s'affichent plus ici (cf. sheetToolsLine, plus
+    // bas, où « Automatique » a rejoint les deux boutons de l'ancrage) —
+    // seule l'anomalie d'un découpage qui ne tombe pas juste reste montrée,
+    // parce qu'elle tronque des vignettes en silence sinon.
+    column.appendChild(gridLine(unit, name, config, changed, { showAuto: false, showDimensions: false }));
 
     column.appendChild(anchorLine(unit, name, config, changed));
+    // Les trois gestes de mesure — relever la grille, aligner l'ancrage sur
+    // l'ombre, l'effacer — sur UNE seule ligne : ce sont les trois outils
+    // d'atelier de cette fenêtre, pas des réglages qu'on va chercher chacun à
+    // son étage.
+    column.appendChild(sheetToolsLine(unit, name, config, changed));
     body.appendChild(column);
 
     animModalBody.replaceChildren(body);
@@ -2137,6 +2311,92 @@ function openAnimModal(unitId, unit, initialName, outerOnChanged) {
 // Cette liste rend donc visible ce que la clé du fichier cachait : renommer
 // « atk » en « attack » est un geste anodin dans un éditeur de texte, et il
 // détache la planche de tout ce qui la réclamait.
+// CE QUI SE DÉTACHE EN SILENCE si on renomme l'état `name` de cette unité,
+// et que `renameAnimation` ne rattrape pas. Elle ne suit que
+// `basic_attack.animation` : ni son déplacement ni sa pose de rythme, ni les
+// objets, ni aucun Eko connu — vérifié dans le moteur (BattleAssault.gd) :
+// `_sheet_for` retombe alors sur l'état par défaut du personnage, ou sur rien
+// du tout, SANS ERREUR (cf. réponse donnée à l'utilisateur : un geste qui ne
+// se joue jamais, découvert seulement en lançant ce combat-là).
+//
+// `idle` est un cas à part, plus grave qu'une animation manquée : c'est la
+// planche que `BattleScene._spawn_unit()` réclame pour créer le personnage —
+// absente sous ce nom, l'unité n'apparaît pas du tout au combat.
+function stateRenameRisks(unit, name) {
+  const risks = [];
+  if (name === "idle") {
+    risks.push(
+      "« idle » est la planche que le moteur réclame pour FAIRE APPARAÎTRE ce "
+      + "personnage au combat (BattleScene._spawn_unit) : renommée, il ne sera "
+      + "plus créé du tout."
+    );
+  } else if (animationStates.some((s) => s.key === name)) {
+    risks.push(
+      `« ${name} » est jouée automatiquement par le moteur à un moment précis : `
+      + "renommée, plus rien ne la déclenchera, et le personnage gardera la "
+      + "pose qu'il avait à ce moment-là."
+    );
+  }
+  const stale = [];
+  for (const [key, spec] of Object.entries(ACTION_SHEETS)) {
+    for (const owner of actionsUsing(unit, name, spec)) {
+      // Le geste de l'attaque de base EST recasé par renameAnimation (cf.
+      // stateLine) : ce n'est pas un risque, contrairement à ses deux autres
+      // champs et à tout le reste.
+      if (key === "gesture" && owner === "l'attaque de base") continue;
+      stale.push(`${owner} (${spec.short})`);
+    }
+  }
+  if (stale.length) {
+    risks.push(
+      `Toujours réclamée sous ce nom par : ${stale.join(", ")} — ces réglages `
+      + "ne seront PAS mis à jour et se détacheront en silence."
+    );
+  }
+  return risks;
+}
+
+// Avant un renommage RISQUÉ, une confirmation qui dit CE QUI SE DÉTACHE — pas
+// un simple « es-tu sûr » : le refus du moteur d'échouer bruyamment sur une
+// planche absente (cf. stateRenameRisks) est justement ce qui rend ces
+// accrocs invisibles tant qu'on ne relance pas le combat.
+function confirmStateRename(unit, name) {
+  const risks = stateRenameRisks(unit, name);
+  if (!risks.length) return true;
+  return confirm(`${risks.join("\n\n")}\n\nRenommer quand même ?`);
+}
+
+// Ce que « État » veut dire pour cette planche — jouée automatiquement par le
+// moteur, planche d'action appelée par tel geste/déplacement/pose de rythme,
+// ou nom libre que personne n'appelle (`warning: true`). Partagé entre
+// `stateLine` (icône d'information de la fenêtre de réglages) et
+// `animationBlock` (même icône sur la vignette de la liste « Planches ») :
+// c'est la même question posée depuis deux endroits, elle ne se répond qu'une
+// fois.
+function stateDescription(unit, name) {
+  const state = animationStates.find((s) => s.key === name);
+  if (state) {
+    return {
+      text: state.note
+        ? `Jouée automatiquement : ${state.note.toLowerCase()}`
+        : "Jouée automatiquement par le moteur.",
+      warning: false,
+    };
+  }
+  // Les TROIS champs qui peuvent nommer une planche (geste, déplacement, pose
+  // de rythme), pas le seul geste : une planche encore réclamée pour le
+  // déplacement d'un Eko se disait à tort « personne ne l'appelle ».
+  const byField = Object.entries(ACTION_SHEETS)
+    .map(([, spec]) => ({ short: spec.short, users: actionsUsing(unit, name, spec) }))
+    .filter((entry) => entry.users.length > 0);
+  return {
+    text: byField.length
+      ? `Planche d'action, appelée par : ${byField.map((e) => `${e.users.join(", ")} (${e.short})`).join(" · ")}.`
+      : "Nom libre, et personne ne l'appelle : aucune action ne joue cette planche.",
+    warning: !byField.length,
+  };
+}
+
 function stateLine(unitId, unit, name, onChanged) {
   const line = el("div", "battle-anim-state-line");
   const taken = new Set(Object.keys(unit.animations).filter((n) => n !== name));
@@ -2154,6 +2414,13 @@ function stateLine(unitId, unit, name, onChanged) {
       onChanged();
       return;
     }
+    // Le `select` a déjà changé de valeur visuellement (comportement natif,
+    // avant même ce gestionnaire) : sur un refus, `onChanged()` redessine la
+    // fiche et le ramène donc à son état réel, sans rien avoir renommé.
+    if (!confirmStateRename(unit, name)) {
+      onChanged();
+      return;
+    }
     renameAnimation(unitId, unit, name, value);
     onChanged();
   }, {
@@ -2166,34 +2433,57 @@ function stateLine(unitId, unit, name, onChanged) {
     },
     titleOf: (key) => animationStates.find((s) => s.key === key)?.note || "",
   });
-  line.appendChild(field("État", select));
 
-  const state = animationStates.find((s) => s.key === name);
-  const hint = el("span", "battle-inline-hint");
-  if (state) {
-    hint.textContent = state.note
-      ? `Jouée automatiquement : ${state.note.toLowerCase()}`
-      : "Jouée automatiquement par le moteur.";
-  } else {
-    const users = actionsUsing(unit, name);
-    hint.textContent = users.length
-      ? `Planche d'action, appelée par : ${users.join(", ")}.`
-      : "Nom libre, et personne ne l'appelle : aucune action ne joue cette planche.";
-    if (!users.length) hint.classList.add("battle-warning");
-  }
-  line.appendChild(hint);
+  // CE QUE « État » DIT tenait sur sa propre ligne de texte, souvent la plus
+  // longue de la fenêtre pour une information qu'on ne consulte qu'en cas de
+  // doute sur ce qui appelle cette planche. Une icône, dans l'infobulle de
+  // laquelle le texte survit, posée sur la ligne du TITRE plutôt qu'ajoutée au
+  // flux, la rend consultable sans l'imposer à la lecture.
+  const { text: description, warning: isUnused } = stateDescription(unit, name);
+  const stateField = field("État", select, null, {
+    labelExtra: infoIcon(description, { warning: isUnused }),
+  });
+
+  // RENOMMER LIBREMENT, pas seulement choisir parmi les états connus : la
+  // liste déroulante ci-dessus ne propose que le vocabulaire du moteur plus le
+  // nom courant — elle ne permet pas de donner un nom neuf à une planche
+  // d'action (« special_move »). C'est un renommage de CLÉ (cf.
+  // renameAnimation), pas un déplacement de fichier : le fichier `.sheet`
+  // choisi juste en dessous ne bouge pas.
+  const renameState = renameIconButton(
+    "Renommer cet état — la clé par laquelle une action ou le moteur retrouve cette planche.",
+    () => {
+      const wanted = prompt("Nouveau nom de l'état (ex. idle, atkeff, move_back) :", name);
+      if (!wanted || wanted === name) return;
+      if (!ID_PATTERN.test(wanted)) {
+        alert("Nom invalide : minuscules, chiffres et « _ » seulement.");
+        return;
+      }
+      if (taken.has(wanted)) {
+        alert(`« ${wanted} » est déjà pris par une autre planche de cette unité.`);
+        return;
+      }
+      if (!confirmStateRename(unit, name)) return;
+      renameAnimation(unitId, unit, name, wanted);
+      onChanged();
+    }
+  );
+  line.appendChild(fieldWithAction(stateField, renameState));
   return line;
 }
 
-// Qui réclame une planche par ce nom : l'attaque de base de l'unité affichée,
-// les Ekos du catalogue, et — pour le seul champ du geste — le réglage unique
-// qui vaut pour tous les objets (`spec.field`, "animation" par défaut : c'est
-// le seul cas qui avait un appelant jusqu'ici, d'où le défaut).
+// Qui réclame une planche par ce nom, PAR CHAMP (geste, déplacement ou pose de
+// rythme — cf. `spec`) : l'attaque de base de l'unité affichée, le réglage
+// unique qui vaut pour tous ses objets côté geste (`spec.field`, "animation" —
+// cf. BattleAssault.ITEM_GESTURE_FIELD, un objet n'a pas d'`animation` à lui),
+// les Ekos qu'elle connaît, et ses objets pour le déplacement/la pose de
+// rythme (ceux-là RESTENT par item, contrairement au geste).
 //
-// LES OBJETS N'ONT PLUS DE CHAMP CHACUN (cf. BattleAssault.ITEM_GESTURE_FIELD) :
-// un seul réglage, sur l'unité, vaut pour tous — inutile de les parcourir un
-// par un, et sans objet pour cette unité de toute façon (`_champs.animation`
-// dans items.json).
+// SEULS LES EKOS CONNUS DE CETTE UNITÉ comptent, et parmi les objets, aucun
+// pour une unité qui n'en porte pas (un ennemi) : un Eko ou un objet qu'elle
+// ne joue jamais ne la concerne pas, même s'il cite le même nom par
+// coïncidence — le compter aurait fait craindre une casse qui n'en est pas
+// une.
 //
 // L'unité est passée en paramètre plutôt que relue dans `catalogs` : c'est le
 // même objet que celui qu'on est en train d'éditer, donc à jour même avant
@@ -2205,8 +2495,14 @@ function actionsUsing(unit, name, spec = ACTION_SHEETS.gesture) {
   if (spec === ACTION_SHEETS.gesture && (unit.item_gesture || spec.fallback()) === name) {
     users.push("les objets");
   }
+  const knownEkos = new Set(unit.ekos || []);
   for (const [id, eko] of Object.entries(entriesOf("ekos"))) {
-    if ((eko[spec.field] || spec.fallback()) === name) users.push(id);
+    if (knownEkos.has(id) && (eko[spec.field] || spec.fallback()) === name) users.push(id);
+  }
+  if (!unit.behaviour) {
+    for (const [id, item] of Object.entries(entriesOf("items"))) {
+      if ((item[spec.field] || spec.fallback()) === name) users.push(id);
+    }
   }
   return users;
 }
@@ -2359,32 +2655,31 @@ function sheetChoices(scope) {
 function sheetLine(unitId, unit, config, name, onChanged, { scope = "all", allowImport = true } = {}) {
   const line = el("div", "battle-sheet-line");
   const choices = sheetChoices(scope);
-  line.appendChild(
-    field(
-      "Fichier",
-      selectInput(
-        choices.values, config.sheet || "",
-        (value) => {
-          config.sheet = value;
-          onChanged();
-        },
-        { labelOf: sheetLabel, groups: choices.groups || null }
-      )
+  const fileField = field(
+    "Fichier",
+    selectInput(
+      choices.values, config.sheet || "",
+      (value) => {
+        config.sheet = value;
+        onChanged();
+      },
+      { labelOf: sheetLabel, groups: choices.groups || null }
     )
   );
+  // Renommer le FICHIER (pas l'état — cf. le bouton crayon de stateLine, juste
+  // au-dessus) : le nom donné à l'import est souvent celui de l'export
+  // d'origine (313000404_atk.png), et s'en tenir à ça une fois la planche en
+  // place n'aide personne à s'y retrouver dans le dossier. Posé À DROITE DU
+  // SELECT, comme celui de l'état, plutôt qu'à la suite dans le flux.
+  const rename = renameIconButton(
+    "Renommer ce fichier sur le disque et mettre à jour toutes les fiches qui le citent.",
+    () => renameSheetFile(config.sheet, onChanged)
+  );
+  rename.disabled = !config.sheet;
+  line.appendChild(fieldWithAction(fileField, rename));
   if (allowImport) {
     line.appendChild(importButton(unitId, unit, config, name, onChanged));
   }
-  // Renommer le FICHIER (pas la planche — cf. stateLine) : le nom donné à
-  // l'import est souvent celui de l'export d'origine (313000404_atk.png), et
-  // s'en tenir à ça une fois la planche en place n'aide personne à s'y
-  // retrouver dans le dossier.
-  const rename = el("button", "text-btn", "Renommer…");
-  rename.type = "button";
-  rename.title = "Renommer ce fichier sur le disque et mettre à jour toutes les fiches qui le citent.";
-  rename.disabled = !config.sheet;
-  rename.onclick = () => renameSheetFile(config.sheet, onChanged);
-  line.appendChild(rename);
   // Une planche que Godot n'a pas importée existe sur le disque et reste
   // INVISIBLE EN JEU : le dire ici, là où on la choisit, plutôt que de laisser
   // l'auteur découvrir un personnage vide au combat.
@@ -2486,15 +2781,27 @@ function importButton(unitId, unit, config, name, onChanged) {
 // mais il faut bien la MONTRER : « 3 colonnes, 7 lignes » ne dit pas si les
 // vignettes font 75 × 94 ou 25 × 31, alors que c'est ce chiffre-là qu'on
 // compare à la planche source ouverte à côté.
-function gridLine(unit, name, config, onChanged) {
+// `showDimensions` cache la phrase de mesure elle-même (« Planche 204×148 —
+// vignette 68×74 px ») dans la fenêtre de réglages d'une planche d'unité, où
+// elle encombrait la fiche sans que l'auteur en ait besoin au quotidien :
+// SEULE L'ANOMALIE reste montrée, qu'on cache ou non les dimensions, parce
+// qu'un découpage qui ne tombe pas juste tronque des vignettes EN SILENCE. Le
+// bloc « Impact » (vfxBlock), lui, garde les deux (défaut `true`) : il n'a pas
+// la ligne de boutons dédiée qui accueille "Automatique" ailleurs (cf.
+// sheetToolsLine), et `showAuto` y reste vrai pour ne rien lui retirer.
+function gridLine(unit, name, config, onChanged, { showAuto = true, showDimensions = true } = {}) {
   const line = el("div", "battle-anim-grid-line");
-  const note = el("span", "battle-inline-hint", "Vignette : …");
+  const note = el("span", "battle-inline-hint", showDimensions ? "Vignette : …" : "");
+  note.hidden = !showDimensions;
   const describe = () => {
     const columns = Math.max(1, Number(config.columns || 1));
     const rows = Math.max(1, Number(config.rows || 1));
     sheetSize(sheetUrl(config.sheet)).then((size) => {
       if (!size) {
-        note.textContent = "Vignette : taille inconnue (image illisible).";
+        if (showDimensions) {
+          note.hidden = false;
+          note.textContent = "Vignette : taille inconnue (image illisible).";
+        }
         return;
       }
       const w = Math.floor(size[0] / columns);
@@ -2502,13 +2809,29 @@ function gridLine(unit, name, config, onChanged) {
       // Un découpage qui ne tombe pas juste est un PIÈGE silencieux : le moteur
       // tronque, et toutes les vignettes après la première ligne glissent.
       const exact = size[0] % columns === 0 && size[1] % rows === 0;
-      note.textContent = `Planche ${size[0]}×${size[1]} — vignette ${w}×${h} px`
-        + (exact ? "" : " ⚠ le découpage ne tombe pas juste");
+      if (showDimensions) {
+        note.hidden = false;
+        note.textContent = `Planche ${size[0]}×${size[1]} — vignette ${w}×${h} px`
+          + (exact ? "" : " ⚠ le découpage ne tombe pas juste");
+      } else {
+        note.hidden = exact;
+        note.textContent = exact ? "" : "⚠ Le découpage ne tombe pas juste.";
+      }
       note.classList.toggle("battle-warning", !exact);
     });
   };
   describe();
 
+  if (showAuto) line.appendChild(autoGridButton(unit, name, config, onChanged));
+  line.appendChild(note);
+  return line;
+}
+
+// Relève la grille (et, avec elle, l'ancrage — cf. applyMeasuredGrid) sur
+// l'image. Extrait de `gridLine` pour être partagé avec `sheetToolsLine`, qui
+// le pose sur la même ligne que les deux boutons de l'ancrage dans la fenêtre
+// de réglages d'une planche d'unité.
+function autoGridButton(unit, name, config, onChanged) {
   const auto = el("button", "text-btn", "Automatique");
   auto.type = "button";
   auto.title = "Relever sur l'image : colonnes, lignes, vignettes, et l'ancrage au sol.";
@@ -2527,9 +2850,7 @@ function gridLine(unit, name, config, onChanged) {
     }
     onChanged();
   };
-  line.appendChild(auto);
-  line.appendChild(note);
-  return line;
+  return auto;
 }
 
 // Relève la grille sur l'image et la pose dans la planche. Sert à l'import
@@ -2808,10 +3129,31 @@ function anchorLine(unit, name, config, onChanged) {
       for (const input of inputs) input.classList.add("battle-input-default");
     });
   }
-  // Le relevé est accessible SANS réimporter. Les planches déjà en place sont
-  // le cas majoritaire, et jusqu'ici seul un changement de grille déclenchait la
-  // mesure : une planche posée avant ce relevé n'avait aucun moyen d'y accéder,
-  // sinon en cassant sa propre grille pour la refaire.
+  // Le relevé est AFFICHÉ à côté des champs, pas seulement applicable. Un
+  // avertissement qui ne dit pas quelle valeur il attend oblige à cliquer pour
+  // savoir — et donc à écraser la valeur en place pour la comparer.
+  //
+  // Les boutons de mesure (« Aligner ombre », « Reset ancrage ») ne sont plus
+  // posés ICI : ils vivent désormais avec « Automatique » sur une seule ligne
+  // d'outils (cf. sheetToolsLine, appelée juste après dans openAnimModal), ce
+  // champ ne garde que les deux valeurs et leur avertissement.
+  const reading = el("span", "battle-inline-hint", "");
+  reading.hidden = true;
+  line.appendChild(reading);
+  anchorDrift(unit, name, config).then((drift) => {
+    if (!drift) return;
+    reading.hidden = false;
+    reading.className = "battle-warning";
+    reading.textContent = `Relevé sur l'ombre : ${drift.measured.join(" / ")}`
+      + ` — l'ancrage en place dessine ${describeDrift(drift)}.`;
+  });
+
+  return line;
+}
+
+// Extrait de `anchorLine` pour être partagé avec `sheetToolsLine`, où il
+// rejoint « Automatique » et « Reset ancrage » sur la même ligne.
+function measureAnchorButton(unit, name, config, onChanged) {
   const measure = el("button", "text-btn", "Aligner ombre");
   measure.type = "button";
   measure.disabled = !config.sheet || name === ANCHOR_REFERENCE;
@@ -2834,31 +3176,32 @@ function anchorLine(unit, name, config, onChanged) {
     config.anchor = anchor;
     onChanged();
   };
-  line.appendChild(measure);
+  return measure;
+}
 
-  // Le relevé est AFFICHÉ à côté des champs, pas seulement applicable. Un
-  // avertissement qui ne dit pas quelle valeur il attend oblige à cliquer pour
-  // savoir — et donc à écraser la valeur en place pour la comparer.
-  const reading = el("span", "battle-inline-hint", "");
-  reading.hidden = true;
-  line.appendChild(reading);
-  anchorDrift(unit, name, config).then((drift) => {
-    if (!drift) return;
-    reading.hidden = false;
-    reading.className = "battle-warning";
-    reading.textContent = `Relevé sur l'ombre : ${drift.measured.join(" / ")}`
-      + ` — l'ancrage en place dessine ${describeDrift(drift)}.`;
-  });
-
+// Extrait de `anchorLine`, même raison que measureAnchorButton ci-dessus.
+function clearAnchorButton(config, onChanged) {
   const clear = el("button", "text-btn", "Reset ancrage");
   clear.type = "button";
-  clear.disabled = !declared;
+  clear.disabled = !Array.isArray(config.anchor);
   clear.title = "Retire l'ancrage déclaré : le moteur reprend le centre-bas de la cellule.";
   clear.onclick = () => {
     delete config.anchor;
     onChanged();
   };
-  line.appendChild(clear);
+  return clear;
+}
+
+// LES TROIS GESTES DE MESURE DE CETTE FENÊTRE, sur une seule ligne : relever
+// la grille (et l'ancrage avec elle), aligner l'ancrage sur l'ombre, l'effacer.
+// Ils vivaient chacun à l'étage du champ qu'ils affectent (la grille, puis
+// l'ancrage) ; regroupés, ils se lisent comme ce qu'ils sont — la boîte à
+// outils de l'atelier — plutôt que comme un réglage de plus par champ.
+function sheetToolsLine(unit, name, config, onChanged) {
+  const line = el("div", "battle-anim-tools-line");
+  line.appendChild(autoGridButton(unit, name, config, onChanged));
+  line.appendChild(clearAnchorButton(config, onChanged));
+  line.appendChild(measureAnchorButton(unit, name, config, onChanged));
   return line;
 }
 
@@ -3358,6 +3701,11 @@ function staleServerBanner() {
 }
 
 function renderList() {
+  // Reconstruite à CHAQUE modification (cf. commentaire plus haut sur le
+  // maître/détail) : une bulle affichée sur l'icône d'information d'une
+  // vignette « Planches » ne recevrait jamais son `mouseleave` si ce
+  // redessin la retire du DOM pendant qu'elle est ouverte.
+  hideInfoTooltip();
   listEl.innerHTML = "";
   hintEl.textContent = HINTS[activeSection];
   if (momentLabels.stale) listEl.appendChild(staleServerBanner());
