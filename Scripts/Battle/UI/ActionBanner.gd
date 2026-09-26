@@ -50,6 +50,18 @@ const WIDTH := 110.0
 ## faisait passer la première lettre dessous.
 const LABEL_SHIFT := 7.0
 
+## ROTATION Y (pseudo-3D) au changement d'action, relevée sur une planche de
+## référence en trois temps : posée déjà DE PROFIL (90°), elle pivote à plat
+## (0°) ; à la fin du tour elle repart de profil (-90°) puis change de contenu
+## avant de repivoter à plat pour l'action suivante — le cycle recommence.
+##
+## Node2D n'a pas de troisième axe : cos(90°) = 0, donc le PROFIL d'une carte
+## sans épaisseur est un simple TRAIT VERTICAL — l'échelle horizontale rend
+## cette silhouette sans qu'il faille un vrai axe Y ni un shader de
+## perspective. Le contenu ne change QUE pendant ce trait (largeur nulle),
+## exactement comme sur la planche.
+const FLIP_DURATION := 0.15
+
 ## La pointe (9×6) se pose sous la pastille, centrée. Son asset n'a que TROIS
 ## rangées d'aplat — 9 px de large, puis 4, puis 2 — et la PREMIÈRE est cachée
 ## dans le corps de la pastille : sur la maquette on ne voit que les rangées 1
@@ -61,18 +73,28 @@ var _pill: NinePatchRect
 var _label: RichTextLabel
 var _icon: Sprite2D
 var _tail: Sprite2D
+## Groupe pivot pour la rotation Y : ses enfants s'écrivent en coordonnées
+## relatives à CENTRE_X (donc x = 0 en leur centre), pour que l'échelle
+## horizontale les squeeze SUR PLACE plutôt que vers le bord gauche de l'écran
+## — Node2D n'a pas de `pivot_offset` comme Control, ce nœud en tient lieu.
+var _flip: Node2D
+var _flip_tween: Tween
 
 func _ready() -> void:
+	_flip = Node2D.new()
+	_flip.position = Vector2(CENTRE_X, 0)
+	add_child(_flip)
+
 	_pill = NinePatchRect.new()
 	_pill.patch_margin_left = PATCH_MARGIN * PixelScale.SCALE
 	_pill.patch_margin_right = PATCH_MARGIN * PixelScale.SCALE
 	_pill.axis_stretch_horizontal = NinePatchRect.AXIS_STRETCH_MODE_STRETCH
 	_pill.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	PixelScale.apply(_pill)
-	add_child(_pill)
+	_flip.add_child(_pill)
 
 	_tail = PixelScale.sprite_native(TAIL_ALLY)
-	add_child(_tail)
+	_flip.add_child(_tail)
 
 	_label = BattleText.make("", TEXT_SIZE, TEXT_COLOR)
 	# SANS contour, comme l'entrée SÉLECTIONNÉE d'un menu (cf. CommandMenu) :
@@ -81,13 +103,13 @@ func _ready() -> void:
 	# referment sur elles-mêmes. C'est pour la même raison que le menu le retire
 	# sur sa pastille jaune.
 	BattleText.set_outlined(_label, TEXT_SIZE, false)
-	add_child(_label)
+	_flip.add_child(_label)
 
 	_icon = PixelScale.sprite_native(ICON_DIRECT)
 	# Au-dessus de la pastille, qu'elle déborde sur la gauche — comme dans une
 	# liste d'actions.
 	_icon.z_index = 2
-	add_child(_icon)
+	_flip.add_child(_icon)
 
 	visible = false
 
@@ -99,24 +121,44 @@ func show_action(text_id: String, ally: bool, damage_type: String) -> void:
 
 	_pill.texture = PILL_ALLY if ally else PILL_ENEMY
 	_pill.size = Vector2(WIDTH, HEIGHT) * PixelScale.SCALE
-	_pill.position = Vector2(roundf(CENTRE_X - WIDTH / 2.0), TOP)
+	# Coordonnées relatives à _flip, donc à CENTRE_X près de ce qu'elles étaient
+	# quand ce nœud portait tout directement (cf. _flip ci-dessus).
+	_pill.position = Vector2(roundf(-WIDTH / 2.0), TOP)
 
 	_label.text = text
 	# La largeur du texte est connue avant tout rendu (cf. BattleText.text_width),
 	# inutile d'attendre une passe pour le centrer.
 	_label.position = Vector2(
-		roundf(CENTRE_X + LABEL_SHIFT - BattleText.text_width(text, TEXT_SIZE) / 2.0), TOP + 1
+		roundf(LABEL_SHIFT - BattleText.text_width(text, TEXT_SIZE) / 2.0), TOP + 1
 	)
 
 	_tail.texture = TAIL_ALLY if ally else TAIL_ENEMY
 	var tail_size := PixelScale.design_size(_tail.texture)
-	_tail.position = Vector2(roundf(CENTRE_X - tail_size.x / 2.0), TOP + TAIL_OFFSET_Y)
+	_tail.position = Vector2(roundf(-tail_size.x / 2.0), TOP + TAIL_OFFSET_Y)
 
 	_icon.visible = damage_type != ""
 	if _icon.visible:
 		_icon.texture = ICON_INJURY if damage_type == "injury" else ICON_DIRECT
 		_icon.position = _pill.position + TYPE_ICON_OFFSET
+
 	visible = true
+	# DE PROFIL D'ABORD (cf. FLIP_DURATION) : le contenu qu'on vient de poser
+	# n'est donc jamais vu à plat avant d'avoir pivoté, comme sur la planche —
+	# à la différence d'un fondu, ici il n'y a rien à voir tant que l'échelle
+	# n'a pas commencé à s'ouvrir.
+	if _flip_tween != null and _flip_tween.is_valid():
+		_flip_tween.kill()
+	_flip.scale.x = 0.0
+	_flip_tween = create_tween()
+	_flip_tween.tween_property(_flip, "scale:x", 1.0, FLIP_DURATION)
 
 func hide_action() -> void:
-	visible = false
+	if not visible:
+		return
+	if _flip_tween != null and _flip_tween.is_valid():
+		_flip_tween.kill()
+	_flip_tween = create_tween()
+	_flip_tween.tween_property(_flip, "scale:x", 0.0, FLIP_DURATION)
+	# Le nœud reste monté, comme ActorCursor.hide_above : il resservira à
+	# l'action suivante, qui repart de ce même profil (cf. show_action).
+	_flip_tween.tween_callback(func() -> void: visible = false)
