@@ -350,8 +350,28 @@ func _resolve(entry: Dictionary) -> void:
 	# tenir le temps de trois notes figerait le personnage bras levé. Le verdict
 	# restant affiché une demi-seconde, il se lit encore au moment de l'impact,
 	# comme sur la maquette.
-	var multiplier := await _run_rhythm(unit, action, targets, ally_acts, sounds)
-	effect["multiplier"] = multiplier
+	var judgements := await _run_rhythm(unit, action, targets, ally_acts, sounds)
+
+	# UN ALLIÉ QUI RATE TOUTES LES NOTES PERD SON ACTION : c'est le seul verdict
+	# assez mauvais pour ça (un Miss isolé reste un Miss dans la moyenne, pas un
+	# échec total), et il ne vaut que pour l'attaquant — un ennemi qui martèle
+	# une défense ratée subit déjà l'ATTACK_MULTIPLIER plein, la séquence n'a
+	# pas besoin d'un second couperet. Une séquence VIDE (`judgements` vide)
+	# n'est pas un échec : il n'y avait rien à rater.
+	if ally_acts and _all_missed(judgements):
+		# Remise au repos : l'unité tenait encore la pose de préparation
+		# (cf. _run_rhythm, `pose`), et rien derrière ce `return` ne la repose —
+		# contrairement au déroulé normal, qui y passe toujours (geste, retour,
+		# ou la branche « sans contact » juste en dessous).
+		_node_of(entry).play_sheet(BattleData.get_animation(unit.id, ANIM_IDLE))
+		_rhythm.rest()
+		_banner.hide_action()
+		await _bury_the_dead()
+		return
+
+	effect["multiplier"] = (
+		BattleRules.rhythm_attack(judgements) if ally_acts else BattleRules.rhythm_defence(judgements)
+	)
 
 	# Aller au contact, frapper, revenir. Deux actions n'y vont pas : celle qui
 	# SOIGNE — elle n'a personne à aller chercher, et traverser le terrain pour
@@ -397,18 +417,17 @@ func _resolve(entry: Dictionary) -> void:
 	_banner.hide_action()
 	await _bury_the_dead()
 
-## Fait jouer la séquence de l'action et en tire le multiplicateur de dégâts.
-##
-## LE SENS S'INVERSE SELON LE CAMP, et c'est toute la mécanique : quand l'équipe
-## frappe, un bon timing AUGMENTE ce qu'elle inflige ; quand elle encaisse, il
-## RÉDUIT ce qu'elle subit. La barre est la même, la table de conversion non
-## (cf. BattleRules).
+## Fait jouer la séquence de l'action et rend les verdicts bruts, une note par
+## entrée du tableau (cf. BattleRules.Judgement) — c'est `_resolve` qui les
+## traduit en multiplicateur (BattleRules.rhythm_attack/rhythm_defence) ET qui
+## regarde s'ils sont tous ratés, avant de faire quoi que ce soit d'autre avec.
+## Vide quand l'action n'a pas de séquence : rien n'a été joué, rien à juger.
 func _run_rhythm(
 	unit: BattleUnit, action: Dictionary, targets: Array[BattleUnit], ally_acts: bool, sounds: Array
-) -> float:
+) -> Array:
 	var sequence := _sequence_of(unit, action)
 	if sequence.is_empty():
-		return 1.0
+		return []
 	# Le son du rythme est annoncé ICI et pas chez l'appelant : une action sans
 	# séquence sort à la ligne précédente, et son « rhythm » ne doit pas sonner
 	# sur une barre qui ne se joue jamais.
@@ -434,10 +453,18 @@ func _run_rhythm(
 	)
 	_cursor.hide_above()
 	rhythm_resolved.emit(judgements)
-	return (
-		BattleRules.rhythm_attack(judgements) if ally_acts
-		else BattleRules.rhythm_defence(judgements)
-	)
+	return judgements
+
+## Vrai quand `judgements` n'est pas vide et ne contient QUE des ratés — une
+## séquence vide (action sans notes) n'en fait pas partie : il n'y avait rien à
+## rater, ce n'est pas un échec.
+func _all_missed(judgements: Array) -> bool:
+	if judgements.is_empty():
+		return false
+	for judgement: int in judgements:
+		if judgement != BattleRules.Judgement.MISS:
+			return false
+	return true
 
 ## Identifiant Localization du nom affiché. Une attaque de base n'a pas d'entrée
 ## propre : elle reprend celle du menu, « Attack » — ce que montre d'ailleurs la

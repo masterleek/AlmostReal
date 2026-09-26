@@ -441,10 +441,27 @@ func _process(delta: float) -> void:
 	# La note en tête a-t-elle dépassé la dernière fenêtre sans être touchée ?
 	while _pending < _notes.size() and _offset_of(_pending) * _direction() < -WINDOW_GOOD:
 		_resolve(BattleRules.Judgement.MISS)
-	if _pending >= _notes.size() and _elapsed >= _notes[-1]["time"] + TAIL:
+	if _pending < _notes.size():
+		return
+	# TOUT RATÉ n'a plus rien à lire, quel que soit le camp : attendre le TAIL
+	# habituel ne ferait que retarder un tour déjà joué. Côté ALLIÉ, l'action
+	# est en plus annulée (cf. BattleAssault._resolve, même condition) ; côté
+	# ENNEMI, elle garde ses dégâts pleins mais n'a pas plus de raison
+	# d'attendre — le joueur sait déjà qu'il a tout raté, l'écran n'a rien de
+	# nouveau à montrer avant que l'ennemi ne joue son geste.
+	if _all_missed() or _elapsed >= _notes[-1]["time"] + TAIL:
 		_running = false
 		set_process(false)
 		finished.emit(_judgements)
+
+## Vrai quand toutes les notes jugées jusqu'ici sont des ratés. N'a de sens
+## qu'une fois `_pending >= _notes.size()` (cf. l'appelant) : avant ça, il en
+## reste à juger, donc rien à conclure.
+func _all_missed() -> bool:
+	for judgement: int in _judgements:
+		if judgement != BattleRules.Judgement.MISS:
+			return false
+	return true
 
 ## Position d'une note par rapport au centre de l'anneau, en pixels de design.
 ## Positive du côté d'où elle vient.
