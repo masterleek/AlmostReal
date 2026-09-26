@@ -127,7 +127,7 @@ const JUDGEMENT_HOLD := 0.5
 ## vite après avoir été ouverte vite.
 const JUDGEMENT_POP_DURATION := 0.08
 const JUDGEMENT_POP_SCALE := 1.3
-const JUDGEMENT_RISE := 6.0
+const JUDGEMENT_RISE := 16.0
 const JUDGEMENT_FADE_OUT := 0.1
 
 ## Pulse de frappe. La lueur naît à la TAILLE DE LA NOTE (32 px de design pour
