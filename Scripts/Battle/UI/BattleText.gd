@@ -247,12 +247,16 @@ static func make_styled_number(
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.size = Vector2(BOX_WIDTH, font_size)
 
-	# Épaisseurs proportionnelles au corps : à 12 px le contour sombre fait
-	# 2 px et le liseré clair 1, ce qui donne les deux anneaux du mockup sans
-	# les épaissir quand le chiffre grandit.
-	var outer := maxi(2, font_size / 6)
+	# Ce qui dessine l'anneau sombre visible, c'est l'ÉCART entre outer et
+	# inline, pas leur valeur individuelle : à 1 unité d'écart (ancien réglage,
+	# outer-1), l'anneau devenait imperceptible dès que le chiffre grossissait
+	# — mesuré en jeu sur le niveau de synergie (12 px puis 16 px), où le
+	# contour brun du mockup avait disparu même après avoir augmenté `outer`
+	# seul, puisque `outer - 1` le suit d'autant. outer-2 garde un écart de 2
+	# unités, visible à toute taille testée.
+	var outer := maxi(3, font_size / 4)
 	root.add_child(make(text, font_size, outline_color, outer, outline_color, false))
-	root.add_child(make(text, font_size, inline_color, maxi(1, outer - 1), inline_color, false))
+	root.add_child(make(text, font_size, inline_color, maxi(1, outer - 2), inline_color, false))
 
 	var body := make(text, font_size, Color(1, 1, 1), 0, outline_color, false)
 	body.clip_children = CanvasItem.CLIP_CHILDREN_AND_DRAW

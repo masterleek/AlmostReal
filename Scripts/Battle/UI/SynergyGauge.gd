@@ -10,10 +10,6 @@ extends Node2D
 const UNDERLAYER := preload("res://UI/Battle/synergie_underlayer.svg")
 const FULL := preload("res://UI/Battle/synergie_full.svg")
 const ICON := preload("res://UI/Battle/ic_synergie.svg")
-## Plaque sombre derrière le chiffre du niveau. Le plan la listait depuis le
-## Lot 1 (« pastille de niveau ») sans qu'elle serve : `synergy.jpg` montre bien
-## le chiffre posé sur un fond, pas flottant sur la spirale.
-const LEVEL_PLATE := preload("res://UI/Battle/round_synergie.svg")
 
 const BattleText = preload("res://Scripts/Battle/UI/BattleText.gd")
 const PixelScale = preload("res://Scripts/Battle/UI/PixelScale.gd")
@@ -63,19 +59,22 @@ const LEVEL_FILL_TO: PackedColorArray = [
 	Color8(0xFF, 0xB3, 0x01), Color8(0xFE, 0x8E, 0xE0),
 ]
 
-## Chiffre du niveau, en bas à gauche du disque. Le corps est un dégradé, le
-## contour le brun sombre commun à toute l'interface ; seul le LISERÉ suit le
-## niveau, relevé lui aussi sur la référence — jaune jusqu'au niveau 1, puis or
-## pâle, puis rose.
+## Chiffre du niveau, en bas à gauche du disque — SANS plaque derrière : sur
+## `reference_synergy.png` et `synergy.jpg`, le chiffre flotte directement sur
+## le fond, aucune pastille ronde ne l'entoure (`round_synergie.svg` n'était
+## qu'un placeholder du Lot 1, jamais mis à jour avec le reste). Le corps est
+## un dégradé, le contour le brun sombre commun à toute l'interface ; seul le
+## LISERÉ suit le niveau, relevé lui aussi sur la référence — jaune jusqu'au
+## niveau 1, puis or pâle, puis rose.
 ##
 ## La référence étant un JPEG, elle ne permet pas de séparer proprement le corps
 ## du liseré : ces trois teintes sont les couleurs claires dominantes de chaque
 ## pastille. À corriger si l'auteur fournit la planche sans perte.
-const LEVEL_POS := Vector2(2, 17)
-## La plaque est centrée sur l'encre du chiffre, qui commence un quart de corps
-## sous le haut de sa boîte (cf. BattleText).
-const LEVEL_PLATE_POS := Vector2(0, 17)
-const LEVEL_SIZE := 12
+const LEVEL_POS := Vector2(-3, 15)
+## Mesuré sur reference_synergy.png (bbox du chiffre rapportée au diamètre de
+## la spirale, 30 px de design) : nettement plus grand que l'ancien 12, qui
+## rendait le chiffre chétif une fois la plaque retirée.
+const LEVEL_SIZE := 16
 const LEVEL_GRADIENT_FROM := Color8(0x42, 0x07, 0x01)
 const LEVEL_GRADIENT_TO := Color8(0xFF, 0x73, 0x00)
 const LEVEL_INLINE: PackedColorArray = [
@@ -128,10 +127,6 @@ func _ready() -> void:
 	add_child(_progress)
 
 	_refresh_fill()
-
-	var plate := PixelScale.sprite_native(LEVEL_PLATE)
-	plate.position = LEVEL_PLATE_POS
-	add_child(plate)
 
 	var icon := PixelScale.sprite_native(ICON)
 	# Centrage en unités de DESIGN : passer par design_size() pour les deux

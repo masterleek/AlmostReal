@@ -179,7 +179,9 @@ const STATUS_PANEL_POS: Array[Vector2i] = [Vector2i(304, 21), Vector2i(372, 21)]
 const SYNERGY_POS := Vector2(441, 41)
 const SYNERGY_LABEL_POS := Vector2(446, 37)
 const SYNERGY_LABEL_SIZE := 8
-const SYNERGY_LABEL_COLOR := Color8(0xF0, 0x8C, 0x00)
+## Mesurée sur reference_synergy.png (pixel du corps des lettres, hors
+## contour) : un chair pâle, pas l'orange vif de la spirale.
+const SYNERGY_LABEL_COLOR := Color8(0xD8, 0x97, 0x65)
 
 ## Inclinaison des groupes d'interface. Les panneaux ne sont pas posés à
 ## l'horizontale sur la maquette : ils suivent la courbure générale de l'écran.
