@@ -141,7 +141,17 @@ const GLOW_PULSE := 0.28
 
 ## Fondu de l'allumage. La barre ne s'allume pas d'un coup : elle monte quand
 ## l'unité prend la main et retombe quand elle a fini.
-const GLOW_IN := 0.25
+##
+## GLOW_IN est le SEUL des deux à jouer entre deux actions de l'assaut — un
+## changement de camp ne repasse jamais par Side.NONE, `on` (cf. set_side)
+## reste donc vrai tout du long, et GLOW_OUT ne sert qu'à l'extinction
+## complète en fin de combat. Mesuré en jeu (échantillonnage image par image) :
+## à son ancienne valeur (0,25 s), ce fondu durait bien plus longtemps que la
+## pastille d'action qui pivote au même instant (0,08 s) — la barre restait
+## visiblement en train de changer de couleur bien après que la pastille ait
+## fini son animation, ce qui se lisait comme un ralentissement de CETTE
+## dernière alors qu'elle n'y était pour rien.
+const GLOW_IN := 0.1
 const GLOW_OUT := 0.3
 
 ## « PERFECT » est peint lettre par lettre sur la maquette — jaune, blanc, cyan,

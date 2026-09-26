@@ -60,7 +60,7 @@ const LABEL_SHIFT := 7.0
 ## cette silhouette sans qu'il faille un vrai axe Y ni un shader de
 ## perspective. Le contenu ne change QUE pendant ce trait (largeur nulle),
 ## exactement comme sur la planche.
-const FLIP_DURATION := 0.15
+const FLIP_DURATION := 0.08
 
 ## La pointe (9×6) se pose sous la pastille, centrée. Son asset n'a que TROIS
 ## rangées d'aplat — 9 px de large, puis 4, puis 2 — et la PREMIÈRE est cachée
