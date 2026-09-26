@@ -113,9 +113,22 @@ const JUDGEMENT_SIZE := 28
 const JUDGEMENT_OFFSET := 90.0
 const JUDGEMENT_BOX := 160.0
 const JUDGEMENT_Y := 212
-## Durée d'affichage d'un verdict. Assez court pour que deux notes proches ne se
-## chevauchent pas à l'écran.
+## Durée de la MONTÉE (cf. JUDGEMENT_RISE) : le verdict reste donc à l'écran
+## tout ce temps, assez court pour que deux notes proches ne se chevauchent
+## pas à l'écran. La montée ne s'arrête qu'à la toute fin de ce délai, juste
+## avant le fondu de sortie — jamais avant : un TRANS_LINEAR (vitesse
+## constante) plutôt qu'un EASE_OUT, qui ralentissait le mouvement bien avant
+## la fin et donnait l'impression qu'il s'arrêtait tout seul.
 const JUDGEMENT_HOLD := 0.5
+## Apparition en trois temps, chacun plus lent que le précédent : un POP très
+## rapide (fondu d'entrée + réduction depuis 130 %), une ASCENSION continue et
+## RAPIDE (vitesse constante, cf. JUDGEMENT_HOLD) pendant que le verdict reste
+## lisible, puis un fondu de sortie très rapide — la même porte qui se referme
+## vite après avoir été ouverte vite.
+const JUDGEMENT_POP_DURATION := 0.08
+const JUDGEMENT_POP_SCALE := 1.3
+const JUDGEMENT_RISE := 6.0
+const JUDGEMENT_FADE_OUT := 0.1
 
 ## Pulse de frappe. La lueur naît à la TAILLE DE LA NOTE (32 px de design pour
 ## 64 dessinés, soit 0,5) et s'ouvre au-delà en s'effaçant : le geste part du
@@ -260,6 +273,12 @@ func _ready() -> void:
 
 	_judgement = BattleText.make_centered("", JUDGEMENT_BOX, JUDGEMENT_SIZE, Color(1, 1, 1))
 	_judgement.visible = false
+	# Pivot au centre de la boîte (qui contient tout le texte, CENTRÉ dedans par
+	# make_centered) : le pop de _show_judgement grossit/rétrécit sur place, il
+	# ne glisse pas depuis le coin haut-gauche. En unités SURÉCHANTILLONNÉES
+	# (cf. BattleText.SUPERSAMPLE) : pivot_offset se mesure dans l'espace local
+	# du nœud, avant sa propre contre-échelle.
+	_judgement.pivot_offset = Vector2(JUDGEMENT_BOX, JUDGEMENT_SIZE) * BattleText.SUPERSAMPLE / 2.0
 	add_child(_judgement)
 
 	visible = false
@@ -522,14 +541,54 @@ func _show_judgement(judgement: int) -> void:
 		_judgement_tween.kill()
 	BattleText.set_centered_text(_judgement, _judgement_text(judgement))
 	# Du côté opposé aux notes : à gauche quand elles viennent de la droite.
+	# POSITION VISUELLE voulue — c'est elle que l'ancien code (sans pivot)
+	# écrivait telle quelle dans `position`. Ce n'est plus vrai depuis le
+	# pivot centré (cf. _ready) : `position` ne désigne alors le coin
+	# haut-gauche affiché QUE si `scale` vaut (1,1), or il ne vaut jamais ça
+	# ici (même au repos c'est la contre-échelle du suréchantillonnage) — d'où
+	# _rect_pos_for, qui fait la conversion à CHAQUE échelle traversée.
 	var x := CENTRE.x - _direction() * JUDGEMENT_OFFSET - JUDGEMENT_BOX / 2.0
-	_judgement.position = Vector2(roundf(x), JUDGEMENT_Y)
+	var base_pos := Vector2(roundf(x), JUDGEMENT_Y)
+	# Échelle de BASE = la contre-échelle du suréchantillonnage (cf.
+	# BattleText.make) : le pop se multiplie dessus, il ne la remplace pas —
+	# même principe que le pulse de _pulse_glow().
+	var base_scale := Vector2.ONE / float(BattleText.SUPERSAMPLE)
+	var pop_scale := base_scale * JUDGEMENT_POP_SCALE
+
+	_judgement.scale = pop_scale
+	_judgement.position = _rect_pos_for(base_pos, pop_scale)
+	_judgement.modulate.a = 0.0
 	_judgement.visible = true
-	_judgement.modulate.a = 1.0
+
 	_judgement_tween = create_tween()
-	_judgement_tween.tween_interval(JUDGEMENT_HOLD)
-	_judgement_tween.tween_property(_judgement, "modulate:a", 0.0, 0.2)
+	_judgement_tween.tween_property(_judgement, "modulate:a", 1.0, JUDGEMENT_POP_DURATION)
+	_judgement_tween.parallel().tween_property(_judgement, "scale", base_scale, JUDGEMENT_POP_DURATION) \
+		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	# MÊME transition/ease que la ligne au-dessus : `position` doit suivre
+	# `scale` avec la courbe identique pour que la compensation de pivot reste
+	# exacte à chaque image du pop, pas seulement à son arrivée — les deux
+	# tweens interpolent alors la même fraction du trajet à tout instant.
+	_judgement_tween.parallel().tween_property(
+		_judgement, "position", _rect_pos_for(base_pos, base_scale), JUDGEMENT_POP_DURATION
+	).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	# LINÉAIRE, pas de EASE_OUT : celui-ci ralentit le mouvement bien avant la
+	# fin du délai, ce qui donnait l'impression que la montée s'arrêtait toute
+	# seule alors que JUDGEMENT_HOLD n'était pas écoulé. En vitesse constante,
+	# elle ne s'arrête qu'à l'instant précis où le fondu de sortie commence.
+	_judgement_tween.tween_property(
+		_judgement, "position", _rect_pos_for(base_pos + Vector2(0, -JUDGEMENT_RISE), base_scale),
+		JUDGEMENT_HOLD,
+	).set_trans(Tween.TRANS_LINEAR)
+	_judgement_tween.tween_property(_judgement, "modulate:a", 0.0, JUDGEMENT_FADE_OUT)
 	_judgement_tween.tween_callback(func() -> void: _judgement.visible = false)
+
+## Convertit une position VISUELLE voulue (coin haut-gauche affiché à l'écran)
+## en la valeur à écrire dans `position`, compte tenu du pivot centré : la
+## transformation de Godot déplace ce coin de `pivot_offset * (1 - scale)`
+## (en unités suréchantillonnées, celles de `pivot_offset`) dès que `scale`
+## s'écarte de (1,1) — ce qui est TOUJOURS le cas ici.
+func _rect_pos_for(visual_pos: Vector2, scale: Vector2) -> Vector2:
+	return visual_pos - _judgement.pivot_offset * (Vector2.ONE - scale)
 
 func _judgement_text(judgement: int) -> String:
 	match judgement:
