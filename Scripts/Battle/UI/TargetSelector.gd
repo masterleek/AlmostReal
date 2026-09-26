@@ -291,7 +291,7 @@ func _refresh() -> void:
 		# réduit (cf. CommandMenu._place_cursor) : en ajouter un second le
 		# doublerait au même endroit.
 		if _group:
-			_cursors[i].show_above(sprite)
+			_cursors[i].show_above(sprite.position)
 		else:
 			_cursors[i].hide_now()
 	_hold_plate_scale()

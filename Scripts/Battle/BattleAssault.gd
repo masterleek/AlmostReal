@@ -350,7 +350,7 @@ func _resolve(entry: Dictionary) -> void:
 	# tenir le temps de trois notes figerait le personnage bras levé. Le verdict
 	# restant affiché une demi-seconde, il se lit encore au moment de l'impact,
 	# comme sur la maquette.
-	var multiplier := await _run_rhythm(unit, action, ally_acts, sounds)
+	var multiplier := await _run_rhythm(unit, action, targets, ally_acts, sounds)
 	effect["multiplier"] = multiplier
 
 	# Aller au contact, frapper, revenir. Deux actions n'y vont pas : celle qui
@@ -404,7 +404,7 @@ func _resolve(entry: Dictionary) -> void:
 ## RÉDUIT ce qu'elle subit. La barre est la même, la table de conversion non
 ## (cf. BattleRules).
 func _run_rhythm(
-	unit: BattleUnit, action: Dictionary, ally_acts: bool, sounds: Array
+	unit: BattleUnit, action: Dictionary, targets: Array[BattleUnit], ally_acts: bool, sounds: Array
 ) -> float:
 	var sequence := _sequence_of(unit, action)
 	if sequence.is_empty():
@@ -423,9 +423,12 @@ func _run_rhythm(
 		var sprite := _sprite_of(unit) as UnitSprite
 		if sprite != null:
 			sprite.play_sheet(pose)
-	# Le curseur dit QUI joue : pendant la séquence, le joueur a les yeux sur la
-	# barre, et l'unité n'a pas encore bougé.
-	_cursor.show_above(_sprite_of(unit))
+	# Le curseur désigne la CIBLE, pas celui qui joue : pendant la séquence, le
+	# joueur a les yeux sur la barre, et rien à l'écran ne dit plus qui va être
+	# touché — l'unité qui agit, elle, se voit déjà (elle vient de tenir sa
+	# pose). Barycentre des cibles (cf. _centre_of) : une action de groupe n'a
+	# pas de cible unique à désigner.
+	_cursor.show_above(_centre_of(targets))
 	var judgements := await _rhythm.play(
 		sequence, RhythmBar.Side.ALLY if ally_acts else RhythmBar.Side.ENEMY
 	)
