@@ -24,10 +24,11 @@ const CommandMenu = preload("res://Scripts/Battle/UI/CommandMenu.gd")
 
 # ──────────────────────────────────────────────────────────────────────────
 #  DURÉES — des CHOIX, pas des mesures : aucune maquette ne montre l'ouverture.
-#  Seuls les deux délais UNITS_DELAY et HUD_INTERVAL viennent de la demande de
-#  l'auteur (0,5 s au départ) ; il a ensuite demandé que TOUT aille deux fois
-#  plus vite, d'où les valeurs divisées par deux. Les distances ne changent pas :
-#  même trajet, en deux fois moins de temps.
+#  UNITS_DELAY et HUD_INTERVAL viennent de la demande de l'auteur (0,5 s au
+#  départ, divisé par deux pour accélérer TOUT globalement, puis HUD_INTERVAL
+#  reposé explicitement à 0,10 s). Le rebond du HUD et le glissement des
+#  commandes du menu (cf. CommandMenu.ROW_SLIDE) viennent aussi de demandes
+#  explicites.
 # ──────────────────────────────────────────────────────────────────────────
 
 ## Plateforme et combattants : fondu + rotation X de −90° à 0° + échelle de 70 %
@@ -38,16 +39,27 @@ const FLIP_FROM_SCALE := 0.7
 ## Écart entre le début de la plateforme et celui des combattants (demandé).
 const UNITS_DELAY := 0.25
 
-## Blocs du HUD : fondu + chute RAPIDE, un bloc toutes les HUD_INTERVAL (demandé).
+## Blocs du HUD : fondu + chute avec un LÉGER rebond en fin de course (demandé :
+## « plus naturel » qu'un arrêt sec, puis « trop fort » — cf. `_slide_in_bounce`,
+## un dépassement CONTRÔLÉ plutôt que la courbe TRANS_BOUNCE de Godot, trop
+## prononcée à cette échelle). Un bloc toutes les HUD_INTERVAL (demandé) — dès
+## que l'animation d'un bloc démarre, le suivant démarre HUD_INTERVAL plus tard
+## (pas après la FIN de son animation). Durée un peu plus longue que la chute
+## d'origine (0,1 s) : un rebond a besoin d'un peu de place pour se voir, sinon
+## il passe inaperçu (déjà constaté sur ce même genre d'animation, cf. le flip
+## de la plateforme).
 const HUD_FALL := 12.0
-const HUD_FALL_DURATION := 0.1
-const HUD_INTERVAL := 0.25
+const HUD_FALL_DURATION := 0.25
+const HUD_BOUNCE_OVERSHOOT := 3.0
+const HUD_INTERVAL := 0.1
 
 ## Bandes noires : fondu, celle du haut descend à sa place, celle du bas monte.
 const BANDS_SLIDE := 24.0
 const BANDS_DURATION := 0.2
 
 ## Menu : une rangée toutes les MENU_ROW_INTERVAL, chacune en MENU_ROW_FADE.
+## Chaque commande glisse aussi verticalement en apparaissant (demandé) — géré
+## dans CommandMenu.reveal() lui-même, pas ici : cf. CommandMenu.ROW_SLIDE.
 const MENU_ROW_INTERVAL := 0.04
 const MENU_ROW_FADE := 0.06
 
@@ -136,10 +148,15 @@ func play(
 	# simplement la fin du menu (cf. plus bas).
 	for i in hud_blocks.size():
 		for node: CanvasItem in hud_blocks[i]:
-			_slide_in(node, Vector2(0, -HUD_FALL), HUD_FALL_DURATION, i * HUD_INTERVAL)
+			_slide_in_bounce(
+				node, Vector2(0, -HUD_FALL), HUD_FALL_DURATION, i * HUD_INTERVAL,
+				HUD_BOUNCE_OVERSHOOT,
+			)
 	var hud_end := maxi(0, hud_blocks.size() - 1) * HUD_INTERVAL + HUD_FALL_DURATION
 
 	menu.visible = true
+	# Le glissement (vertical, demandé) est sur CHAQUE commande, pas sur le
+	# menu entier — cf. CommandMenu.reveal()/_fade_from_zero.
 	var menu_end: float = menu.reveal(MENU_ROW_INTERVAL, MENU_ROW_FADE, 0.0)
 	# Avec la DERNIÈRE rangée : la légende décrit ce menu, elle n'a rien à dire
 	# tant qu'il n'est pas là.
@@ -216,3 +233,24 @@ func _slide_in(node: CanvasItem, from_offset: Vector2, duration: float, delay: f
 	_tween.tween_property(node, "position", rest, duration) \
 		.set_delay(delay).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 	_fade_in(node, duration, delay)
+
+## Comme `_slide_in`, mais dépasse LÉGÈREMENT sa position de repos avant d'y
+## revenir — un rebond, mais CONTRÔLÉ (`overshoot`, en pixels), pas la courbe
+## TRANS_BOUNCE de Godot (essayée, jugée trop prononcée pour un si petit
+## déplacement). Le dépassement se fait dans le sens du mouvement — pour une
+## chute (`from_offset` vers le haut), ça continue un peu vers le bas avant de
+## remonter à la position finale.
+func _slide_in_bounce(
+	node: CanvasItem, from_offset: Vector2, duration: float, delay: float, overshoot: float,
+) -> void:
+	var rest: Vector2 = node.get("position")
+	node.set("position", rest + from_offset)
+	_fade_in(node, duration, delay)
+
+	var direction := -from_offset.normalized()
+	var fall_duration := duration * 0.7
+	var settle_duration := duration - fall_duration
+	_tween.tween_property(node, "position", rest + direction * overshoot, fall_duration) \
+		.set_delay(delay).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	_tween.tween_property(node, "position", rest, settle_duration) \
+		.set_delay(delay + fall_duration).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)

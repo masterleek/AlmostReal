@@ -440,7 +440,8 @@ func select(index: int) -> void:
 func get_selected_id() -> String:
 	return _entries[_selected]["id"] if _entries.size() > 0 else ""
 
-## Fait apparaître les rangées visibles L'UNE APRÈS L'AUTRE, en fondu : la
+## Fait apparaître les rangées visibles L'UNE APRÈS L'AUTRE, en fondu ET en
+## glissement horizontal depuis la gauche (cf. ROW_SLIDE/_fade_from_zero) : la
 ## première après `delay`, chacune des suivantes `interval` plus tard. Renvoie
 ## l'instant où la dernière a fini d'apparaître.
 ##
@@ -474,12 +475,31 @@ func reveal(interval: float, fade: float, delay: float = 0.0) -> float:
 		# Le curseur arrive AVEC la rangée qu'il désigne, pas avant elle.
 		if i == _selected:
 			_fade_from_zero(_cursor, fade, start)
-	return delay + (rows.size() - 1) * interval + fade
+	# Le glissement (ROW_SLIDE_DURATION) dépasse le fondu — c'est LUI qui finit
+	# le dernier, pas le fondu.
+	return delay + (rows.size() - 1) * interval + maxf(fade, ROW_SLIDE_DURATION)
+
+## Distance du glissement HORIZONTAL de chaque commande à son apparition
+## (choix, comme MENU_ROW_INTERVAL/FADE) : posée décalée vers la gauche, puis
+## rejoint sa position finale vers la droite (demandé). Sur sa PROPRE durée,
+## plus longue que le fondu (`fade`, cf. `_fade_from_zero`) : à la durée du
+## fondu (essayé, jugé imperceptible), le glissement se terminait trop vite
+## pour se voir, même en l'agrandissant.
+const ROW_SLIDE := 24.0
+const ROW_SLIDE_DURATION := 0.18
 
 func _fade_from_zero(node: CanvasItem, fade: float, start: float) -> void:
 	var target := node.modulate.a
 	node.modulate.a = 0.0
 	_reveal_tween.tween_property(node, "modulate:a", target, fade).set_delay(start)
+
+	# get/set par nom, pas `.position` : `node` est un CanvasItem (pastille,
+	# libellé, icône… mêlent Node2D et Control), qui ne déclare pas `position`
+	# lui-même — même contournement que BattleIntro._slide_in.
+	var rest: Vector2 = node.get("position")
+	node.set("position", rest + Vector2(-ROW_SLIDE, 0))
+	_reveal_tween.tween_property(node, "position", rest, ROW_SLIDE_DURATION) \
+		.set_delay(start).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 
 ## Navigation au clavier/manette. `ui_up`/`ui_down` sont les actions natives de
 ## Godot (flèches + croix directionnelle) ; `battle_confirm`/`battle_cancel`
