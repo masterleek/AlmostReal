@@ -317,12 +317,37 @@ pas partir en guerre contre des choix déjà faits et documentés dans ce repo :
   lit les entrées que si son drapeau `active` est vrai : plusieurs listes
   coexisteront (menu racine + liste d'Ekos), et c'est l'appelant qui arbitre
   laquelle a la main — une liste ne se donne jamais le focus d'elle-même.
-- **`godot --path . -- --battle`** ouvre le combat par-dessus le worldmap, avec
-  une vraie capture de fond. Même mécanique que `--map=` (`map_loader.gd`).
-  C'est l'entrée de travail tant que le déclenchement d'un combat en jeu n'est
-  pas conçu.
-- `BattleLauncher` masque le HUD **avant** de capturer le fond, puis le décor
-  **après** : masquer tout avant la capture ne donne qu'une image vide.
+- **`godot --path . -- --battle`** ouvre le combat par-dessus le worldmap. Même
+  mécanique que `--map=` (`map_loader.gd`). C'est l'entrée de travail tant que
+  le déclenchement d'un combat en jeu n'est pas conçu.
+- **Le worldmap reste affiché EN DIRECT derrière le combat**, sous le voile noir
+  à 50 % de `Battle.tscn` (`BackgroundDim`) : `BattleLauncher` ne masque que ses
+  CanvasLayer (son HUD) et le gèle (`PROCESS_MODE_DISABLED`). Il n'y a PLUS de
+  capture d'écran en fond — donc plus de remise à l'échelle du framebuffer, plus
+  de débord à calculer pour le glissement d'assaut. Conséquences : le worldmap ne
+  suit ni le glissement du terrain, ni la secousse, ni le zoom (`CanvasZoom`),
+  qui n'agissent que sur le calque du combat — il se lit comme un plan lointain.
+- **L'OUVERTURE du combat** (`BattleIntro.gd`) : bandes + plateforme + HUD bloc
+  par bloc + menu rangée par rangée, tous ensemble ; seuls les combattants
+  suivent `UNITS_DELAY` après. `finished` attend le plus tardif des trois
+  (combattants/HUD/menu), pas juste la fin du menu.
+  Trois règles la tiennent, à respecter en touchant à `_ready` :
+  - tout l'état de départ (alphas, échelles, positions) est posé SYNCHRONEMENT
+    par `play()` à la fin de `_ready` — sinon une image montre l'écran monté
+    avant qu'il ne s'efface pour entrer ;
+  - `State.INTRO` : le menu reste inactif (`_on_intro_finished` le rend actif et
+    annonce le tour), et `_refresh_unit_visuals` n'écrit aucune modulation — il
+    ferait apparaître les combattants d'un coup avant leur tour ;
+  - la plateforme ET les unités vivent sous `_arena` (pivot au centre de la
+    plateforme), c'est ce qui ANCRE les combattants au sol pendant qu'il se
+    redresse. **`_arena` doit rester à l'identité au repos** : le ciblage, les
+    nombres de dégâts et `BattleAssault` lisent les positions des sprites comme
+    des coordonnées de terrain.
+- **Un bloc du HUD peut mêler Node2D et Control** (la jauge de synergie est un
+  Node2D, son libellé « SYN » un RichTextLabel) : une boucle typée `Node2D` sur
+  ce bloc plante au libellé, sans rien dire à l'écran — la suite de l'animation
+  (le menu, sa réactivation) ne se joue simplement jamais. Typer en `CanvasItem`
+  et passer par `get("position")`/`set("position")`.
 - **`PROCESS_MODE_DISABLED` suspend aussi un `AudioStreamPlayer`**, alors que
   la lecture audio ne passe pas par `_process`. Mesuré : le thème du worldmap
   voit `playing` retomber à `false` et sa position se figer dès l'ouverture du
@@ -524,11 +549,9 @@ pas partir en guerre contre des choix déjà faits et documentés dans ce repo :
   un allié coloré : il faut mesurer le contraste obtenu contre les unités NON
   affectées, pas juger l'effet sur la seule cible.
 - **Une UI « fantôme » dans l'écran de combat est presque toujours un double
-  lancement, pas un bug de rendu.** Le fond du combat est une capture du
-  viewport : si un combat est déjà ouvert au moment où un second se lance, la
-  première interface se retrouve peinte dans le fond du second, assombrie par
-  `background_dim` — d'où des textes figés qui résistent à `queue_redraw()` et
-  réapparaissent dès qu'un libellé raccourcit. Vérifier le nombre d'enfants de
+  lancement, pas un bug de rendu.** Deux combats ouverts empilent deux calques :
+  la première interface reste visible sous le voile du second — d'où des textes
+  figés qui résistent à `queue_redraw()`. Vérifier le nombre d'enfants de
   `get_tree().root` avant de chercher plus loin.
 - **Les maquettes de combat peuvent contenir PLUSIEURS vignettes empilées**
   (`mockup_preparation_select_attack.png` en aligne trois de 480×270 sur un
@@ -720,11 +743,6 @@ pas partir en guerre contre des choix déjà faits et documentés dans ce repo :
   transformation du calque (ou une Camera2D) aurait tout emporté. La bonne
   réponse était un nœud intermédiaire ne contenant QUE ce qui doit glisser.
   Vérifier ce qui reste immobile est aussi instructif que mesurer ce qui bouge.
-- **Déplacer un fond cadré pile sur l'écran découvre son bord.** Le fond de
-  combat est une capture 1920×1080 posée au pixel : le faire glisser laissait du
-  noir d'un côté. Remède : l'agrandir du décalage maximal (ici 12 %) et le
-  recentrer — invisible sur une photo floutée sous un voile, et sans quoi il
-  faudrait renoncer au mouvement.
 - **`tween_method` fige ses bornes à la CONSTRUCTION du tween, pas à son
   exécution.** Une file de plusieurs montées ne peut donc pas lire l'état courant
   pour son point de départ : il faut le suivre dans une variable locale au moment
@@ -827,11 +845,6 @@ pas partir en guerre contre des choix déjà faits et documentés dans ce repo :
   a révélé la confusion. Corollaire : un décalage qui se mesure À L'ÉCRAN
   (position d'une pastille à côté d'une cible) s'applique APRÈS la
   transformation, sinon il grossit avec le zoom.
-- **Un fond cadré pile sur l'écran ne peut suivre qu'un mouvement borné.** Le
-  débord du fond de combat est dimensionné pour les 60 px de l'assaut ; à 111 px
-  de translation son bord entre dans l'image. L'élargir dégraderait le rendu au
-  REPOS pour un mouvement passager — le laisser immobile est à la fois plus sûr
-  et plus juste (un plan lointain bouge moins, c'est du parallaxe).
 - **Le point « pieds » d'une unité n'est PAS le milieu de son dessin.** Les
   ancres de `units.json` alignent les planches d'un même personnage entre elles
   (sur l'ombre), pas sur le centre du corps : mesuré, le dessin de Noah est

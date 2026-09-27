@@ -76,18 +76,19 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 		_open_battle_deferred(0)
 
-# `extra_frames` laisse le temps à la carte d'être réellement rendue avant la
-# capture du fond quand le combat s'ouvre dès le démarrage (tuiles, props et
-# caméra se mettent en place via des call_deferred en cascade, cf.
-# _setup_camera_limits). Inutile quand le joueur déclenche le combat lui-même,
-# la scène tourne alors depuis longtemps.
+# `extra_frames` laisse le temps à la carte de se mettre réellement en place
+# quand le combat s'ouvre dès le démarrage (tuiles, props et caméra se posent
+# via des call_deferred en cascade, cf. _setup_camera_limits) : elle reste
+# affichée derrière le combat, et BattleLauncher la gèle dans l'état où elle
+# est à cet instant. Inutile quand le joueur déclenche le combat lui-même, la
+# scène tourne alors depuis longtemps.
 func _open_battle_deferred(extra_frames: int) -> void:
 	# BattleLauncher met le worldmap en PROCESS_MODE_DISABLED : ce nœud cesse
 	# donc de recevoir des entrées, et un second appui ne peut pas empiler un
 	# deuxième combat.
 	for i in extra_frames:
 		await get_tree().process_frame
-	await preload("res://Scripts/Battle/BattleLauncher.gd").open(self)
+	preload("res://Scripts/Battle/BattleLauncher.gd").open(self)
 
 # Empêche la caméra de dépasser l'étendue réelle du fond d'eau (même rect
 # que WaterReflection, pas une valeur recalculée séparément) : sans ça, la

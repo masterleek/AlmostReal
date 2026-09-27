@@ -2,26 +2,25 @@ extends RefCounted
 
 ## Ouverture d'un combat par-dessus la scène courante.
 ##
-## Le worldmap n'est PAS déchargé : il est simplement gelé et masqué, et la
-## scène de combat est ajoutée à côté. Sortir du combat n'a alors rien à
-## restaurer (position du héros, caméra, tuiles révélées, musique…), là où un
-## change_scene_to_file() obligerait à sérialiser tout cet état pour le
-## reconstruire au retour.
+## Le worldmap n'est PAS déchargé : il est simplement gelé, et la scène de combat
+## est ajoutée à côté. Sortir du combat n'a alors rien à restaurer (position du
+## héros, caméra, tuiles révélées, musique…), là où un change_scene_to_file()
+## obligerait à sérialiser tout cet état pour le reconstruire au retour.
+##
+## IL RESTE AFFICHÉ, EN DIRECT, derrière le combat : c'est son décor qui sert de
+## fond, sous le voile noir de la scène (cf. Battle.tscn, BackgroundDim). Seul
+## son HUD disparaît. Il n'y a plus de capture d'écran — un fond figé à
+## recadrer, remettre à l'échelle du canvas et agrandir pour qu'aucun
+## déplacement n'en découvre le bord.
 
 const BATTLE_SCENE := preload("res://Scenes/Battle.tscn")
 
 ## Instancie le combat au-dessus de `host` (le nœud racine du worldmap).
-## `context` est transmis tel quel à BattleScene.setup() ; la capture du fond y
-## est ajoutée si elle n'y figure pas déjà.
+## `context` est transmis tel quel à BattleScene.setup().
 static func open(host: Node, context: Dictionary = {}) -> CanvasLayer:
-	# L'ordre compte : on masque d'abord le seul HUD (sinon le compteur de hex
-	# et l'indice d'action se retrouvent gravés dans le fond), on capture, et
-	# seulement ensuite on masque le décor. Masquer tout avant la capture — ce
-	# que faisait la première version — ne donne évidemment qu'une image vide.
 	var hidden := _hide_layers(host)
-	if not context.has("background"):
-		context["background"] = await capture_background(host)
-	hidden.append_array(_hide_world(host))
+	# Gelé, pas masqué : il continue d'être dessiné, mais plus rien n'y bouge ni
+	# n'y répond aux entrées — le combat a la main.
 	host.process_mode = Node.PROCESS_MODE_DISABLED
 
 	var battle: CanvasLayer = BATTLE_SCENE.instantiate()
@@ -41,21 +40,9 @@ static func open(host: Node, context: Dictionary = {}) -> CanvasLayer:
 	battle.set_meta("hidden_nodes", hidden)
 	return battle
 
-## Capture l'image affichée pour servir de fond au combat.
-##
-## Deux pièges, tous deux déjà rencontrés sur ce projet :
-##   - il faut attendre RenderingServer.frame_post_draw, sinon on récupère la
-##     frame PRÉCÉDENTE (cf. CLAUDE.md §workflow, point 5) ;
-##   - le HUD du worldmap doit déjà être masqué, sinon le compteur de hex et
-##     l'indice d'action se retrouvent gravés dans le fond du combat.
-static func capture_background(host: Node) -> ImageTexture:
-	await RenderingServer.frame_post_draw
-	return ImageTexture.create_from_image(host.get_viewport().get_texture().get_image())
-
-## Masque les CanvasLayer du worldmap (son HUD). Séparé du reste parce qu'un
-## CanvasLayer se dessine indépendamment de la visibilité de son parent Node2D :
-## masquer la racine ne suffirait pas à faire disparaître le HUD, et il doit
-## l'être AVANT la capture du fond.
+## Masque les CanvasLayer du worldmap (son HUD). Un CanvasLayer se dessine
+## indépendamment de la visibilité de son parent Node2D : c'est lui qu'il faut
+## masquer, le décor restant, lui, affiché.
 static func _hide_layers(host: Node) -> Array[Node]:
 	var hidden: Array[Node] = []
 	for child in host.get_children():
@@ -64,19 +51,10 @@ static func _hide_layers(host: Node) -> Array[Node]:
 			hidden.append(child)
 	return hidden
 
-## Masque le décor du worldmap, une fois le fond capturé.
-##
-## Les listes renvoyées par les deux fonctions ne contiennent que les nœuds
-## RÉELLEMENT masqués, pour que la sortie de combat ne réaffiche pas quelque
-## chose que le jeu avait de toute façon caché avant le combat.
-static func _hide_world(host: Node) -> Array[Node]:
-	var hidden: Array[Node] = []
-	if host is CanvasItem and host.visible:
-		host.visible = false
-		hidden.append(host)
-	return hidden
-
 ## Ferme le combat et rend la main au worldmap dans l'état où il était.
+##
+## La liste ne contient que les nœuds RÉELLEMENT masqués à l'ouverture, pour ne
+## pas réafficher quelque chose que le jeu avait de toute façon caché avant.
 static func close(battle: CanvasLayer) -> void:
 	var host: Node = battle.get_meta("worldmap_host")
 	host.process_mode = Node.PROCESS_MODE_INHERIT

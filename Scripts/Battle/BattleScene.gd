@@ -32,6 +32,7 @@ const BattleAssault = preload("res://Scripts/Battle/BattleAssault.gd")
 const RhythmBar = preload("res://Scripts/Battle/UI/RhythmBar.gd")
 const SynergyMeter = preload("res://Scripts/Battle/SynergyMeter.gd")
 const ActionBanner = preload("res://Scripts/Battle/UI/ActionBanner.gd")
+const BattleIntro = preload("res://Scripts/Battle/BattleIntro.gd")
 const BattleData = preload("res://Scripts/Battle/BattleData.gd")
 const BattleText = preload("res://Scripts/Battle/UI/BattleText.gd")
 const PixelScale = preload("res://Scripts/Battle/UI/PixelScale.gd")
@@ -93,7 +94,7 @@ const STAGE_SCALE := 4
 const DARK_LINE_TOP := Vector2(0, -64)
 const DARK_LINE_BOTTOM := Vector2(0, 224)
 
-## DÉPLACEMENT DU TERRAIN PENDANT L'ASSAUT. Le décor, les combattants et le fond
+## DÉPLACEMENT DU TERRAIN PENDANT L'ASSAUT. Le décor et les combattants
 ## glissent vers le camp qui se fait attaquer, pendant que le HUD, la barre de
 ## rythme et les bandes noires restent en place. Mesuré entre les vignettes de
 ## `mockup_assault_allies.jpg` et `..._ennemies.jpg` : 60 px, purement
@@ -124,12 +125,6 @@ const FOCUS_CENTRE := Vector2(240, 135)
 ## n'est connue que par ses pieds : ce relèvement les remonte au buste.
 const FOCUS_BODY_RISE := 40
 
-## Débord du fond capturé. Il est cadré pile sur l'écran ; le déplacer
-## découvrirait du noir sur un bord, d'où cet agrandissement qui couvre le
-## décalage des deux côtés. Sur une photo floutée sous un voile sombre, le
-## recadrage de 12 % ne se voit pas.
-const BACKGROUND_OVERSCAN := (float(DESIGN_SIZE.x) + 2.0 * FIELD_SHIFT) / float(DESIGN_SIZE.x)
-
 ## PENDANT L'ASSAUT, les deux bandes se resserrent sur l'action.
 ##
 ## La basse REMONTE pour dégager la barre de rythme : 48 px, mesuré entre
@@ -153,6 +148,9 @@ const DARK_LINE_SLIDE := 0.25
 ## chevauchement est voulu, il évite une couture visible au centre.
 const PLATFORM_LEFT := Vector2(41, 130)
 const PLATFORM_RIGHT := Vector2(239, 130)
+## Centre de la plateforme entière (x 41..439, y 130..196) : c'est autour de ce
+## point qu'elle se redresse à l'ouverture du combat (cf. BattleIntro, _arena).
+const ARENA_PIVOT := Vector2(240, 163)
 
 ## Emplacements de combat : point « pieds » de chaque unité (cf. UnitSprite).
 ## Décrire un emplacement par un point au sol plutôt que par le coin de la
@@ -267,9 +265,8 @@ const DESCRIPTION_POS := Vector2(270, 145)
 ##
 ## C'est le STAGE qui bouge, pas le calque : celui-ci appartient déjà à
 ## CanvasZoom, qui écrit son `offset` pour zoomer autour du curseur (deux
-## systèmes sur la même propriété se marcheraient dessus). Conséquence assumée :
-## le fond capturé du worldmap, qui vit HORS du Stage (cf. §1.2 du plan), ne
-## tremble pas — à cette amplitude, c'est invisible.
+## systèmes sur la même propriété se marcheraient dessus). Le worldmap visible
+## derrière le combat, lui, ne tremble pas — il n'est même pas dans ce calque.
 const SHAKE_AMPLITUDE := 2.0
 const SHAKE_DURATION := 0.25
 ## Nombre d'allers-retours sur la durée. Une oscillation déterministe plutôt
@@ -352,7 +349,8 @@ const GROUP_PILL_RISE := 14
 const DEFAULT_ENEMIES: PackedStringArray = ["cactoon", "cactoon", "cactoon"]
 const DEFAULT_ALLIES: PackedStringArray = ["noah", "iris"]
 
-@onready var background: Sprite2D = $Background
+## Voile noir posé sur le worldmap, qui reste affiché EN DIRECT derrière le
+## combat (cf. BattleLauncher) : il n'y a plus de fond capturé.
 @onready var background_dim: ColorRect = $BackgroundDim
 @onready var stage: Node2D = $Stage
 
@@ -360,9 +358,10 @@ const DEFAULT_ALLIES: PackedStringArray = ["noah", "iris"]
 ## courant — il faut pouvoir y revenir sur « Back », et la pastille de l'action
 ## retenue reste affichée à côté de la cible : c'est le drapeau `active` de
 ## chaque composant, arbitré ici, qui décide lequel écoute.
+## INTRO : l'ouverture se joue (cf. BattleIntro) ; personne n'a encore la main.
 ## FINISHED : le combat est joué. Plus aucun choix n'est offert — l'écran tient
 ## la célébration ou le « Game Over », et n'attend qu'une validation.
-enum State { MENU, SUBLIST, TARGETING, ASSAULT, FINISHED }
+enum State { INTRO, MENU, SUBLIST, TARGETING, ASSAULT, FINISHED }
 
 ## Émis quand tous les alliés vivants ont retenu une action : la phase de
 ## préparation est finie et l'assaut commence. Porte les actions dans l'ordre
@@ -380,7 +379,7 @@ var _enemies: PackedStringArray = DEFAULT_ENEMIES
 var _allies: PackedStringArray = DEFAULT_ALLIES
 var _status_panels: Array[UnitStatusPanel] = []
 var _menu: CommandMenu
-var _state: State = State.MENU
+var _state: State = State.INTRO
 ## Les sprites d'ennemis sont CONSERVÉS : le ciblage les met en surbrillance
 ## et s'ancre sur eux (cf. TargetSelector). Les états de combat correspondants
 ## vivent en parallèle, dans le même ordre.
@@ -399,15 +398,23 @@ var _synergy := SynergyMeter.new()
 var _synergy_gauge: SynergyGauge
 ## Terrain déplaçable : décor, combattants et effets (cf. _build_field).
 var _field: Node2D
+## Plateforme + combattants, pivot au centre de la plateforme (ARENA_PIVOT). Ne
+## sert qu'à l'ouverture, qui la redresse : AU REPOS ELLE RESTE À L'IDENTITÉ,
+## sans quoi les pieds des unités ne seraient plus en coordonnées de terrain
+## (lues telles quelles par le ciblage, les nombres de dégâts, BattleAssault).
+var _arena: Node2D
+## Porteur décalé de `-ARENA_PIVOT` sous `_arena` : on y ajoute en coordonnées
+## de terrain (cf. _pivot_group).
+var _arena_holder: Node2D
+var _platform_halves: Array[CanvasItem] = []
+var _synergy_label: RichTextLabel
+var _intro: BattleIntro
 ## Vrai tant que le cadrage de préparation est en place. Sert à savoir si un
 ## déplacement du curseur de ciblage doit refaire suivre la vue : une attaque
 ## ordinaire ne cadre rien, seul le choix d'un Eko ouvre cette séquence.
 ## Allié dont le tour a déjà été annoncé à haute voix (cf. _announce_turn).
 var _announced_ally := -1
 var _framing := false
-## Pose d'origine du fond capturé, relevée au montage plutôt que recalculée :
-## `_shift_field` la reprend pour le faire glisser avec le terrain.
-var _background_home := Vector2.ZERO
 var _field_tween: Tween
 ## Bande noire du bas, gardée sous la main : elle remonte pendant l'assaut.
 var _dark_bottom: Sprite2D
@@ -454,7 +461,6 @@ var _legend_cancel_label: RichTextLabel
 ## Le groupe incliné de la légende. Masqué en bloc pendant l'assaut : aucune
 ## touche n'y répond, une invite affichée serait un mensonge.
 var _legend: Node2D
-var _pending_background: Texture2D
 ## Groupe incliné du HUD (blocs d'état + synergie), gardé pour le masquer d'un
 ## bloc à la fin du combat.
 var _hud: Node2D
@@ -478,8 +484,6 @@ var _sfx_cancel: AudioStreamPlayer
 ## composition par défaut sinon — c'est ce qui rend la scène lançable seule
 ## pour itérer dessus, sans scaffolding de debug à retirer ensuite.
 func setup(context: Dictionary) -> void:
-	if context.has("background"):
-		_pending_background = context["background"]
 	if context.has("enemies"):
 		_enemies = context["enemies"]
 	if context.has("allies"):
@@ -487,11 +491,11 @@ func setup(context: Dictionary) -> void:
 
 func _ready() -> void:
 	stage.scale = Vector2(STAGE_SCALE, STAGE_SCALE)
-	# Zoom manuel du calque entier (fond compris), mêmes gestes que sur le
-	# worldmap. Posé sur la scène plutôt que sur le Stage pour que le fond
-	# capturé suive : c'est l'écran qu'on grossit, pas seulement le décor.
+	# Zoom manuel du calque entier (voile compris), mêmes gestes que sur le
+	# worldmap. Le worldmap visible derrière n'est PAS dans ce calque : il ne
+	# grossit pas avec lui.
 	add_child(CanvasZoom.new())
-	_setup_background()
+	background_dim.size = Vector2(DESIGN_SIZE * STAGE_SCALE)
 	_build_field()
 	_build_decor()
 	_build_units()
@@ -500,40 +504,35 @@ func _ready() -> void:
 	_build_targeting()
 	_build_audio()
 	_build_hud()
-	# Le premier allié n'entre pas par `_open_root_menu` : son menu est monté
-	# avec le HUD. Son tour s'annonce donc ici, une fois l'audio en place.
-	_announce_turn()
+	_play_intro()
 
-func _setup_background() -> void:
-	background_dim.size = Vector2(DESIGN_SIZE * STAGE_SCALE)
-	if _pending_background == null:
-		# Lancement autonome : pas de worldmap derrière, on assume un fond uni
-		# plutôt que d'afficher un cadre vide.
-		background.visible = false
-		return
-	background.texture = _pending_background
-	background.visible = true
-	# La capture fait la taille du FRAMEBUFFER (la fenêtre), pas celle de
-	# l'espace de dessin : avec `stretch/mode = canvas_items`, le canvas fait
-	# toujours 1920×1080 alors que la fenêtre peut faire n'importe quoi (1676×942
-	# dans la vue intégrée de l'éditeur, par exemple). Posée à l'échelle 1, la
-	# capture ne couvrait donc qu'un coin du canvas — le fond paraissait cadré
-	# trop serré. On la remet à l'échelle du canvas.
-	# Agrandi au-delà du cadre (cf. BACKGROUND_OVERSCAN) et recentré, pour que le
-	# déplacement de terrain ne découvre jamais son bord.
-	background.scale = (
-		Vector2(DESIGN_SIZE * STAGE_SCALE) / _pending_background.get_size()
-		* BACKGROUND_OVERSCAN
+## L'OUVERTURE, lancée sans être attendue : `play()` pose tout l'état de départ
+## avant sa première attente, donc dans cette même image — aucune n'affiche
+## l'écran monté avant qu'il ne s'efface pour entrer. Le menu reste inactif
+## jusqu'à la fin (cf. _on_intro_finished).
+func _play_intro() -> void:
+	_intro = BattleIntro.new()
+	add_child(_intro)
+	_intro.finished.connect(_on_intro_finished)
+	var units: Array[Node2D] = []
+	units.append_array(_enemy_sprites)
+	units.append_array(_ally_sprites)
+	var hud_blocks: Array = []
+	for panel in _status_panels:
+		hud_blocks.append([panel])
+	hud_blocks.append([_synergy_gauge, _synergy_label])
+	_intro.play(
+		_arena, _platform_halves, units, _dark_top, _dark_bottom, hud_blocks, _menu, _legend,
 	)
-	background.position = -Vector2(DESIGN_SIZE * STAGE_SCALE) * (BACKGROUND_OVERSCAN - 1.0) / 2.0
-	# Relevée ici et pas recalculée ailleurs : `_shift_field` la reprend telle
-	# quelle pour faire glisser le fond avec le terrain.
-	_background_home = background.position
-	# Rééchantillonnage non entier (1676 → 1920) : le filtrage linéaire donne un
-	# fond propre, là où le "nearest" hérité du projet doublerait irrégulièrement
-	# une colonne sur sept. C'est une photo floutée derrière un voile noir, pas
-	# de la pixel-art à préserver.
-	background.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+
+## L'ouverture est jouée : le premier allié prend la main. Son tour s'annonce
+## ICI et pas au montage — sa voix accompagne l'instant où le menu répond, pas
+## un écran encore vide. (Il n'entre pas par `_open_root_menu` : son menu est
+## monté avec le HUD.)
+func _on_intro_finished() -> void:
+	_state = State.MENU
+	_menu.active = true
+	_announce_turn()
 
 ## TERRAIN : tout ce qui se déplace pendant l'assaut. Le sol, les combattants,
 ## les nombres de dégâts, le ciblage — mais ni le HUD, ni la barre de rythme, ni
@@ -541,9 +540,16 @@ func _setup_background() -> void:
 ## maquettes d'assaut, où le HUD ne bouge pas d'un pixel).
 ##
 ## Premier enfant du Stage : tout ce qui est monté après le recouvre.
+##
+## Le sol et les combattants y passent par `_arena` (cf. sa déclaration), les
+## effets et le ciblage directement : ils n'ont pas à se redresser à
+## l'ouverture, et tant que `_arena` est à l'identité les deux repères sont les
+## mêmes.
 func _build_field() -> void:
 	_field = Node2D.new()
 	stage.add_child(_field)
+	_arena_holder = _pivot_group(_field, ARENA_PIVOT, 0.0)
+	_arena = _arena_holder.get_parent()
 
 ## Le SOL seulement. Les bandes noires, elles, sont montées après les
 ## combattants (cf. _build_dark_lines) : elles passent DEVANT eux.
@@ -554,15 +560,18 @@ func _build_decor() -> void:
 		half.centered = false
 		half.flip_h = entry[1]
 		half.position = entry[0]
-		_field.add_child(half)
+		_arena_holder.add_child(half)
+		_platform_halves.append(half)
 
 func _build_units() -> void:
 	# Un conteneur en Y-sort plutôt que des z_index posés à la main : la
 	# profondeur découle alors du point « pieds » de chaque unité, donc des
 	# données d'emplacement, et reste juste si on ajoute ou déplace une unité.
+	# Sous `_arena`, avec la plateforme : c'est ce qui ancre les combattants au
+	# sol pendant qu'il se redresse à l'ouverture.
 	var units := Node2D.new()
 	units.y_sort_enabled = true
-	_field.add_child(units)
+	_arena_holder.add_child(units)
 
 	# Les nombres de dégâts vivent DANS leur propre nœud, posé après le
 	# conteneur d'unités : celui-ci trie ses enfants par ordonnée, et un nombre
@@ -699,18 +708,11 @@ func _refresh_synergy() -> void:
 ## allié agit (le terrain part à droite, la caméra se tourne vers les ennemis),
 ## −1 quand c'est un ennemi, 0 pour revenir au centre.
 ##
-## Le fond capturé suit le mouvement : sur les maquettes, les hexagones se
-## déplacent avec le décor. Il est agrandi d'autant (cf. BACKGROUND_OVERSCAN)
-## pour ne jamais découvrir son bord.
+## Le worldmap visible derrière le combat ne suit pas : il n'est pas dans ce
+## calque, et il se lit comme un plan lointain (cf. _move_field).
 func _shift_field(direction: int) -> void:
 	var x := float(direction * FIELD_SHIFT)
 	_move_field(1.0, Vector2(x, 0.0), FIELD_SLIDE)
-	if background.visible:
-		# Le fond suit CE mouvement-là : 60 px, c'est ce pour quoi son débord a
-		# été calculé (cf. BACKGROUND_OVERSCAN). Un point d'écran va en `p + 4·x`.
-		_field_tween.tween_property(
-			background, "position:x", _background_home.x + x * STAGE_SCALE, FIELD_SLIDE
-		)
 
 ## Cadre la vue sur `point` (en unités de terrain), agrandie de FOCUS_ZOOM.
 func _focus_field(point: Vector2) -> void:
@@ -729,15 +731,8 @@ func _reset_framing() -> void:
 ## Transforme le TERRAIN — décor, combattants, effets, ciblage — sans toucher au
 ## HUD, au menu ni aux bandes noires.
 ##
-## LE FOND CAPTURÉ NE SUIT PAS. Il est cadré pile sur l'écran, et son débord
-## (BACKGROUND_OVERSCAN) a été calculé pour les 60 px du glissement d'assaut, pas
-## pour les 250 que peut demander un cadrage. Mesuré : à zoom 1,25 et 111 px de
-## translation, son bord gauche entre dans l'image et laisse une bande noire.
-## L'élargir assez couvrirait le cas, au prix d'un fond deux fois plus agrandi
-## EN PERMANENCE, donc plus flou au repos — un dégât durable pour un mouvement
-## passager. Le laisser immobile se lit d'ailleurs comme du parallaxe : un plan
-## lointain bouge moins que le premier plan. C'est `_shift_field` qui le fait
-## suivre, lui, et il reste dans le budget du débord.
+## Le worldmap derrière le combat ne suit pas : immobile, il se lit comme un
+## plan lointain, qui bouge moins que le premier plan.
 func _move_field(zoom: float, at: Vector2, duration: float) -> void:
 	if _field_tween != null and _field_tween.is_valid():
 		_field_tween.kill()
@@ -789,18 +784,25 @@ func _build_targeting() -> void:
 	_target_selector.confirmed.connect(_on_target_confirmed)
 	_target_selector.cancelled.connect(_on_target_cancelled)
 
-## Renvoie le nœud auquel ajouter des enfants EN COORDONNÉES ABSOLUES pour
-## qu'ils se retrouvent inclinés de `degrees` autour de `pivot`.
+## Groupe d'interface incliné de `degrees` autour de `pivot`, posé sur le Stage
+## (cf. _pivot_group).
+func _tilted_group(pivot: Vector2, degrees: float) -> Node2D:
+	return _pivot_group(stage, pivot, degrees)
+
+## Renvoie le nœud auquel ajouter des enfants EN COORDONNÉES ABSOLUES (celles
+## de `parent`) pour qu'ils se transforment autour de `pivot` : incliné de
+## `degrees` d'emblée, et toute échelle posée ensuite sur le parent du porteur
+## s'appliquera autour de ce même point.
 ##
 ## Le double nœud (un parent posé sur le pivot, un enfant décalé de l'inverse)
 ## évite de devoir réécrire en relatif toutes les positions relevées sur la
-## maquette : elles restent lisibles telles quelles, et l'inclinaison se règle
-## à un seul endroit.
-func _tilted_group(pivot: Vector2, degrees: float) -> Node2D:
+## maquette : elles restent lisibles telles quelles, et la transformation se
+## règle à un seul endroit.
+func _pivot_group(parent: Node, pivot: Vector2, degrees: float) -> Node2D:
 	var group := Node2D.new()
 	group.position = pivot
 	group.rotation_degrees = degrees
-	stage.add_child(group)
+	parent.add_child(group)
 	var holder := Node2D.new()
 	holder.position = -pivot
 	group.add_child(holder)
@@ -823,11 +825,11 @@ func _build_hud() -> void:
 	hud.add_child(_synergy_gauge)
 	_refresh_synergy()
 
-	var synergy_label: RichTextLabel = BattleText.make(
-		"SYN", SYNERGY_LABEL_SIZE, SYNERGY_LABEL_COLOR
-	)
-	synergy_label.position = SYNERGY_LABEL_POS
-	hud.add_child(synergy_label)
+	# Gardé à part : il tombe AVEC la jauge à l'ouverture (cf. _play_intro), dont
+	# il est le frère et pas l'enfant.
+	_synergy_label = BattleText.make("SYN", SYNERGY_LABEL_SIZE, SYNERGY_LABEL_COLOR)
+	_synergy_label.position = SYNERGY_LABEL_POS
+	hud.add_child(_synergy_label)
 
 	_menu = CommandMenu.new()
 	var menu_holder := _tilted_group(MENU_PIVOT, MENU_TILT_DEG)
@@ -841,7 +843,10 @@ func _build_hud() -> void:
 	# Sélection par défaut sur la PREMIÈRE entrée (Attack). Le mockup fige
 	# « Eko » parce qu'il illustre un état de navigation, pas l'état d'entrée.
 	_menu.setup(_root_entries(), 0)
-	_menu.active = true
+	# PAS ENCORE ACTIF : l'ouverture le fait apparaître rangée par rangée, et un
+	# déplacement de sélection pendant ce temps relancerait `_refresh`, qui
+	# rétablirait d'un coup les rangées pas encore apparues (cf. _on_intro_finished).
+	_menu.active = false
 	_menu.selection_changed.connect(_on_menu_moved)
 	_menu.confirmed.connect(_on_menu_confirmed)
 	_menu.cancelled.connect(_on_menu_cancelled)
@@ -1348,6 +1353,11 @@ func _set_units_dimmed(dim_enemies: bool, dim_allies: bool) -> void:
 ## cours, portée par la phase d'assaut (cf. BattleAssault._bury_the_dead). La
 ## réécrire à chaque rafraîchissement la ferait ressusciter en plein fondu.
 func _refresh_unit_visuals() -> void:
+	# L'ouverture fait entrer les combattants en fondu (cf. BattleIntro) : une
+	# modulation réécrite ici les ferait apparaître d'un coup avant leur tour.
+	if _state == State.INTRO:
+		_refresh_ally_poses()
+		return
 	var faded := Color(1.0, 1.0, 1.0, INACTIVE_UNIT_ALPHA)
 	for i in mini(_enemy_sprites.size(), _enemy_units.size()):
 		if not _enemy_units[i].is_alive():
@@ -1694,7 +1704,7 @@ func _play_win(sprite: UnitSprite, unit_id: String) -> void:
 ## Écran de défaite. Le voile et le libellé sont montés DANS le Stage et après
 ## tout le reste : un CanvasItem se dessine dans l'ordre de l'arbre, ils
 ## recouvrent donc décor, combattants et bandes noires sans avoir à toucher au
-## z-index de qui que ce soit. Le fond capturé, posé hors du Stage, passe
+## z-index de qui que ce soit. Le voile de fond, posé hors du Stage, passe
 ## dessous pour la même raison.
 func _show_game_over() -> void:
 	var veil := ColorRect.new()

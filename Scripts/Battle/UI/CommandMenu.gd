@@ -266,6 +266,7 @@ var _focused: bool = false
 var _focus_position: Vector2 = Vector2.ZERO
 var _shine: TextureRect
 var _cursor: Sprite2D
+var _reveal_tween: Tween
 
 ## Le curseur se montre-t-il ? Il se tait pendant un ciblage de GROUPE : là-bas
 ## chaque cible porte le sien (cf. TargetSelector), et celui de la pastille en
@@ -286,6 +287,8 @@ var cursor_visible: bool = true:
 ##               (facultatif, -1 = rien). Les deux ne coexistent jamais : un
 ##               objet ne coûte pas de PA, un Eko n'a pas de réserve.
 func setup(entries: Array[Dictionary], selected: int = 0) -> void:
+	if _reveal_tween != null and _reveal_tween.is_valid():
+		_reveal_tween.kill()
 	# remove_child AVANT queue_free : la libération est différée à la fin de
 	# la frame, et les anciens nœuds resteraient donc affichés par-dessus les
 	# nouveaux le temps d'une image quand on rouvre une liste.
@@ -436,6 +439,44 @@ func select(index: int) -> void:
 
 func get_selected_id() -> String:
 	return _entries[_selected]["id"] if _entries.size() > 0 else ""
+
+## Fait apparaître les rangées visibles L'UNE APRÈS L'AUTRE, en fondu : la
+## première après `delay`, chacune des suivantes `interval` plus tard. Renvoie
+## l'instant où la dernière a fini d'apparaître.
+##
+## Chaque rangée retrouve SON opacité — fondu de bord compris (cf. _row_alpha),
+## pas 1 : elle est relevée sur ce que `_refresh` vient de poser, juste avant la
+## mise à zéro. Ça ne vaut que si rien ne rappelle `_refresh` pendant
+## l'animation : c'est à l'appelant de garder le menu inactif jusque-là.
+##
+## Toutes les rangées passent à zéro TOUT DE SUITE, pas au début de leur fondu :
+## une rangée qui attend son tour ne doit pas être affichée pleine en attendant.
+func reveal(interval: float, fade: float, delay: float = 0.0) -> float:
+	if _reveal_tween != null and _reveal_tween.is_valid():
+		_reveal_tween.kill()
+	var rows: Array[int] = []
+	for i in _entries.size():
+		if _is_visible_row(i):
+			rows.append(i)
+	if rows.is_empty():
+		return delay
+	_reveal_tween = create_tween().set_parallel(true)
+	for order in rows.size():
+		var i := rows[order]
+		var start := delay + order * interval
+		for key: String in ["pill", "label", "icon", "amount", "dots"]:
+			var node: CanvasItem = _entries[i].get(key)
+			if node != null:
+				_fade_from_zero(node, fade, start)
+		# Le curseur arrive AVEC la rangée qu'il désigne, pas avant elle.
+		if i == _selected:
+			_fade_from_zero(_cursor, fade, start)
+	return delay + (rows.size() - 1) * interval + fade
+
+func _fade_from_zero(node: CanvasItem, fade: float, start: float) -> void:
+	var target := node.modulate.a
+	node.modulate.a = 0.0
+	_reveal_tween.tween_property(node, "modulate:a", target, fade).set_delay(start)
 
 ## Navigation au clavier/manette. `ui_up`/`ui_down` sont les actions natives de
 ## Godot (flèches + croix directionnelle) ; `battle_confirm`/`battle_cancel`
