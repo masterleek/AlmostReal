@@ -343,6 +343,20 @@ pas partir en guerre contre des choix déjà faits et documentés dans ce repo :
     redresse. **`_arena` doit rester à l'identité au repos** : le ciblage, les
     nombres de dégâts et `BattleAssault` lisent les positions des sprites comme
     des coordonnées de terrain.
+  - AVANT la moindre attente (donc AVANT `_close_iris`, cf. plus bas), tout est
+    déjà caché (alpha 0) à la main — pas seulement posé par `_flip_in`/
+    `_slide_in`/`menu.hide_rows()`, qui ne tournent qu'APRÈS l'attente. Sinon
+    (constaté) le combat entier s'affiche déjà, par-dessus le voile encore
+    ouvert, pendant que l'iris se referme.
+- **Le voile (`BackgroundDim`) se referme en cercle** avant le reste de
+  l'ouverture (`BattleIntro._close_iris`, `Shaders/battle_intro_iris.gdshader`) :
+  un rayon animé de plus grand que l'écran jusqu'à 0, centré sur le Hero du
+  worldmap (position ÉCRAN calculée par `BattleLauncher.open`, transmise en
+  `intro_focus` — pas forcément `_arena`, cf. BattleIntro.play, `focus`).
+  **Un ColorRect NE pré-remplit PAS `COLOR`** avec sa propre `color` pour un
+  shader personnalisé (contrairement à un Polygon2D, cf. `reveal_shadow_mask.gdshader`) :
+  sans le uniform `dim_color` posé explicitement dans le shader, rien ne
+  s'assombrissait, sans la moindre erreur nulle part.
 - **Un bloc du HUD peut mêler Node2D et Control** (la jauge de synergie est un
   Node2D, son libellé « SYN » un RichTextLabel) : une boucle typée `Node2D` sur
   ce bloc plante au libellé, sans rien dire à l'écran — la suite de l'animation

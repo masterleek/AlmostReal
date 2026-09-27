@@ -446,8 +446,11 @@ func get_selected_id() -> String:
 ##
 ## Chaque rangée retrouve SON opacité — fondu de bord compris (cf. _row_alpha),
 ## pas 1 : elle est relevée sur ce que `_refresh` vient de poser, juste avant la
-## mise à zéro. Ça ne vaut que si rien ne rappelle `_refresh` pendant
-## l'animation : c'est à l'appelant de garder le menu inactif jusque-là.
+## mise à zéro. ÇA NE VAUT QUE SI RIEN N'A DÉJÀ TOUCHÉ CET ALPHA avant l'appel
+## (ni `_refresh` entre-temps, ni un alpha posé à la main pour cacher le menu :
+## constaté, une rangée déjà à 0 fait lire CETTE valeur comme cible, et
+## l'animation va alors de 0 à 0). Pour cacher le menu avant `reveal()`, jouer
+## sur `visible`, jamais sur l'alpha des rangées.
 ##
 ## Toutes les rangées passent à zéro TOUT DE SUITE, pas au début de leur fondu :
 ## une rangée qui attend son tour ne doit pas être affichée pleine en attendant.

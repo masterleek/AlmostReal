@@ -16,15 +16,30 @@ extends RefCounted
 const BATTLE_SCENE := preload("res://Scenes/Battle.tscn")
 
 ## Instancie le combat au-dessus de `host` (le nœud racine du worldmap).
-## `context` est transmis tel quel à BattleScene.setup().
+## `context` est transmis à BattleScene.setup(), complété ici de
+## `intro_focus` (sauf s'il y figure déjà) : la position ÉCRAN du Hero du
+## worldmap, sur laquelle l'iris d'ouverture se referme (cf. BattleIntro).
+## Relevée AVANT de geler `host`, donc telle qu'elle était encore à l'instant
+## du déclenchement — figer `host` ne change de toute façon pas une position
+## déjà lue, mais autant le faire avant par clarté.
 static func open(host: Node, context: Dictionary = {}) -> CanvasLayer:
+	var full_context := context.duplicate()
+	if not full_context.has("intro_focus"):
+		var hero := host.get_node_or_null("Hero")
+		if hero is Node2D:
+			# Même conversion monde -> écran que WorldmapCursor.world_to_screen,
+			# tient compte de la position ET du zoom de la caméra.
+			full_context["intro_focus"] = (
+				host.get_viewport().get_canvas_transform() * (hero as Node2D).global_position
+			)
+
 	var hidden := _hide_layers(host)
 	# Gelé, pas masqué : il continue d'être dessiné, mais plus rien n'y bouge ni
 	# n'y répond aux entrées — le combat a la main.
 	host.process_mode = Node.PROCESS_MODE_DISABLED
 
 	var battle: CanvasLayer = BATTLE_SCENE.instantiate()
-	battle.setup(context)
+	battle.setup(full_context)
 	# Le combat ne sait pas ce qui l'a ouvert : il annonce que le joueur a fermé
 	# son écran de fin, et c'est ici qu'on sait comment rendre la main. Branché
 	# AVANT l'entrée dans l'arbre — `_ready()` peut déjà tout décider si le

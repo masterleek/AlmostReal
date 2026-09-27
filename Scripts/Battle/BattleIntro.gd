@@ -3,8 +3,10 @@ extends Node
 ## Ouverture du combat : chaque élément de l'écran entre à son tour, au lieu que
 ## tout apparaisse d'un bloc dans son état final.
 ##
-## À t = 0 : bandes noires, plateforme, blocs du HUD (alliés + synergie) et
-## menu de commandes démarrent TOUS ENSEMBLE. Seuls les combattants suivent,
+## D'ABORD le voile (BackgroundDim) se referme en cercle sur la plateforme —
+## cf. `_close_iris`, TERMINÉ avant la suite (pas de parallélisme avec le
+## reste). PUIS, à t = 0 : bandes noires, plateforme, blocs du HUD (alliés +
+## synergie) et menu de commandes démarrent TOUS ENSEMBLE. Seuls les combattants suivent,
 ## UNITS_DELAY plus tard, le temps que la plateforme les porte. Le joueur ne
 ## reçoit la main qu'à la toute fin (`finished`) — le plus tardif des trois
 ## (combattants, HUD, menu), pas simplement la fin du menu — c'est à l'appelant
@@ -49,6 +51,14 @@ const BANDS_DURATION := 0.2
 const MENU_ROW_INTERVAL := 0.04
 const MENU_ROW_FADE := 0.06
 
+## Voile (BackgroundDim) : se referme en cercle sur la plateforme AVANT tout
+## le reste (cf. battle_intro_iris.gdshader) — le monde se resserre sur le
+## point de combat, qui n'apparaît qu'une fois le voile refermé. Le rayon de
+## départ doit dépasser la diagonale de l'écran (rien d'assombri au repos) ;
+## 1600 le fait largement pour un écran 1920x1080 recentré sur la plateforme.
+const IRIS_START_RADIUS := 1600.0
+const IRIS_DURATION := 0.5
+
 ## L'ouverture est jouée : le joueur peut prendre la main.
 signal finished
 
@@ -56,6 +66,14 @@ var _tween: Tween
 
 ## Joue l'ouverture.
 ##
+## - `veil` (BackgroundDim) se referme en cercle sur `focus` AVANT tout le
+##   reste — cf. IRIS_START_RADIUS. Doit porter un ShaderMaterial sur
+##   battle_intro_iris.gdshader (posé par BattleScene._ready), sinon
+##   `set_shader_parameter` échoue silencieusement (pas d'assombrissement).
+## - `focus` : le point ÉCRAN (pas monde — cf. battle_intro_iris.gdshader) sur
+##   lequel l'iris se referme. En pratique le Hero du worldmap (BattleLauncher
+##   le calcule), pas forcément le centre de `arena` : rien ici ne suppose
+##   qu'ils coïncident.
 ## - `arena` porte la plateforme ET les combattants, pivot au centre de la
 ##   plateforme : c'est lui qui pivote en premier, et comme les combattants sont
 ##   ses enfants ils restent ANCRÉS au sol pendant qu'il se redresse. Il doit
@@ -70,10 +88,39 @@ var _tween: Tween
 ## - `menu` et `legend` : le menu racine, et ce qui apparaît avec sa dernière
 ##   rangée.
 func play(
-	arena: Node2D, ground: Array[CanvasItem], units: Array[Node2D],
-	band_top: CanvasItem, band_bottom: CanvasItem, hud_blocks: Array,
+	veil: ColorRect, focus: Vector2, arena: Node2D, ground: Array[CanvasItem],
+	units: Array[Node2D], band_top: CanvasItem, band_bottom: CanvasItem, hud_blocks: Array,
 	menu: CommandMenu, legend: CanvasItem,
 ) -> void:
+	# Caché AVANT la moindre attente — sinon, le temps que l'iris se referme,
+	# ces éléments se montreraient dans leur état final par-dessus le voile
+	# encore ouvert (constaté : ils sont sinon déjà tous là dès la première
+	# image, l'iris se refermant sur un combat déjà entièrement monté). ALPHA
+	# SEUL suffit ici (pas les positions/échelles de départ, posées plus bas
+	# par `_flip_in`/`_slide_in` eux-mêmes) : à alpha 0, rien ne se voit, quelle
+	# que soit la position — et la reposer ici la ferait lire à tort comme LA
+	# position de repos par `_slide_in`, qui doublerait alors le décalage.
+	band_top.modulate.a = 0.0
+	band_bottom.modulate.a = 0.0
+	arena.scale = flip_scale(0.0)
+	for item in ground:
+		item.modulate.a = 0.0
+	for unit in units:
+		unit.scale = flip_scale(0.0)
+		unit.modulate.a = 0.0
+	for block in hud_blocks:
+		for node: CanvasItem in block:
+			node.modulate.a = 0.0
+	# PAS un alpha de rangée à 0 (essayé, constaté cassé) : `reveal()` relève
+	# l'alpha COURANT de chaque rangée comme cible à restaurer (cf. sa propre
+	# doc) — le mettre à 0 ici le lui ferait lire comme la cible elle-même,
+	# et l'animation irait de 0 à 0, silencieusement. Cacher le nœud entier ne
+	# touche à aucun alpha, donc ne casse pas cette hypothèse.
+	menu.visible = false
+	legend.modulate.a = 0.0
+
+	await _close_iris(veil, focus)
+
 	_tween = create_tween().set_parallel(true)
 
 	_slide_in(band_top, Vector2(0, -BANDS_SLIDE), BANDS_DURATION, 0.0)
@@ -92,6 +139,7 @@ func play(
 			_slide_in(node, Vector2(0, -HUD_FALL), HUD_FALL_DURATION, i * HUD_INTERVAL)
 	var hud_end := maxi(0, hud_blocks.size() - 1) * HUD_INTERVAL + HUD_FALL_DURATION
 
+	menu.visible = true
 	var menu_end: float = menu.reveal(MENU_ROW_INTERVAL, MENU_ROW_FADE, 0.0)
 	# Avec la DERNIÈRE rangée : la légende décrit ce menu, elle n'a rien à dire
 	# tant qu'il n'est pas là.
@@ -100,6 +148,25 @@ func play(
 	var units_end := UNITS_DELAY + FLIP_DURATION
 	var end_time := maxf(units_end, maxf(hud_end, menu_end))
 	_tween.tween_callback(finished.emit).set_delay(end_time)
+
+## Referme le voile en cercle sur `center` (cf. battle_intro_iris.gdshader) :
+## rayon de IRIS_START_RADIUS (rien d'assombri) jusqu'à 0 (tout assombri,
+## l'état de repos que `veil` a déjà par sa propre couleur). Tween À PART,
+## PAS `_tween` — cette étape est TERMINÉE avant que le reste ne commence
+## (cf. `await` dans `play()`), donc rien à faire tourner en parallèle ici.
+func _close_iris(veil: ColorRect, center: Vector2) -> void:
+	var material: ShaderMaterial = veil.material
+	material.set_shader_parameter("center", center)
+	material.set_shader_parameter("radius", IRIS_START_RADIUS)
+	# Le shader ne relève PAS `veil.color` tout seul (cf. battle_intro_iris.gdshader) :
+	# une seule couleur à changer si `veil.color` change un jour.
+	material.set_shader_parameter("dim_color", veil.color)
+	var iris_tween := create_tween()
+	iris_tween.tween_method(
+		func(r: float) -> void: material.set_shader_parameter("radius", r),
+		IRIS_START_RADIUS, 0.0, IRIS_DURATION,
+	).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	await iris_tween.finished
 
 ## Rotation X simulée + échelle, en fonction de l'avancement `t` ∈ [0 ; 1].
 ##

@@ -377,6 +377,12 @@ signal exit_requested
 
 var _enemies: PackedStringArray = DEFAULT_ENEMIES
 var _allies: PackedStringArray = DEFAULT_ALLIES
+## Position ÉCRAN (posée par BattleLauncher.open, cf. "intro_focus") sur
+## laquelle l'iris d'ouverture se referme. Sans hôte pour la fournir (lancement
+## direct de la scène, tests…), on retombe sur le centre de la plateforme,
+## seul repère que BattleScene connaît d'avance.
+var _intro_focus: Vector2
+var _has_intro_focus: bool = false
 var _status_panels: Array[UnitStatusPanel] = []
 var _menu: CommandMenu
 var _state: State = State.INTRO
@@ -488,6 +494,9 @@ func setup(context: Dictionary) -> void:
 		_enemies = context["enemies"]
 	if context.has("allies"):
 		_allies = context["allies"]
+	if context.has("intro_focus"):
+		_intro_focus = context["intro_focus"]
+		_has_intro_focus = true
 
 func _ready() -> void:
 	stage.scale = Vector2(STAGE_SCALE, STAGE_SCALE)
@@ -496,6 +505,10 @@ func _ready() -> void:
 	# grossit pas avec lui.
 	add_child(CanvasZoom.new())
 	background_dim.size = Vector2(DESIGN_SIZE * STAGE_SCALE)
+	# BattleIntro anime "radius" sur ce matériau pour refermer le voile en
+	# cercle plutôt que de le poser d'un bloc (cf. battle_intro_iris.gdshader).
+	background_dim.material = ShaderMaterial.new()
+	background_dim.material.shader = load("res://Shaders/battle_intro_iris.gdshader")
 	_build_field()
 	_build_decor()
 	_build_units()
@@ -521,8 +534,10 @@ func _play_intro() -> void:
 	for panel in _status_panels:
 		hud_blocks.append([panel])
 	hud_blocks.append([_synergy_gauge, _synergy_label])
+	var focus := _intro_focus if _has_intro_focus else _arena.global_position
 	_intro.play(
-		_arena, _platform_halves, units, _dark_top, _dark_bottom, hud_blocks, _menu, _legend,
+		background_dim, focus, _arena, _platform_halves, units, _dark_top, _dark_bottom,
+		hud_blocks, _menu, _legend,
 	)
 
 ## L'ouverture est jouée : le premier allié prend la main. Son tour s'annonce
