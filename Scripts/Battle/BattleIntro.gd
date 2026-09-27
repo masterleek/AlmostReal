@@ -6,11 +6,14 @@ extends Node
 ## D'ABORD le voile (BackgroundDim) se referme en cercle sur la plateforme —
 ## cf. `_close_iris`, TERMINÉ avant la suite (pas de parallélisme avec le
 ## reste). PUIS, à t = 0 : bandes noires, plateforme, blocs du HUD (alliés +
-## synergie) et menu de commandes démarrent TOUS ENSEMBLE. Seuls les combattants suivent,
-## UNITS_DELAY plus tard, le temps que la plateforme les porte. Le joueur ne
-## reçoit la main qu'à la toute fin (`finished`) — le plus tardif des trois
-## (combattants, HUD, menu), pas simplement la fin du menu — c'est à l'appelant
-## de garder le menu inactif jusque-là.
+## synergie) et menu de commandes démarrent TOUS ENSEMBLE. Les combattants,
+## eux, entrent par GROUPES successifs (demandé : le premier allié + le premier
+## ennemi ensemble, UNITS_INTERVAL après le début de la plateforme ; le second
+## allié + le second ennemi UNITS_INTERVAL plus tard ; et ainsi de suite) —
+## cf. `unit_groups`. Le joueur ne reçoit la main qu'à la toute fin
+## (`finished`) — le plus tardif des trois (combattants, HUD, menu), pas
+## simplement la fin du menu — c'est à l'appelant de garder le menu inactif
+## jusque-là.
 ##
 ## TOUT L'ÉTAT DE DÉPART EST POSÉ PAR `play()`, DE FAÇON SYNCHRONE — alphas à
 ## zéro, échelles à plat, positions décalées — avant la moindre attente : appelée
@@ -24,11 +27,12 @@ const CommandMenu = preload("res://Scripts/Battle/UI/CommandMenu.gd")
 
 # ──────────────────────────────────────────────────────────────────────────
 #  DURÉES — des CHOIX, pas des mesures : aucune maquette ne montre l'ouverture.
-#  UNITS_DELAY et HUD_INTERVAL viennent de la demande de l'auteur (0,5 s au
+#  UNITS_INTERVAL et HUD_INTERVAL viennent de la demande de l'auteur (0,5 s au
 #  départ, divisé par deux pour accélérer TOUT globalement, puis HUD_INTERVAL
-#  reposé explicitement à 0,10 s). Le rebond du HUD et le glissement des
-#  commandes du menu (cf. CommandMenu.ROW_SLIDE) viennent aussi de demandes
-#  explicites.
+#  reposé explicitement à 0,10 s, puis UNITS_INTERVAL repensé en apparition PAR
+#  GROUPE — un allié + un ennemi ensemble — à 0,15 s). Le rebond du HUD et le
+#  glissement des commandes du menu (cf. CommandMenu.ROW_SLIDE) viennent aussi
+#  de demandes explicites.
 # ──────────────────────────────────────────────────────────────────────────
 
 ## Plateforme et combattants : fondu + rotation X de −90° à 0° + échelle de 70 %
@@ -36,8 +40,12 @@ const CommandMenu = preload("res://Scripts/Battle/UI/CommandMenu.gd")
 const FLIP_DURATION := 0.2
 const FLIP_FROM_DEG := -90.0
 const FLIP_FROM_SCALE := 0.7
-## Écart entre le début de la plateforme et celui des combattants (demandé).
-const UNITS_DELAY := 0.25
+## Écart entre le début de la plateforme et celui du PREMIER groupe de
+## combattants, et entre deux groupes consécutifs (demandé) — cf. `unit_groups`
+## dans `play()`. Le groupe i démarre à (i + 1) · UNITS_INTERVAL, pas après la
+## FIN de l'animation du groupe précédent (même logique de fire-and-forget que
+## HUD_INTERVAL plus bas).
+const UNITS_INTERVAL := 0.15
 
 ## Blocs du HUD : fondu + chute avec un LÉGER rebond en fin de course (demandé :
 ## « plus naturel » qu'un arrêt sec, puis « trop fort » — cf. `_slide_in_bounce`,
@@ -92,7 +100,11 @@ var _tween: Tween
 ##   être à l'identité au repos — il y revient à la fin.
 ## - `ground` : ce qui s'efface avec la plateforme (ses deux moitiés). Le fondu
 ##   ne se pose PAS sur `arena`, qui emporterait les combattants avec lui.
-## - `units` : les combattants, pivot à leurs pieds (cf. UnitSprite).
+## - `unit_groups` : les combattants (pivot à leurs pieds, cf. UnitSprite),
+##   groupés dans l'ordre où ils doivent apparaître — chaque groupe démarre
+##   UNITS_INTERVAL après le précédent (cf. la constante). Ce script ne sait
+##   toujours pas ce qu'un groupe représente (allié+ennemi ou autre chose) :
+##   c'est l'appelant qui les compose.
 ## - `band_top` / `band_bottom` : les bandes noires, à leur position de repos.
 ## - `hud_blocks` : un tableau par bloc du HUD, dans l'ordre d'arrivée ; les
 ##   nœuds d'un même bloc tombent ensemble (la jauge de synergie et son libellé,
@@ -101,7 +113,7 @@ var _tween: Tween
 ##   rangée.
 func play(
 	veil: ColorRect, focus: Vector2, arena: Node2D, ground: Array[CanvasItem],
-	units: Array[Node2D], band_top: CanvasItem, band_bottom: CanvasItem, hud_blocks: Array,
+	unit_groups: Array, band_top: CanvasItem, band_bottom: CanvasItem, hud_blocks: Array,
 	menu: CommandMenu, legend: CanvasItem,
 ) -> void:
 	# Caché AVANT la moindre attente — sinon, le temps que l'iris se referme,
@@ -117,9 +129,10 @@ func play(
 	arena.scale = flip_scale(0.0)
 	for item in ground:
 		item.modulate.a = 0.0
-	for unit in units:
-		unit.scale = flip_scale(0.0)
-		unit.modulate.a = 0.0
+	for group in unit_groups:
+		for unit: Node2D in group:
+			unit.scale = flip_scale(0.0)
+			unit.modulate.a = 0.0
 	for block in hud_blocks:
 		for node: CanvasItem in block:
 			node.modulate.a = 0.0
@@ -139,13 +152,17 @@ func play(
 	_slide_in(band_bottom, Vector2(0, BANDS_SLIDE), BANDS_DURATION, 0.0)
 
 	_flip_in(arena, 0.0, ground)
-	for unit in units:
-		_flip_in(unit, UNITS_DELAY, [unit])
+	# Groupe i démarre à (i + 1) · UNITS_INTERVAL après le début de la
+	# plateforme (demandé) — pas après la fin du groupe précédent.
+	for i in unit_groups.size():
+		var group_delay := (i + 1) * UNITS_INTERVAL
+		for unit: Node2D in unit_groups[i]:
+			_flip_in(unit, group_delay, [unit])
 
 	# HUD et menu démarrent AVEC la plateforme (t=0), pas après les combattants :
-	# seuls ces derniers gardent UNITS_DELAY, le temps que la plateforme les
-	# porte. `finished` doit donc attendre le plus lent des trois, pas
-	# simplement la fin du menu (cf. plus bas).
+	# seuls ces derniers suivent en groupes espacés de UNITS_INTERVAL, le temps
+	# que la plateforme les porte. `finished` doit donc attendre le plus lent
+	# des trois, pas simplement la fin du menu (cf. plus bas).
 	for i in hud_blocks.size():
 		for node: CanvasItem in hud_blocks[i]:
 			_slide_in_bounce(
@@ -162,7 +179,7 @@ func play(
 	# tant qu'il n'est pas là.
 	_fade_in(legend, MENU_ROW_FADE, menu_end - MENU_ROW_FADE)
 
-	var units_end := UNITS_DELAY + FLIP_DURATION
+	var units_end := unit_groups.size() * UNITS_INTERVAL + FLIP_DURATION
 	var end_time := maxf(units_end, maxf(hud_end, menu_end))
 	_tween.tween_callback(finished.emit).set_delay(end_time)
 

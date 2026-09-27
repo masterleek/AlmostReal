@@ -328,9 +328,12 @@ pas partir en guerre contre des choix déjà faits et documentés dans ce repo :
   suit ni le glissement du terrain, ni la secousse, ni le zoom (`CanvasZoom`),
   qui n'agissent que sur le calque du combat — il se lit comme un plan lointain.
 - **L'OUVERTURE du combat** (`BattleIntro.gd`) : bandes + plateforme + HUD bloc
-  par bloc + menu rangée par rangée, tous ensemble ; seuls les combattants
-  suivent `UNITS_DELAY` après. `finished` attend le plus tardif des trois
-  (combattants/HUD/menu), pas juste la fin du menu.
+  par bloc + menu rangée par rangée, tous ensemble ; les combattants, eux,
+  suivent par GROUPES appariés par emplacement (le 1er allié + le 1er ennemi
+  ensemble, `UNITS_INTERVAL` après le début de la plateforme, le 2e groupe
+  `UNITS_INTERVAL` plus tard, etc. — composé par `BattleScene._play_intro`,
+  `BattleIntro` ne sait pas ce qu'un groupe représente). `finished` attend le
+  plus tardif des trois (combattants/HUD/menu), pas juste la fin du menu.
   Trois règles la tiennent, à respecter en touchant à `_ready` :
   - tout l'état de départ (alphas, échelles, positions) est posé SYNCHRONEMENT
     par `play()` à la fin de `_ready` — sinon une image montre l'écran monté
