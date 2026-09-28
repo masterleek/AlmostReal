@@ -441,8 +441,10 @@ func get_selected_id() -> String:
 	return _entries[_selected]["id"] if _entries.size() > 0 else ""
 
 ## Fait apparaître les rangées visibles L'UNE APRÈS L'AUTRE, en fondu ET en
-## glissement horizontal depuis la gauche (cf. ROW_SLIDE/_fade_from_zero) : la
-## première après `delay`, chacune des suivantes `interval` plus tard. Renvoie
+## glissement horizontal depuis la gauche avec un léger rebond en fin de
+## course (cf. ROW_SLIDE/_fade_from_zero, même principe que le rebond du HUD à
+## l'ouverture du combat — cf. BattleIntro._slide_in_bounce) : la première
+## après `delay`, chacune des suivantes `interval` plus tard. Renvoie
 ## l'instant où la dernière a fini d'apparaître.
 ##
 ## Chaque rangée retrouve SON opacité — fondu de bord compris (cf. _row_alpha),
@@ -487,6 +489,11 @@ func reveal(interval: float, fade: float, delay: float = 0.0) -> float:
 ## pour se voir, même en l'agrandissant.
 const ROW_SLIDE := 24.0
 const ROW_SLIDE_DURATION := 0.18
+## Léger dépassement en fin de glissement, comme le rebond du HUD à
+## l'ouverture du combat (demandé, cf. BattleIntro._slide_in_bounce/
+## HUD_BOUNCE_OVERSHOOT) — même proportion par rapport à ROW_SLIDE que
+## HUD_BOUNCE_OVERSHOOT par rapport à HUD_FALL (1/4).
+const ROW_BOUNCE_OVERSHOOT := 6.0
 
 func _fade_from_zero(node: CanvasItem, fade: float, start: float) -> void:
 	var target := node.modulate.a
@@ -498,8 +505,16 @@ func _fade_from_zero(node: CanvasItem, fade: float, start: float) -> void:
 	# lui-même — même contournement que BattleIntro._slide_in.
 	var rest: Vector2 = node.get("position")
 	node.set("position", rest + Vector2(-ROW_SLIDE, 0))
-	_reveal_tween.tween_property(node, "position", rest, ROW_SLIDE_DURATION) \
-		.set_delay(start).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	# Dépasse LÉGÈREMENT `rest` vers la droite (sens du glissement) avant d'y
+	# revenir, comme BattleIntro._slide_in_bounce : même découpage 70/30 de la
+	# durée entre l'élan et l'amortissement.
+	var fall_duration := ROW_SLIDE_DURATION * 0.7
+	var settle_duration := ROW_SLIDE_DURATION - fall_duration
+	_reveal_tween.tween_property(
+		node, "position", rest + Vector2(ROW_BOUNCE_OVERSHOOT, 0), fall_duration
+	).set_delay(start).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	_reveal_tween.tween_property(node, "position", rest, settle_duration) \
+		.set_delay(start + fall_duration).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 
 ## Navigation au clavier/manette. `ui_up`/`ui_down` sont les actions natives de
 ## Godot (flèches + croix directionnelle) ; `battle_confirm`/`battle_cancel`

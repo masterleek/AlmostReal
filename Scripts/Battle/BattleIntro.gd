@@ -5,10 +5,11 @@ extends Node
 ##
 ## D'ABORD le voile (BackgroundDim) se referme en cercle sur la plateforme —
 ## cf. `_close_iris`, TERMINÉ avant la suite (pas de parallélisme avec le
-## reste). PUIS, à t = 0 : bandes noires, plateforme, blocs du HUD (alliés +
-## synergie) et menu de commandes démarrent TOUS ENSEMBLE ; EN MÊME TEMPS,
-## `field` (plateforme + combattants, PAS le HUD/menu/bandes) dézoome de 200 %
-## à 100 % (demandé, cf. `_zoom_out`). Les combattants
+## reste). PUIS, à t = 0 : bandes noires et plateforme démarrent ; EN MÊME
+## TEMPS, `field` (plateforme + combattants, PAS le HUD/menu/bandes) dézoome
+## de 200 % à 100 % (demandé, cf. `_zoom_out`). Les blocs du HUD (alliés +
+## synergie) ET le menu de commandes, eux, démarrent ENSEMBLE HUD_MENU_DELAY
+## plus tard (demandé). Les combattants
 ## n'ont AUCUNE animation propre (essayé : fondu, dépli+rotation, rebond sur
 ## l'échelle, apparition par groupes décalés — cf. l'historique git si l'un de
 ## ces essais est à ressortir ; demandé sans, au final : « simplement ancrés à
@@ -51,6 +52,11 @@ const FLIP_FROM_SCALE := 0.7
 const FIELD_ZOOM_FROM := 2.0
 const FIELD_ZOOM_DURATION := 0.3
 
+## Les blocs du HUD ET le menu de commandes démarrent ENSEMBLE, HUD_MENU_DELAY
+## après le reste (demandé) — bandes, plateforme et dézoom du terrain, eux,
+## restent à t = 0.
+const HUD_MENU_DELAY := 0.2
+
 ## Blocs du HUD : fondu + chute avec un LÉGER rebond en fin de course (demandé :
 ## « plus naturel » qu'un arrêt sec, puis « trop fort » — cf. `_slide_in_bounce`,
 ## un dépassement CONTRÔLÉ plutôt que la courbe TRANS_BOUNCE de Godot, trop
@@ -72,6 +78,7 @@ const BANDS_DURATION := 0.2
 ## Menu : une rangée toutes les MENU_ROW_INTERVAL, chacune en MENU_ROW_FADE.
 ## Chaque commande glisse aussi horizontalement en apparaissant (demandé) —
 ## géré dans CommandMenu.reveal() lui-même, pas ici : cf. CommandMenu.ROW_SLIDE.
+## Démarre HUD_MENU_DELAY après le reste, comme le HUD — cf. plus haut.
 const MENU_ROW_INTERVAL := 0.04
 const MENU_ROW_FADE := 0.06
 
@@ -166,15 +173,15 @@ func play(
 	for i in hud_blocks.size():
 		for node: CanvasItem in hud_blocks[i]:
 			_slide_in_bounce(
-				node, Vector2(0, -HUD_FALL), HUD_FALL_DURATION, i * HUD_INTERVAL,
-				HUD_BOUNCE_OVERSHOOT,
+				node, Vector2(0, -HUD_FALL), HUD_FALL_DURATION,
+				HUD_MENU_DELAY + i * HUD_INTERVAL, HUD_BOUNCE_OVERSHOOT,
 			)
-	var hud_end := maxi(0, hud_blocks.size() - 1) * HUD_INTERVAL + HUD_FALL_DURATION
+	var hud_end := HUD_MENU_DELAY + maxi(0, hud_blocks.size() - 1) * HUD_INTERVAL + HUD_FALL_DURATION
 
 	menu.visible = true
 	# Le glissement (horizontal, demandé) est sur CHAQUE commande, pas sur le
 	# menu entier — cf. CommandMenu.reveal()/_fade_from_zero.
-	var menu_end: float = menu.reveal(MENU_ROW_INTERVAL, MENU_ROW_FADE, 0.0)
+	var menu_end: float = menu.reveal(MENU_ROW_INTERVAL, MENU_ROW_FADE, HUD_MENU_DELAY)
 	# Avec la DERNIÈRE rangée : la légende décrit ce menu, elle n'a rien à dire
 	# tant qu'il n'est pas là.
 	_fade_in(legend, MENU_ROW_FADE, menu_end - MENU_ROW_FADE)
