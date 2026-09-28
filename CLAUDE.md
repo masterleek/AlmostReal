@@ -556,8 +556,16 @@ pas partir en guerre contre des choix déjà faits et documentés dans ce repo :
   blanche y allume un halo sous les pieds. `Shaders/white_tint.gdshader` a pour
   ça un seuil `dark_cutoff` : sous cette luminance, le pixel garde sa couleur.
   L'alpha ne sert à rien ici, l'ombre étant quasi opaque en son centre ; c'est
-  la luminance qui sépare (l'ombre et les contours sont sous 0,05, le premier
-  pixel de corps est au-dessus).
+  la luminance qui sépare — MAIS ce seuil suppose que seule l'ombre est sous
+  0,05 : mesuré (constaté, signalé en jeu : silhouette fantôme du cactoon
+  restée cernée de sombre en surbrillance), son propre CONTOUR est aussi en
+  quasi-noir sur presque toute la hauteur de la cellule, pas seulement la
+  bande de l'ombre — la luminance ne peut alors plus distinguer les deux.
+  `TargetSelector` (sélection de cible) a donc laissé tomber ce seuil : sa
+  surbrillance blanchit tout, ombre comprise (demandé, « toute la
+  silhouette »). `HitFeedback` (flash de dégâts) garde le seuil à 0,05, avec
+  la même limite non résolue sur les planches où le contour déborde de la
+  bande d'ombre.
 - **Les planches d'ennemis sont en NIVEAUX DE GRIS** (le cactoon n'a que des
   pixels r = v = b, du noir au blanc). Un effet qui repose sur la clarté —
   surbrillance blanche, flash de dégâts — y est donc bien moins lisible que sur

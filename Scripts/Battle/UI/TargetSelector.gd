@@ -79,13 +79,15 @@ const PULSE_PERIOD := 0.9
 const PULSE_MIN := 0.6
 const PULSE_MAX := 1.0
 
-## Luminance en dessous de laquelle un pixel reste à sa couleur (cf.
-## white_tint.gdshader) : les planches portent l'ombre au sol DANS la cellule,
-## et sans ce seuil la sélection allumerait un halo blanc sous les pieds de la
-## cible. Mesuré sur les trois planches du jeu : leurs pixels d'ombre et de
-## contour sont tous sous 0,05 de luminance, le premier pixel de corps est à
-## 0,05 et au-delà.
-const DARK_CUTOFF := 0.05
+## PAS de dark_cutoff ici (cf. white_tint.gdshader) : un seuil de luminance a
+## été essayé pour épargner l'ombre au sol, baked DANS la cellule sur la
+## plupart des planches — mais celle du cactoon (constaté : signalé en jeu,
+## silhouette fantôme aux contours restés sombres) dessine le CONTOUR du
+## personnage lui-même en quasi-noir sur presque toute la hauteur de la
+## cellule, pas seulement sur la bande de l'ombre : un seuil de luminance ne
+## peut pas distinguer les deux, il protège alors le contour entier plutôt que
+## la seule ombre. La demande — toute la silhouette en blanc — tranche pour la
+## simplicité : la sélection blanchit tout, ombre comprise.
 
 ## Ne réagit aux entrées que si `active`, comme CommandMenu : le menu racine
 ## reste monté pendant le ciblage, une seule des deux listes doit avoir la
@@ -153,7 +155,8 @@ func _ready() -> void:
 
 	_material = ShaderMaterial.new()
 	_material.shader = WHITE_TINT
-	_material.set_shader_parameter("dark_cutoff", DARK_CUTOFF)
+	# `dark_cutoff` reste à son défaut (0.0, cf. white_tint.gdshader) : rien
+	# n'échappe au blanchiment ici — cf. le commentaire juste après PULSE_MAX.
 
 	visible = false
 	set_process(false)

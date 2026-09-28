@@ -49,8 +49,11 @@ const BAR_WIDTH := 32
 ## de ciblage, et pour la même raison (cf. TargetSelector._plate_anchor).
 const BAR_OFFSET := Vector2(-BAR_WIDTH / 2, -1)
 
-## Voir TargetSelector.DARK_CUTOFF : les planches portent leur ombre au sol DANS
-## la cellule, et sans ce seuil l'éclat allumerait un halo blanc sous les pieds.
+## Cf. white_tint.gdshader : les planches portent leur ombre au sol DANS la
+## cellule, et sans ce seuil l'éclat allumerait un halo blanc sous les pieds.
+## TargetSelector, lui, ne pose plus ce seuil (demandé : sa sélection doit
+## blanchir toute la silhouette) — pas touché ici, rien de signalé sur l'éclat
+## d'un coup.
 const DARK_CUTOFF := 0.05
 
 # LES QUATRE DURÉES DE CE QU'ON VOIT QUAND UNE UNITÉ ENCAISSE, regroupées ici
