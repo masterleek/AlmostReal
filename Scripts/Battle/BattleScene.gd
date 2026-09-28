@@ -1541,7 +1541,16 @@ func _step_back() -> void:
 	_active_ally = previous
 	_open_root_menu()
 
-func _open_root_menu() -> void:
+## `animate` (demandé) : rejoue sur le menu la MÊME animation que celle de
+## l'ouverture du combat (cf. BattleIntro.play(), CommandMenu.reveal()) —
+## chaque commande apparaît l'une après l'autre, en fondu + glissement +
+## rebond ; le menu reste INACTIF jusqu'à la fin, sinon le joueur pourrait
+## valider une rangée encore en train d'apparaître. `MENU_ROW_INTERVAL`/
+## `MENU_ROW_FADE` sont repris de BattleIntro (déjà preload ici) plutôt que
+## redéclarés : une seule minuterie à tenir pour « la même animation ». PAS le
+## cas d'un retour en arrière pendant la préparation (`_step_back`) : le menu
+## réapparaît tel quel, rien ne justifie de la rejouer là.
+func _open_root_menu(animate: bool = false) -> void:
 	_state = State.MENU
 	_reset_framing()
 	# Reconstruite plutôt que réactivée : la sélection repart sur « Attack »,
@@ -1549,7 +1558,13 @@ func _open_root_menu() -> void:
 	# recalculés pour le nouvel allié.
 	_menu.setup(_root_entries(), 0)
 	_menu.visible = true
-	_menu.active = true
+	if animate:
+		_menu.active = false
+		var reveal_duration := _menu.reveal(BattleIntro.MENU_ROW_INTERVAL, BattleIntro.MENU_ROW_FADE)
+		create_tween().tween_callback(func() -> void: _menu.active = true) \
+			.set_delay(reveal_duration)
+	else:
+		_menu.active = true
 	# Le bloc entier se pose sous l'allié dont c'est le tour.
 	_menu_frame.position = MENU_PIVOT + Vector2(_menu_offset(_active_ally))
 	_set_units_dimmed(false, false)
@@ -1609,7 +1624,7 @@ func _start_round() -> void:
 	_active_ally = first
 	_legend.visible = true
 	_slide_dark_bands(false)
-	_open_root_menu()
+	_open_root_menu(true)
 
 ## ──────────────────────────────────────────────────────────────────────────
 ##  FIN DE COMBAT
