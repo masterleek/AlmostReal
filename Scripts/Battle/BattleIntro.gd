@@ -97,9 +97,14 @@ var _tween: Tween
 ## - `arena` porte la plateforme ET les combattants, pivot au centre de la
 ##   plateforme : c'est lui qui pivote en premier, et comme les combattants sont
 ##   ses enfants ils restent ANCRÉS au sol pendant qu'il se redresse. Il doit
-##   être à l'identité au repos — il y revient à la fin.
-## - `ground` : ce qui s'efface avec la plateforme (ses deux moitiés). Le fondu
-##   ne se pose PAS sur `arena`, qui emporterait les combattants avec lui.
+##   être à l'identité au repos — il y revient à la fin. PAS de fondu sur la
+##   plateforme elle-même (contrairement aux combattants) : elle reste opaque
+##   du début à la fin, seules son échelle et sa rotation l'animent — sinon,
+##   tant qu'elle est semi-transparente, le worldmap dessiné derrière (cf.
+##   BattleScene, "le worldmap reste affiché EN DIRECT derrière le combat")
+##   transparaît au travers, ce qui a été pris à tort pour un chevauchement
+##   entre ses deux moitiés (PLATFORM_LEFT/PLATFORM_RIGHT) alors qu'il s'agit
+##   du hex du Hero, bien plus clair que le reste de la worldmap à cet endroit.
 ## - `unit_groups` : les combattants (pivot à leurs pieds, cf. UnitSprite),
 ##   groupés dans l'ordre où ils doivent apparaître — chaque groupe démarre
 ##   UNITS_INTERVAL après le précédent (cf. la constante). Ce script ne sait
@@ -112,7 +117,7 @@ var _tween: Tween
 ## - `menu` et `legend` : le menu racine, et ce qui apparaît avec sa dernière
 ##   rangée.
 func play(
-	veil: ColorRect, focus: Vector2, arena: Node2D, ground: Array[CanvasItem],
+	veil: ColorRect, focus: Vector2, arena: Node2D,
 	unit_groups: Array, band_top: CanvasItem, band_bottom: CanvasItem, hud_blocks: Array,
 	menu: CommandMenu, legend: CanvasItem,
 ) -> void:
@@ -127,8 +132,6 @@ func play(
 	band_top.modulate.a = 0.0
 	band_bottom.modulate.a = 0.0
 	arena.scale = flip_scale(0.0)
-	for item in ground:
-		item.modulate.a = 0.0
 	for group in unit_groups:
 		for unit: Node2D in group:
 			unit.scale = flip_scale(0.0)
@@ -151,7 +154,7 @@ func play(
 	_slide_in(band_top, Vector2(0, -BANDS_SLIDE), BANDS_DURATION, 0.0)
 	_slide_in(band_bottom, Vector2(0, BANDS_SLIDE), BANDS_DURATION, 0.0)
 
-	_flip_in(arena, 0.0, ground)
+	_flip_in(arena, 0.0)
 	# Groupe i démarre à (i + 1) · UNITS_INTERVAL après le début de la
 	# plateforme (demandé) — pas après la fin du groupe précédent.
 	for i in unit_groups.size():

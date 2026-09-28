@@ -412,7 +412,6 @@ var _arena: Node2D
 ## Porteur décalé de `-ARENA_PIVOT` sous `_arena` : on y ajoute en coordonnées
 ## de terrain (cf. _pivot_group).
 var _arena_holder: Node2D
-var _platform_halves: Array[CanvasItem] = []
 var _synergy_label: RichTextLabel
 var _intro: BattleIntro
 ## Vrai tant que le cadrage de préparation est en place. Sert à savoir si un
@@ -545,7 +544,7 @@ func _play_intro() -> void:
 	hud_blocks.append([_synergy_gauge, _synergy_label])
 	var focus := _intro_focus if _has_intro_focus else _arena.global_position
 	_intro.play(
-		background_dim, focus, _arena, _platform_halves, unit_groups, _dark_top, _dark_bottom,
+		background_dim, focus, _arena, unit_groups, _dark_top, _dark_bottom,
 		hud_blocks, _menu, _legend,
 	)
 
@@ -585,7 +584,6 @@ func _build_decor() -> void:
 		half.flip_h = entry[1]
 		half.position = entry[0]
 		_arena_holder.add_child(half)
-		_platform_halves.append(half)
 
 func _build_units() -> void:
 	# Un conteneur en Y-sort plutôt que des z_index posés à la main : la
