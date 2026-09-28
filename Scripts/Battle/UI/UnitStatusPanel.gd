@@ -42,7 +42,7 @@ const AP_DOTS_POS := Vector2(16, 34)
 ## sur la quatrième vignette de mockup_preparation_select_items.png : origine
 ## écran (327, 32), soit (22, 13) une fois ramenée dans le repère du bloc, que
 ## l'inclinaison de −4,2° fait tourner autour de son coin.
-const CHECK_POS := Vector2(22, 13)
+const CHECK_POS := Vector2(24, 17)
 
 ## Teinte du PORTRAIT de l'allié dont l'action est retenue : il s'efface
 ## derrière ceux qui choisissent encore. Ajustée sur la maquette (moindres

@@ -236,7 +236,10 @@ func setup(
 ## ──────────────────────────────────────────────────────────────────────────
 
 func run() -> void:
-	_rhythm.open()
+	# `open()` attend son propre anneau avant de rendre la main (demandé, cf.
+	# RhythmBar._show_ring) : la première note ne doit pas s'afficher avant
+	# lui, donc rien ci-dessous ne démarre avant que l'anneau soit posé.
+	await _rhythm.open()
 	_commit_enemy_actions()
 	_raise_guards()
 	for entry in _order():
@@ -250,7 +253,10 @@ func run() -> void:
 		if _outcome() != Outcome.ONGOING:
 			break
 		await _wait(BETWEEN_ACTIONS)
-	_rhythm.close()
+	# `close()` attend son propre fondu avant de rendre la main (demandé) :
+	# `finished` — et donc BattleScene._start_round(), qui resserre les bandes
+	# noires — n'arrive qu'une fois la jauge de rythme entièrement disparue.
+	await _rhythm.close()
 	finished.emit(_outcome())
 
 ## Les ennemis n'ont pas de phase de préparation : leur action est décidée ICI,

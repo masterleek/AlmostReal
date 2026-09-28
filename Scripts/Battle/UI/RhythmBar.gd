@@ -88,7 +88,11 @@ const BAR_POS := Vector2(1, 209)
 
 ## Anneau : posé pour que son cercle blanc tombe en (239,5 ; 230,5), soit le
 ## centre de la barre. Relevé sur la vignette de repos de l'assaut — cercle
-## blanc en x 221..258, et l'asset porte le sien en 2..39.
+## blanc en x 221..258, et l'asset porte le sien en 2..39. RING_POS est le
+## coin HAUT-GAUCHE de la texture (42×42, cf. rhythm_circle.svg) à cet
+## endroit — c'est `_ready()` qui en déduit le CENTRE, seul repère qui
+## convient à `_show_ring()` (cf. plus bas) pour redimensionner l'anneau
+## AUTOUR DE SON MILIEU plutôt que de son coin.
 const RING_POS := Vector2(219, 210)
 const CENTRE := Vector2(239.5, 230.5)
 
@@ -154,6 +158,39 @@ const GLOW_PULSE := 0.28
 const GLOW_IN := 0.1
 const GLOW_OUT := 0.3
 
+## Apparition au DÉBUT de l'assaut, PAS à chaque action (demandé) — cf.
+## `open()`, appelé une seule fois pour tout l'assaut, jamais depuis
+## `play()`/`rest()`. EN DEUX TEMPS, l'un APRÈS l'autre, jamais en parallèle
+## (demandé) :
+##   1. l'ANNEAU (rhythm_circle.svg) — fondu + resserrement de 130 % à 100 %
+##      avec un LÉGER ressort en fin de course, même principe que
+##      BattleIntro._slide_in_bounce (dépassement contrôlé, découpage 70/30
+##      de la durée entre l'élan et l'amortissement), appliqué ici à l'échelle
+##      plutôt qu'à la position (cf. `_show_ring`) ;
+##   2. UNE FOIS L'ANNEAU POSÉ — `open()` attend la fin de l'étape 1 — la
+##      JAUGE (les deux moitiés éteintes) en simple fondu (cf.
+##      `_fade_in_lines`), EN MÊME TEMPS que la première séquence de notes :
+##      c'est cette même attente, répercutée jusque dans
+##      `BattleAssault.run()` (qui attend maintenant `open()`), qui retient le
+##      premier `play()`.
+##
+## L'échelle de BASE de l'anneau n'est pas 1 : `sprite_native()` le
+## contre-échelonne (cf. PixelScale.apply) pour que sa texture, rastérisée à
+## la résolution de l'écran, retombe à sa taille de design — 130 % et 100 %
+## se multiplient donc à cette base, comme le pulse de `_pulse_glow`.
+const OPEN_FADE_DURATION := 0.25
+const RING_OPEN_SCALE_FROM := 1.3
+## Dépassement du ressort, en fraction de l'échelle de base : LÉGER (demandé)
+## — un dépassement plus marqué se lirait comme un vrai rebond plutôt que
+## comme un simple assouplissement de l'arrivée.
+const RING_OPEN_OVERSHOOT := 0.05
+
+## Disparition en FIN d'assaut (demandé, cf. `close()`) : AUCUN changement
+## d'échelle, seulement des fondus — mais dans l'ordre INVERSE de l'ouverture
+## (demandé) : la JAUGE (les deux moitiés) d'abord, puis, une fois APRÈS elle,
+## l'ANNEAU.
+const CLOSE_FADE_DURATION := 0.25
+
 ## « PERFECT » est peint lettre par lettre sur la maquette — jaune, blanc, cyan,
 ## magenta. C'est le seul verdict à ce traitement, et il le mérite : c'est celui
 ## qu'on cherche. Les autres sont d'une seule couleur.
@@ -210,6 +247,12 @@ var _right: Sprite2D
 var _glow_left: Sprite2D
 var _glow_right: Sprite2D
 var _glow_tween: Tween
+## Fondu + ressort de `open()`/`close()` (cf. OPEN_FADE_DURATION), à part de
+## `_glow_tween` : celui-ci suit les CHANGEMENTS DE CAMP pendant l'assaut,
+## celui-là les BORNES de l'assaut — les deux peuvent tourner en même temps
+## (`open()` allume aussi le premier camp) et ne doivent pas s'annuler l'un
+## l'autre.
+var _rig_tween: Tween
 var _ring: Sprite2D
 ## UN seul nœud, réutilisé, comme le libellé de verdict : un martèlement en
 ## sèmerait autrement une dizaine à l'écran, et c'est toujours la DERNIÈRE
@@ -265,8 +308,15 @@ func _ready() -> void:
 	_glow_right.modulate.a = 0.0
 	add_child(_glow_right)
 
-	_ring = PixelScale.sprite_native(RING)
-	_ring.position = RING_POS
+	# CENTRÉ (offset = -moitié de la texture), pas cadré au coin haut-gauche
+	# comme le reste de la barre : `_show_ring()` anime son échelle à
+	# l'ouverture, et sans ça elle se ferait autour du coin plutôt que du
+	# milieu du cercle — même mécanique que `_glow` (cf. _pulse_glow), pour la
+	# même raison. `position` compense ce recentrage : RING_POS visait le
+	# coin, on y ajoute la moitié de la texture pour retomber exactement sur
+	# le même pixel qu'avant — le rendu au repos est inchangé.
+	_ring = PixelScale.sprite_native(RING, -PixelScale.design_size(RING) / 2.0)
+	_ring.position = RING_POS + PixelScale.design_size(RING) / 2.0
 	add_child(_ring)
 
 	# Posée AVANT les notes — qui sont ajoutées à chaque séquence, donc toujours
@@ -354,32 +404,115 @@ func play(sequence: PackedStringArray, side: int) -> Array:
 ## entre eux — c'est le camp qui décide de son allumage, pas l'unité. Le fondu
 ## ne joue donc qu'aux changements de camp (c'est `play()` qui les annonce) et à
 ## la fin de l'assaut (`close()`).
+##
+## NE CACHE PAS `_judgement` (corrigé, constaté en jeu : le second « Miss »
+## d'une séquence à deux notes TOUTES ratées ne s'affichait jamais). Le
+## raccourci « action perdue, tout raté » de `BattleAssault._resolve` appelle
+## `rest()` dans LA MÊME image que ce dernier verdict — le masquer ici le
+## coupait avant qu'il n'ait eu le temps de se montrer. `_show_judgement` gère
+## déjà sa propre disparition (fondu de sortie puis `visible = false`, cf.
+## JUDGEMENT_FADE_OUT) : un verdict encore affiché à cet instant n'a besoin de
+## rien de plus, il finit sa propre animation tout seul.
 func rest() -> void:
 	_running = false
 	set_process(false)
-	_judgement.visible = false
 	if _glow_pulse != null and _glow_pulse.is_valid():
 		_glow_pulse.kill()
 	_glow.visible = false
 	_clear_notes()
 
-## Monte et démonte la barre, aux bornes de l'assaut. Elle n'existe pas pendant
-## la préparation : le menu occupe déjà le bas de l'écran.
+## Monte la barre, à l'ouverture de l'assaut. Elle n'existe pas pendant la
+## préparation : le menu occupe déjà le bas de l'écran.
+##
+## ATTEND la fin de l'anneau (cf. `_show_ring`) avant de rendre la main : ce
+## qui retarde d'autant le premier `play()` de l'appelant (cf.
+## `BattleAssault.run()`, qui attend maintenant `open()`) — la jauge ET la
+## première séquence de notes démarrent donc ENSEMBLE, une fois l'anneau posé.
 func open() -> void:
 	rest()
 	set_side(Side.NONE)
 	visible = true
+	# Cachée AVANT la moindre attente, comme BattleIntro.play() : sans ça,
+	# `_left`/`_right` resteraient à leur alpha par défaut (1) pendant TOUTE
+	# l'animation de l'anneau, visibles alors qu'elles ne doivent apparaître
+	# qu'après lui.
+	_left.modulate.a = 0.0
+	_right.modulate.a = 0.0
+	await _show_ring()
+	_fade_in_lines()
 
 ## Éteint puis retire. La barre disparaît APRÈS son fondu, sinon la dernière
 ## action de l'assaut la verrait se couper net.
+##
+## ATTEND la fin de ce fondu avant de rendre la main (demandé, cf.
+## `BattleAssault.run()`, qui attend maintenant `close()`) : ce qui retient
+## d'autant ce qui suit la fin de l'assaut — au premier rang le resserrement
+## des bandes noires (cf. `BattleScene._start_round`), qui ne doit démarrer
+## qu'une fois la jauge de rythme entièrement disparue.
 func close() -> void:
 	rest()
+	var was_on := _side != Side.NONE
 	set_side(Side.NONE)
-	if _glow_tween != null and _glow_tween.is_valid():
-		_glow_tween.set_parallel(false)
-		_glow_tween.tween_callback(func() -> void: visible = false)
-	else:
-		visible = false
+	var tween := _close_rig()
+	# Le GLOW (fondu de `set_side` ci-dessus, cf. GLOW_OUT) peut dépasser le
+	# fondu — désormais en DEUX temps, cf. _close_rig — de la jauge et de
+	# l'anneau : `visible` attend alors le plus long des deux, sinon la barre
+	# disparaîtrait au milieu de sa propre animation.
+	var rig_duration := CLOSE_FADE_DURATION * 2.0
+	if was_on and GLOW_OUT > rig_duration:
+		tween.tween_interval(GLOW_OUT - rig_duration)
+	tween.tween_callback(func() -> void: visible = false)
+	await tween.finished
+
+## Fondu + ressort de l'ANNEAU SEUL (cf. OPEN_FADE_DURATION) : part de
+## RING_OPEN_SCALE_FROM, dépasse LÉGÈREMENT sous l'échelle de base avant d'y
+## remonter — même découpage 70/30 de la durée que
+## BattleIntro._slide_in_bounce, appliqué à l'échelle. `await`é par `open()`,
+## qui n'enchaîne sur `_fade_in_lines()` qu'une fois ce Tween fini.
+func _show_ring() -> void:
+	if _rig_tween != null and _rig_tween.is_valid():
+		_rig_tween.kill()
+	var base := Vector2.ONE / float(PixelScale.SCALE)
+	_ring.modulate.a = 0.0
+	_ring.scale = base * RING_OPEN_SCALE_FROM
+	_rig_tween = create_tween()
+	_rig_tween.set_parallel(true)
+	_rig_tween.tween_property(_ring, "modulate:a", 1.0, OPEN_FADE_DURATION)
+	var fall_duration := OPEN_FADE_DURATION * 0.7
+	var settle_duration := OPEN_FADE_DURATION - fall_duration
+	_rig_tween.tween_property(
+		_ring, "scale", base * (1.0 - RING_OPEN_OVERSHOOT), fall_duration
+	).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	_rig_tween.chain().tween_property(_ring, "scale", base, settle_duration) \
+		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	await _rig_tween.finished
+
+## Fondu de la JAUGE SEULE (les deux moitiés), une fois l'anneau posé — cf.
+## `open()`. Alpha déjà à 0 (posé par `open()` avant son attente), rien à
+## reposer ici.
+func _fade_in_lines() -> void:
+	_rig_tween = create_tween()
+	_rig_tween.set_parallel(true)
+	_rig_tween.tween_property(_left, "modulate:a", 1.0, OPEN_FADE_DURATION)
+	_rig_tween.tween_property(_right, "modulate:a", 1.0, OPEN_FADE_DURATION)
+
+## Fondu de la JAUGE SEULE PUIS, une fois APRÈS elle, de l'ANNEAU — ordre
+## INVERSE de l'ouverture (demandé). Aucun changement d'échelle.
+## `set_parallel(false)` à la fin, comme l'ancien `_glow_tween` : ce que
+## l'appelant ajoute ensuite au Tween renvoyé (cf. `close()`) tourne APRÈS ce
+## fondu, pas à côté.
+func _close_rig() -> Tween:
+	if _rig_tween != null and _rig_tween.is_valid():
+		_rig_tween.kill()
+	_rig_tween = create_tween()
+	_rig_tween.set_parallel(true)
+	_rig_tween.tween_property(_left, "modulate:a", 0.0, CLOSE_FADE_DURATION)
+	_rig_tween.tween_property(_right, "modulate:a", 0.0, CLOSE_FADE_DURATION)
+	# `.chain()` : sans lui, `set_parallel(true)` (toujours actif) ferait
+	# démarrer l'anneau EN MÊME TEMPS que la jauge, pas après elle.
+	_rig_tween.chain().tween_property(_ring, "modulate:a", 0.0, CLOSE_FADE_DURATION)
+	_rig_tween.set_parallel(false)
+	return _rig_tween
 
 ## ──────────────────────────────────────────────────────────────────────────
 
