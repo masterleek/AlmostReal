@@ -6,14 +6,15 @@ extends Node
 ## D'ABORD le voile (BackgroundDim) se referme en cercle sur la plateforme —
 ## cf. `_close_iris`, TERMINÉ avant la suite (pas de parallélisme avec le
 ## reste). PUIS, à t = 0 : bandes noires, plateforme, blocs du HUD (alliés +
-## synergie) et menu de commandes démarrent TOUS ENSEMBLE. Les combattants,
-## eux, entrent par GROUPES successifs (demandé : le premier allié + le premier
-## ennemi ensemble, UNITS_INTERVAL après le début de la plateforme ; le second
-## allié + le second ennemi UNITS_INTERVAL plus tard ; et ainsi de suite) —
-## cf. `unit_groups`. Le joueur ne reçoit la main qu'à la toute fin
-## (`finished`) — le plus tardif des trois (combattants, HUD, menu), pas
-## simplement la fin du menu — c'est à l'appelant de garder le menu inactif
-## jusque-là.
+## synergie) et menu de commandes démarrent TOUS ENSEMBLE. Les combattants
+## n'ont AUCUNE animation propre (essayé : fondu, dépli+rotation, rebond sur
+## l'échelle, apparition par groupes décalés — cf. l'historique git si l'un de
+## ces essais est à ressortir ; demandé sans, au final : « simplement ancrés à
+## la plateforme »). Ce script ne les reçoit donc même plus : ils sont enfants
+## de `arena` (posés par BattleScene), et suivent son dépli pour rien de plus.
+## Le joueur ne reçoit la main qu'à la toute fin (`finished`) — le plus tardif
+## du HUD et du menu, pas simplement la fin du menu — c'est à l'appelant de
+## garder le menu inactif jusque-là.
 ##
 ## TOUT L'ÉTAT DE DÉPART EST POSÉ PAR `play()`, DE FAÇON SYNCHRONE — alphas à
 ## zéro, échelles à plat, positions décalées — avant la moindre attente : appelée
@@ -27,25 +28,19 @@ const CommandMenu = preload("res://Scripts/Battle/UI/CommandMenu.gd")
 
 # ──────────────────────────────────────────────────────────────────────────
 #  DURÉES — des CHOIX, pas des mesures : aucune maquette ne montre l'ouverture.
-#  UNITS_INTERVAL et HUD_INTERVAL viennent de la demande de l'auteur (0,5 s au
-#  départ, divisé par deux pour accélérer TOUT globalement, puis HUD_INTERVAL
-#  reposé explicitement à 0,10 s, puis UNITS_INTERVAL repensé en apparition PAR
-#  GROUPE — un allié + un ennemi ensemble — à 0,15 s). Le rebond du HUD et le
-#  glissement des commandes du menu (cf. CommandMenu.ROW_SLIDE) viennent aussi
-#  de demandes explicites.
+#  HUD_INTERVAL vient de la demande de l'auteur (0,5 s au départ, divisé par
+#  deux pour accélérer TOUT globalement, puis reposé explicitement à 0,10 s).
+#  Le rebond du HUD et le glissement des commandes du menu (cf.
+#  CommandMenu.ROW_SLIDE) viennent aussi de demandes explicites. Les
+#  combattants ont eu plusieurs essais d'animation propre (fondu seul, dépli +
+#  rotation, rebond sur l'échelle, apparition par groupes décalés) : retirés à
+#  la demande de l'auteur — cf. l'historique git si l'un est à ressortir.
 # ──────────────────────────────────────────────────────────────────────────
 
-## Plateforme et combattants : fondu + rotation X de −90° à 0° + échelle de 70 %
-## à 100 %, sur la même durée.
+## Plateforme : fondu + rotation X de −90° à 0° + échelle de 70 % à 100 %.
 const FLIP_DURATION := 0.2
 const FLIP_FROM_DEG := -90.0
 const FLIP_FROM_SCALE := 0.7
-## Écart entre le début de la plateforme et celui du PREMIER groupe de
-## combattants, et entre deux groupes consécutifs (demandé) — cf. `unit_groups`
-## dans `play()`. Le groupe i démarre à (i + 1) · UNITS_INTERVAL, pas après la
-## FIN de l'animation du groupe précédent (même logique de fire-and-forget que
-## HUD_INTERVAL plus bas).
-const UNITS_INTERVAL := 0.15
 
 ## Blocs du HUD : fondu + chute avec un LÉGER rebond en fin de course (demandé :
 ## « plus naturel » qu'un arrêt sec, puis « trop fort » — cf. `_slide_in_bounce`,
@@ -66,8 +61,8 @@ const BANDS_SLIDE := 24.0
 const BANDS_DURATION := 0.2
 
 ## Menu : une rangée toutes les MENU_ROW_INTERVAL, chacune en MENU_ROW_FADE.
-## Chaque commande glisse aussi verticalement en apparaissant (demandé) — géré
-## dans CommandMenu.reveal() lui-même, pas ici : cf. CommandMenu.ROW_SLIDE.
+## Chaque commande glisse aussi horizontalement en apparaissant (demandé) —
+## géré dans CommandMenu.reveal() lui-même, pas ici : cf. CommandMenu.ROW_SLIDE.
 const MENU_ROW_INTERVAL := 0.04
 const MENU_ROW_FADE := 0.06
 
@@ -96,20 +91,18 @@ var _tween: Tween
 ##   qu'ils coïncident.
 ## - `arena` porte la plateforme ET les combattants, pivot au centre de la
 ##   plateforme : c'est lui qui pivote en premier, et comme les combattants sont
-##   ses enfants ils restent ANCRÉS au sol pendant qu'il se redresse. Il doit
-##   être à l'identité au repos — il y revient à la fin. PAS de fondu sur la
-##   plateforme elle-même (contrairement aux combattants) : elle reste opaque
-##   du début à la fin, seules son échelle et sa rotation l'animent — sinon,
-##   tant qu'elle est semi-transparente, le worldmap dessiné derrière (cf.
-##   BattleScene, "le worldmap reste affiché EN DIRECT derrière le combat")
-##   transparaît au travers, ce qui a été pris à tort pour un chevauchement
-##   entre ses deux moitiés (PLATFORM_LEFT/PLATFORM_RIGHT) alors qu'il s'agit
-##   du hex du Hero, bien plus clair que le reste de la worldmap à cet endroit.
-## - `unit_groups` : les combattants (pivot à leurs pieds, cf. UnitSprite),
-##   groupés dans l'ordre où ils doivent apparaître — chaque groupe démarre
-##   UNITS_INTERVAL après le précédent (cf. la constante). Ce script ne sait
-##   toujours pas ce qu'un groupe représente (allié+ennemi ou autre chose) :
-##   c'est l'appelant qui les compose.
+##   ses enfants ils restent ANCRÉS au sol pendant qu'il se redresse — SANS
+##   rien de plus : ce script ne les reçoit pas et ne leur applique aucune
+##   animation propre (demandé, cf. l'entête du fichier), ils suivent le dépli
+##   de `arena` pour toute leur apparition. `arena` doit être à l'identité au
+##   repos — il y revient à la fin. PAS de fondu sur la plateforme elle-même :
+##   elle reste opaque du début à la fin, seules son échelle et sa rotation
+##   l'animent — sinon, tant qu'elle est semi-transparente, le worldmap dessiné
+##   derrière (cf. BattleScene, "le worldmap reste affiché EN DIRECT derrière
+##   le combat") transparaît au travers, ce qui a été pris à tort pour un
+##   chevauchement entre ses deux moitiés (PLATFORM_LEFT/PLATFORM_RIGHT) alors
+##   qu'il s'agit du hex du Hero, bien plus clair que le reste de la worldmap à
+##   cet endroit.
 ## - `band_top` / `band_bottom` : les bandes noires, à leur position de repos.
 ## - `hud_blocks` : un tableau par bloc du HUD, dans l'ordre d'arrivée ; les
 ##   nœuds d'un même bloc tombent ensemble (la jauge de synergie et son libellé,
@@ -118,7 +111,7 @@ var _tween: Tween
 ##   rangée.
 func play(
 	veil: ColorRect, focus: Vector2, arena: Node2D,
-	unit_groups: Array, band_top: CanvasItem, band_bottom: CanvasItem, hud_blocks: Array,
+	band_top: CanvasItem, band_bottom: CanvasItem, hud_blocks: Array,
 	menu: CommandMenu, legend: CanvasItem,
 ) -> void:
 	# Caché AVANT la moindre attente — sinon, le temps que l'iris se referme,
@@ -132,10 +125,6 @@ func play(
 	band_top.modulate.a = 0.0
 	band_bottom.modulate.a = 0.0
 	arena.scale = flip_scale(0.0)
-	for group in unit_groups:
-		for unit: Node2D in group:
-			unit.scale = flip_scale(0.0)
-			unit.modulate.a = 0.0
 	for block in hud_blocks:
 		for node: CanvasItem in block:
 			node.modulate.a = 0.0
@@ -155,17 +144,7 @@ func play(
 	_slide_in(band_bottom, Vector2(0, BANDS_SLIDE), BANDS_DURATION, 0.0)
 
 	_flip_in(arena, 0.0)
-	# Groupe i démarre à (i + 1) · UNITS_INTERVAL après le début de la
-	# plateforme (demandé) — pas après la fin du groupe précédent.
-	for i in unit_groups.size():
-		var group_delay := (i + 1) * UNITS_INTERVAL
-		for unit: Node2D in unit_groups[i]:
-			_flip_in(unit, group_delay, [unit])
 
-	# HUD et menu démarrent AVEC la plateforme (t=0), pas après les combattants :
-	# seuls ces derniers suivent en groupes espacés de UNITS_INTERVAL, le temps
-	# que la plateforme les porte. `finished` doit donc attendre le plus lent
-	# des trois, pas simplement la fin du menu (cf. plus bas).
 	for i in hud_blocks.size():
 		for node: CanvasItem in hud_blocks[i]:
 			_slide_in_bounce(
@@ -175,15 +154,16 @@ func play(
 	var hud_end := maxi(0, hud_blocks.size() - 1) * HUD_INTERVAL + HUD_FALL_DURATION
 
 	menu.visible = true
-	# Le glissement (vertical, demandé) est sur CHAQUE commande, pas sur le
+	# Le glissement (horizontal, demandé) est sur CHAQUE commande, pas sur le
 	# menu entier — cf. CommandMenu.reveal()/_fade_from_zero.
 	var menu_end: float = menu.reveal(MENU_ROW_INTERVAL, MENU_ROW_FADE, 0.0)
 	# Avec la DERNIÈRE rangée : la légende décrit ce menu, elle n'a rien à dire
 	# tant qu'il n'est pas là.
 	_fade_in(legend, MENU_ROW_FADE, menu_end - MENU_ROW_FADE)
 
-	var units_end := unit_groups.size() * UNITS_INTERVAL + FLIP_DURATION
-	var end_time := maxf(units_end, maxf(hud_end, menu_end))
+	# Les combattants n'ont plus de timeline à eux (cf. entête du fichier) :
+	# `finished` attend seulement le plus tardif du HUD et du menu.
+	var end_time := maxf(hud_end, menu_end)
 	_tween.tween_callback(finished.emit).set_delay(end_time)
 
 ## Referme le voile en cercle sur `center` (cf. battle_intro_iris.gdshader) :
@@ -216,23 +196,10 @@ static func flip_scale(t: float) -> Vector2:
 	var s := lerpf(FLIP_FROM_SCALE, 1.0, t)
 	return Vector2(s, s * cos(deg_to_rad(lerpf(FLIP_FROM_DEG, 0.0, t))))
 
-## `fades` bascule EN MÊME TEMPS que l'échelle : `t` est DÉJÀ la valeur adoucie
-## par le trans/ease ci-dessous (tween_method interpole l'argument passé au
-## callback, pas seulement le temps), donc lier l'alpha à ce même `t` — plutôt
-## qu'à un fondu séparé sur sa propre courbe — garantit qu'échelle et
-## transparence avancent ENSEMBLE. Sans ça (essayé, constaté) l'échelle, en
-## EASE_OUT, atteint sa quasi-taille finale bien avant que le fondu séparé ne
-## rende l'objet assez opaque pour qu'on le voie : on ne perçoit alors qu'un
-## fondu, jamais la bascule.
-func _flip_in(node: Node2D, delay: float, fades: Array[CanvasItem] = []) -> void:
+func _flip_in(node: Node2D, delay: float) -> void:
 	node.scale = flip_scale(0.0)
-	for item in fades:
-		item.modulate.a = 0.0
-	var step := func(t: float) -> void:
-		node.scale = flip_scale(t)
-		for item in fades:
-			item.modulate.a = t
-	_tween.tween_method(step, 0.0, 1.0, FLIP_DURATION) \
+	var set_scale := func(t: float) -> void: node.scale = flip_scale(t)
+	_tween.tween_method(set_scale, 0.0, 1.0, FLIP_DURATION) \
 		.set_delay(delay).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 
 func _fade_in(item: CanvasItem, duration: float, delay: float) -> void:

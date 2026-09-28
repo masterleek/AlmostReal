@@ -328,29 +328,27 @@ pas partir en guerre contre des choix déjà faits et documentés dans ce repo :
   suit ni le glissement du terrain, ni la secousse, ni le zoom (`CanvasZoom`),
   qui n'agissent que sur le calque du combat — il se lit comme un plan lointain.
 - **L'OUVERTURE du combat** (`BattleIntro.gd`) : bandes + plateforme + HUD bloc
-  par bloc + menu rangée par rangée, tous ensemble ; les combattants, eux,
-  suivent par GROUPES appariés par emplacement (le 1er allié + le 1er ennemi
-  ensemble, `UNITS_INTERVAL` après le début de la plateforme, le 2e groupe
-  `UNITS_INTERVAL` plus tard, etc. — composé par `BattleScene._play_intro`,
-  `BattleIntro` ne sait pas ce qu'un groupe représente). `finished` attend le
-  plus tardif des trois (combattants/HUD/menu), pas juste la fin du menu.
-  Trois règles la tiennent, à respecter en touchant à `_ready` :
+  par bloc + menu rangée par rangée, tous ensemble. **Les combattants n'ont
+  AUCUNE animation propre** (plusieurs essais — fondu, dépli+rotation, rebond,
+  apparition par groupes décalés — tous retirés à la demande de l'auteur, cf.
+  historique git si l'un est à ressortir) : `BattleIntro` ne les reçoit même
+  plus. Ils sont enfants de `_arena` (posés par `BattleScene._build_units`) et
+  suivent son dépli pour toute leur apparition — c'est ce qui les ANCRE à la
+  plateforme. `finished` attend le plus tardif du HUD et du menu, pas juste la
+  fin du menu. Deux règles à respecter en touchant à `_ready` :
   - tout l'état de départ (alphas, échelles, positions) est posé SYNCHRONEMENT
     par `play()` à la fin de `_ready` — sinon une image montre l'écran monté
-    avant qu'il ne s'efface pour entrer ;
+    avant qu'il ne s'efface pour entrer. AVANT la moindre attente (donc AVANT
+    `_close_iris`, cf. plus bas), bandes/HUD/menu sont déjà cachés (alpha 0 ou
+    `visible = false`) à la main — sinon (constaté) le combat entier s'affiche
+    déjà, par-dessus le voile encore ouvert, pendant que l'iris se referme ;
   - `State.INTRO` : le menu reste inactif (`_on_intro_finished` le rend actif et
     annonce le tour), et `_refresh_unit_visuals` n'écrit aucune modulation — il
     ferait apparaître les combattants d'un coup avant leur tour ;
   - la plateforme ET les unités vivent sous `_arena` (pivot au centre de la
-    plateforme), c'est ce qui ANCRE les combattants au sol pendant qu'il se
-    redresse. **`_arena` doit rester à l'identité au repos** : le ciblage, les
+    plateforme). **`_arena` doit rester à l'identité au repos** : le ciblage, les
     nombres de dégâts et `BattleAssault` lisent les positions des sprites comme
     des coordonnées de terrain.
-  - AVANT la moindre attente (donc AVANT `_close_iris`, cf. plus bas), tout est
-    déjà caché (alpha 0) à la main — pas seulement posé par `_flip_in`/
-    `_slide_in`/`menu.hide_rows()`, qui ne tournent qu'APRÈS l'attente. Sinon
-    (constaté) le combat entier s'affiche déjà, par-dessus le voile encore
-    ouvert, pendant que l'iris se referme.
 - **Le voile (`BackgroundDim`) se referme en cercle** avant le reste de
   l'ouverture (`BattleIntro._close_iris`, `Shaders/battle_intro_iris.gdshader`) :
   un rayon animé de plus grand que l'écran jusqu'à 0, centré sur le Hero du

@@ -526,25 +526,17 @@ func _play_intro() -> void:
 	_intro = BattleIntro.new()
 	add_child(_intro)
 	_intro.finished.connect(_on_intro_finished)
-	# Groupes appariés par emplacement : le premier allié ET le premier ennemi
-	# apparaissent ensemble, puis le second de chaque camp, etc. (demandé) — un
-	# camp plus fourni que l'autre voit ses derniers emplacements apparaître
-	# seuls, sans rien qui leur corresponde en face.
-	var unit_groups: Array = []
-	for i in maxi(_enemy_sprites.size(), _ally_sprites.size()):
-		var group: Array[Node2D] = []
-		if i < _enemy_sprites.size():
-			group.append(_enemy_sprites[i])
-		if i < _ally_sprites.size():
-			group.append(_ally_sprites[i])
-		unit_groups.append(group)
+	# Les combattants n'ont aucune animation propre (demandé, "simplement
+	# ancrés à la plateforme") : `_intro` ne les reçoit même pas — enfants de
+	# `_arena_holder` (cf. _build_units), ils suivent son dépli pour toute leur
+	# apparition, sans rien à leur appliquer ici.
 	var hud_blocks: Array = []
 	for panel in _status_panels:
 		hud_blocks.append([panel])
 	hud_blocks.append([_synergy_gauge, _synergy_label])
 	var focus := _intro_focus if _has_intro_focus else _arena.global_position
 	_intro.play(
-		background_dim, focus, _arena, unit_groups, _dark_top, _dark_bottom,
+		background_dim, focus, _arena, _dark_top, _dark_bottom,
 		hud_blocks, _menu, _legend,
 	)
 
