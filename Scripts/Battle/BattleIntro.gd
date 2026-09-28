@@ -6,7 +6,9 @@ extends Node
 ## D'ABORD le voile (BackgroundDim) se referme en cercle sur la plateforme —
 ## cf. `_close_iris`, TERMINÉ avant la suite (pas de parallélisme avec le
 ## reste). PUIS, à t = 0 : bandes noires, plateforme, blocs du HUD (alliés +
-## synergie) et menu de commandes démarrent TOUS ENSEMBLE. Les combattants
+## synergie) et menu de commandes démarrent TOUS ENSEMBLE ; EN MÊME TEMPS,
+## `field` (plateforme + combattants, PAS le HUD/menu/bandes) dézoome de 200 %
+## à 100 % (demandé, cf. `_zoom_out`). Les combattants
 ## n'ont AUCUNE animation propre (essayé : fondu, dépli+rotation, rebond sur
 ## l'échelle, apparition par groupes décalés — cf. l'historique git si l'un de
 ## ces essais est à ressortir ; demandé sans, au final : « simplement ancrés à
@@ -41,6 +43,13 @@ const CommandMenu = preload("res://Scripts/Battle/UI/CommandMenu.gd")
 const FLIP_DURATION := 0.2
 const FLIP_FROM_DEG := -90.0
 const FLIP_FROM_SCALE := 0.7
+
+## Terrain (`field` — plateforme + combattants) : dézoom de 200 % à 100 %,
+## centré sur la plateforme (demandé, « rapide et fluide » — TRANS_CUBIC/
+## EASE_OUT, plus mordant que le TRANS_QUAD du reste de l'ouverture). N'anime
+## PAS le HUD, le menu ni les bandes : ils vivent hors de `field`.
+const FIELD_ZOOM_FROM := 2.0
+const FIELD_ZOOM_DURATION := 0.3
 
 ## Blocs du HUD : fondu + chute avec un LÉGER rebond en fin de course (demandé :
 ## « plus naturel » qu'un arrêt sec, puis « trop fort » — cf. `_slide_in_bounce`,
@@ -103,6 +112,12 @@ var _tween: Tween
 ##   chevauchement entre ses deux moitiés (PLATFORM_LEFT/PLATFORM_RIGHT) alors
 ##   qu'il s'agit du hex du Hero, bien plus clair que le reste de la worldmap à
 ##   cet endroit.
+## - `field` porte `arena` (donc la plateforme et les combattants) SANS le
+##   HUD, le menu ni les bandes — c'est lui qui dézoome (demandé), autour du
+##   point où `arena` est posé dans son repère (son pivot, donc le centre de la
+##   plateforme) pour que ce point ne bouge pas à l'écran pendant le dézoom —
+##   cf. `_zoom_out`. Doit être à l'identité au repos, comme `arena` : c'est le
+##   même nœud que `BattleScene._move_field` anime pendant l'assaut.
 ## - `band_top` / `band_bottom` : les bandes noires, à leur position de repos.
 ## - `hud_blocks` : un tableau par bloc du HUD, dans l'ordre d'arrivée ; les
 ##   nœuds d'un même bloc tombent ensemble (la jauge de synergie et son libellé,
@@ -110,7 +125,7 @@ var _tween: Tween
 ## - `menu` et `legend` : le menu racine, et ce qui apparaît avec sa dernière
 ##   rangée.
 func play(
-	veil: ColorRect, focus: Vector2, arena: Node2D,
+	veil: ColorRect, focus: Vector2, arena: Node2D, field: Node2D,
 	band_top: CanvasItem, band_bottom: CanvasItem, hud_blocks: Array,
 	menu: CommandMenu, legend: CanvasItem,
 ) -> void:
@@ -125,6 +140,8 @@ func play(
 	band_top.modulate.a = 0.0
 	band_bottom.modulate.a = 0.0
 	arena.scale = flip_scale(0.0)
+	field.scale = Vector2(FIELD_ZOOM_FROM, FIELD_ZOOM_FROM)
+	field.position = arena.position * (1.0 - FIELD_ZOOM_FROM)
 	for block in hud_blocks:
 		for node: CanvasItem in block:
 			node.modulate.a = 0.0
@@ -144,6 +161,7 @@ func play(
 	_slide_in(band_bottom, Vector2(0, BANDS_SLIDE), BANDS_DURATION, 0.0)
 
 	_flip_in(arena, 0.0)
+	_zoom_out(field, arena.position, 0.0)
 
 	for i in hud_blocks.size():
 		for node: CanvasItem in hud_blocks[i]:
@@ -162,8 +180,8 @@ func play(
 	_fade_in(legend, MENU_ROW_FADE, menu_end - MENU_ROW_FADE)
 
 	# Les combattants n'ont plus de timeline à eux (cf. entête du fichier) :
-	# `finished` attend seulement le plus tardif du HUD et du menu.
-	var end_time := maxf(hud_end, menu_end)
+	# `finished` attend le plus tardif du HUD, du menu et du dézoom.
+	var end_time := maxf(FIELD_ZOOM_DURATION, maxf(hud_end, menu_end))
 	_tween.tween_callback(finished.emit).set_delay(end_time)
 
 ## Referme le voile en cercle sur `center` (cf. battle_intro_iris.gdshader) :
@@ -201,6 +219,24 @@ func _flip_in(node: Node2D, delay: float) -> void:
 	var set_scale := func(t: float) -> void: node.scale = flip_scale(t)
 	_tween.tween_method(set_scale, 0.0, 1.0, FLIP_DURATION) \
 		.set_delay(delay).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+
+## Dézoome `node` de FIELD_ZOOM_FROM à 1.0 autour de `anchor` (son repère
+## local À LUI) : à toute échelle `s`, `position = anchor * (1 - s)` maintient
+## `anchor` au même endroit à l'écran — à s = 1 (repos), position = 0 ; à
+## s = FIELD_ZOOM_FROM (départ), position pousse `anchor` à l'opposé de son
+## agrandissement. Même relation qu'un seul tween_method (pas deux
+## tween_property sur scale et position séparément) : ça garantit que les deux
+## restent en phase à CHAQUE image, pas seulement aux extrémités — deux tweens
+## indépendants sur la même courbe y arriveraient aussi, mais dépendraient de
+## deux réglages de trans/ease tenus identiques à la main.
+func _zoom_out(node: Node2D, anchor: Vector2, delay: float) -> void:
+	node.scale = Vector2(FIELD_ZOOM_FROM, FIELD_ZOOM_FROM)
+	node.position = anchor * (1.0 - FIELD_ZOOM_FROM)
+	var set_zoom := func(s: float) -> void:
+		node.scale = Vector2(s, s)
+		node.position = anchor * (1.0 - s)
+	_tween.tween_method(set_zoom, FIELD_ZOOM_FROM, 1.0, FIELD_ZOOM_DURATION) \
+		.set_delay(delay).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
 
 func _fade_in(item: CanvasItem, duration: float, delay: float) -> void:
 	item.modulate.a = 0.0

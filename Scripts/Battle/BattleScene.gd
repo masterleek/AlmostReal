@@ -536,7 +536,7 @@ func _play_intro() -> void:
 	hud_blocks.append([_synergy_gauge, _synergy_label])
 	var focus := _intro_focus if _has_intro_focus else _arena.global_position
 	_intro.play(
-		background_dim, focus, _arena, _dark_top, _dark_bottom,
+		background_dim, focus, _arena, _field, _dark_top, _dark_bottom,
 		hud_blocks, _menu, _legend,
 	)
 
