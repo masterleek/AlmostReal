@@ -505,9 +505,14 @@ func _ready() -> void:
 	add_child(CanvasZoom.new())
 	background_dim.size = Vector2(DESIGN_SIZE * STAGE_SCALE)
 	# BattleIntro anime "radius" sur ce matériau pour refermer le voile en
-	# cercle plutôt que de le poser d'un bloc (cf. battle_intro_iris.gdshader).
+	# hexagone plutôt que de le poser d'un bloc (cf. battle_intro_iris.gdshader).
 	background_dim.material = ShaderMaterial.new()
 	background_dim.material.shader = load("res://Shaders/battle_intro_iris.gdshader")
+	# `rect_size` : le shader travaille en UV (immunisé contre l'écart
+	# FRAGCOORD/canvas_transform constaté en jeu, cf. le shader) — reconstruit
+	# les pixels de design à partir de `background_dim.size`, posé juste
+	# au-dessus, plutôt que de le deviner en dur dans le shader.
+	background_dim.material.set_shader_parameter("rect_size", background_dim.size)
 	_build_field()
 	_build_decor()
 	_build_units()

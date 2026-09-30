@@ -109,6 +109,19 @@ var _idle_elapsed: float = 0.0
 var _is_idle_fidgeting: bool = false
 var _idle_fidget_saved_flip_h: bool = false
 
+## Centre VISUEL du dessin (tête à pieds) — PAS `global_position`, qui est le
+## point d'ancrage au sol (repris par le pathfinding, cf. `current_cell`).
+## `offset` (posé dans la scène, -20 en Y) recentre déjà le sprite dessus :
+## IDLE_FRAMES/WALK_FRAMES sont des rects mesurés au pixel près (« mesurés au
+## pixel près sur la feuille source », cf. plus haut), sans marge, et
+## `centered` (Sprite2D, vrai par défaut, jamais changé ici) les dessine
+## centrés sur `position + offset` — qui EST donc ce centre, sans calcul de
+## rect à refaire. Utilisé pour cadrer l'iris d'ouverture du combat sur le
+## Héros plutôt que sur ses pieds (cf. BattleLauncher.open, constaté en jeu :
+## centré sur les pieds, l'iris se refermait visiblement sous le personnage).
+func visual_centre() -> Vector2:
+	return global_position + offset
+
 func _ready() -> void:
 	texture = load("res://Sprites/character.png")
 	region_enabled = true

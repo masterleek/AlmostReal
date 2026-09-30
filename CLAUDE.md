@@ -3,6 +3,11 @@
 Jeu de gestion/exploration en Godot 4.6 (GDScript), vue isométrique hexagonale.
 Repo git, remote `origin` → github.com/masterleek/AlmostReal, branche `main`.
 
+## Langue
+
+- **Toujours répondre en FRANÇAIS** (demandé explicitement) — y compris les
+  messages de statut/progression, pas seulement les réponses finales.
+
 ## Environnement
 
 - Le binaire Godot n'est **pas** dans le PATH (`godot` introuvable). Utiliser le
@@ -349,11 +354,17 @@ pas partir en guerre contre des choix déjà faits et documentés dans ce repo :
     plateforme). **`_arena` doit rester à l'identité au repos** : le ciblage, les
     nombres de dégâts et `BattleAssault` lisent les positions des sprites comme
     des coordonnées de terrain.
-- **Le voile (`BackgroundDim`) se referme en cercle** avant le reste de
+- **Le voile (`BackgroundDim`) se referme en HEXAGONE** avant le reste de
   l'ouverture (`BattleIntro._close_iris`, `Shaders/battle_intro_iris.gdshader`) :
-  un rayon animé de plus grand que l'écran jusqu'à 0, centré sur le Hero du
-  worldmap (position ÉCRAN calculée par `BattleLauncher.open`, transmise en
-  `intro_focus` — pas forcément `_arena`, cf. BattleIntro.play, `focus`).
+  même silhouette que les tuiles du worldmap (demandé — cf.
+  `TileGeometry.tile_art_hitzone()`, PAS un hexagone régulier : étiré
+  verticalement). Un rayon animé de plus grand que l'écran jusqu'à 0, centré
+  sur le Hero du worldmap (position ÉCRAN calculée par `BattleLauncher.open`,
+  transmise en `intro_focus` — pas forcément `_arena`, cf. BattleIntro.play,
+  `focus`). La « distance » hexagonale du shader vaut, dans l'axe de ses
+  propres sommets, seulement ≈ 0,883 fois la distance euclidienne du cercle
+  qu'elle remplace — le rayon de départ (`IRIS_START_RADIUS`) a dû grandir
+  d'autant pour garder « rien d'assombri au repos ».
   **Un ColorRect NE pré-remplit PAS `COLOR`** avec sa propre `color` pour un
   shader personnalisé (contrairement à un Polygon2D, cf. `reveal_shadow_mask.gdshader`) :
   sans le uniform `dim_color` posé explicitement dans le shader, rien ne

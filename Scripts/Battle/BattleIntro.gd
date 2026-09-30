@@ -3,7 +3,7 @@ extends Node
 ## Ouverture du combat : chaque élément de l'écran entre à son tour, au lieu que
 ## tout apparaisse d'un bloc dans son état final.
 ##
-## D'ABORD le voile (BackgroundDim) se referme en cercle sur la plateforme —
+## D'ABORD le voile (BackgroundDim) se referme en HEXAGONE sur la plateforme —
 ## cf. `_close_iris`, TERMINÉ avant la suite (pas de parallélisme avec le
 ## reste). PUIS, à t = 0 : bandes noires et plateforme démarrent ; EN MÊME
 ## TEMPS, `field` (plateforme + combattants, PAS le HUD/menu/bandes) dézoome
@@ -82,12 +82,18 @@ const BANDS_DURATION := 0.2
 const MENU_ROW_INTERVAL := 0.04
 const MENU_ROW_FADE := 0.06
 
-## Voile (BackgroundDim) : se referme en cercle sur la plateforme AVANT tout
-## le reste (cf. battle_intro_iris.gdshader) — le monde se resserre sur le
-## point de combat, qui n'apparaît qu'une fois le voile refermé. Le rayon de
-## départ doit dépasser la diagonale de l'écran (rien d'assombri au repos) ;
-## 1600 le fait largement pour un écran 1920x1080 recentré sur la plateforme.
-const IRIS_START_RADIUS := 1600.0
+## Voile (BackgroundDim) : se referme en HEXAGONE sur la plateforme AVANT
+## tout le reste (cf. battle_intro_iris.gdshader, même silhouette que les
+## tuiles du worldmap — demandé) — le monde se resserre sur le point de
+## combat, qui n'apparaît qu'une fois le voile refermé. Le rayon de départ
+## doit dépasser la diagonale de l'écran (rien d'assombri au repos) ; 1600 le
+## faisait largement pour un écran 1920x1080 recentré sur la plateforme, mais
+## SEULEMENT pour un cercle — la « distance » hexagonale du shader vaut, au
+## pire (dans l'axe de ses propres sommets, à atan(17/32) ≈ 28°), HALF_WIDTH /
+## √(HALF_WIDTH² + EDGE_HALF_HEIGHT²) ≈ 0,883 fois la distance euclidienne :
+## un hexagone à 1600 laisserait donc un coin d'écran visible dans cet axe.
+## 1850 (1600 / 0,883, arrondi avec marge) restaure la même couverture.
+const IRIS_START_RADIUS := 1850.0
 const IRIS_DURATION := 0.5
 
 ## L'ouverture est jouée : le joueur peut prendre la main.
@@ -97,7 +103,7 @@ var _tween: Tween
 
 ## Joue l'ouverture.
 ##
-## - `veil` (BackgroundDim) se referme en cercle sur `focus` AVANT tout le
+## - `veil` (BackgroundDim) se referme en hexagone sur `focus` AVANT tout le
 ##   reste — cf. IRIS_START_RADIUS. Doit porter un ShaderMaterial sur
 ##   battle_intro_iris.gdshader (posé par BattleScene._ready), sinon
 ##   `set_shader_parameter` échoue silencieusement (pas d'assombrissement).
@@ -191,7 +197,7 @@ func play(
 	var end_time := maxf(FIELD_ZOOM_DURATION, maxf(hud_end, menu_end))
 	_tween.tween_callback(finished.emit).set_delay(end_time)
 
-## Referme le voile en cercle sur `center` (cf. battle_intro_iris.gdshader) :
+## Referme le voile en hexagone sur `center` (cf. battle_intro_iris.gdshader) :
 ## rayon de IRIS_START_RADIUS (rien d'assombri) jusqu'à 0 (tout assombri,
 ## l'état de repos que `veil` a déjà par sa propre couleur). Tween À PART,
 ## PAS `_tween` — cette étape est TERMINÉE avant que le reste ne commence

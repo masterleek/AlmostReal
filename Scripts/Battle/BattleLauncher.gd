@@ -26,11 +26,13 @@ static func open(host: Node, context: Dictionary = {}) -> CanvasLayer:
 	var full_context := context.duplicate()
 	if not full_context.has("intro_focus"):
 		var hero := host.get_node_or_null("Hero")
-		if hero is Node2D:
+		if hero != null and hero.has_method("visual_centre"):
 			# Même conversion monde -> écran que WorldmapCursor.world_to_screen,
-			# tient compte de la position ET du zoom de la caméra.
+			# tient compte de la position ET du zoom de la caméra. `visual_centre()`
+			# et pas `global_position` (constaté en jeu : l'iris se refermait sous
+			# le Héros, centré sur ses pieds — cf. Hero.visual_centre).
 			full_context["intro_focus"] = (
-				host.get_viewport().get_canvas_transform() * (hero as Node2D).global_position
+				host.get_viewport().get_canvas_transform() * hero.visual_centre()
 			)
 
 	var hidden := _hide_layers(host)
