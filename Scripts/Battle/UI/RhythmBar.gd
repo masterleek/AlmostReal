@@ -24,6 +24,7 @@ const BattleRules = preload("res://Scripts/Battle/BattleRules.gd")
 const BattleText = preload("res://Scripts/Battle/UI/BattleText.gd")
 const PixelScale = preload("res://Scripts/Battle/UI/PixelScale.gd")
 const SfxBank = preload("res://Scripts/Audio/SfxBank.gd")
+const LINE_REVEAL_SHADER = preload("res://Shaders/rhythm_line_reveal.gdshader")
 
 ## EN PNG, ET C'EST MESURÉ. Ces trois-là sont les seuls assets de la barre à
 ## être restés en raster : leur SVG passe toute sa lueur par des `<filter>`
@@ -162,34 +163,42 @@ const GLOW_OUT := 0.3
 ## `open()`, appelé une seule fois pour tout l'assaut, jamais depuis
 ## `play()`/`rest()`. EN DEUX TEMPS, l'un APRÈS l'autre, jamais en parallèle
 ## (demandé) :
-##   1. l'ANNEAU (rhythm_circle.svg) — fondu + resserrement de 130 % à 100 %
+##   1. l'ANNEAU (rhythm_circle.svg) — fondu + resserrement de 180 % à 100 %
 ##      avec un LÉGER ressort en fin de course, même principe que
 ##      BattleIntro._slide_in_bounce (dépassement contrôlé, découpage 70/30
 ##      de la durée entre l'élan et l'amortissement), appliqué ici à l'échelle
 ##      plutôt qu'à la position (cf. `_show_ring`) ;
 ##   2. UNE FOIS L'ANNEAU POSÉ — `open()` attend la fin de l'étape 1 — la
-##      JAUGE (les deux moitiés éteintes) en simple fondu (cf.
-##      `_fade_in_lines`), EN MÊME TEMPS que la première séquence de notes :
-##      c'est cette même attente, répercutée jusque dans
-##      `BattleAssault.run()` (qui attend maintenant `open()`), qui retient le
-##      premier `play()`.
+##      JAUGE (les deux moitiés) en BALAYAGE depuis l'anneau (demandé,
+##      « énergie qui se propage » plutôt qu'un simple fondu) : un shader
+##      (cf. rhythm_line_reveal.gdshader, posé par `_make_reveal_material`)
+##      révèle chaque moitié depuis son bord collé à l'anneau jusqu'au bord de
+##      l'écran, avec une brillance en tête du balayage DANS la silhouette de
+##      la ligne — PAS un sprite de lueur séparé (essayé, CASSÉ : un cercle
+##      flou posé à côté ne se lit pas comme « la ligne qui brille »).
+##      EN MÊME TEMPS que la première séquence de notes : c'est cette même
+##      attente, répercutée jusque dans `BattleAssault.run()` (qui attend
+##      maintenant `open()`), qui retient le premier `play()`.
 ##
 ## L'échelle de BASE de l'anneau n'est pas 1 : `sprite_native()` le
 ## contre-échelonne (cf. PixelScale.apply) pour que sa texture, rastérisée à
-## la résolution de l'écran, retombe à sa taille de design — 130 % et 100 %
+## la résolution de l'écran, retombe à sa taille de design — 180 % et 100 %
 ## se multiplient donc à cette base, comme le pulse de `_pulse_glow`.
 const OPEN_FADE_DURATION := 0.25
-const RING_OPEN_SCALE_FROM := 1.3
+const RING_OPEN_SCALE_FROM := 1.8
 ## Dépassement du ressort, en fraction de l'échelle de base : LÉGER (demandé)
 ## — un dépassement plus marqué se lirait comme un vrai rebond plutôt que
 ## comme un simple assouplissement de l'arrivée.
 const RING_OPEN_OVERSHOOT := 0.05
 
-## Disparition en FIN d'assaut (demandé, cf. `close()`) : AUCUN changement
-## d'échelle, seulement des fondus — mais dans l'ordre INVERSE de l'ouverture
-## (demandé) : la JAUGE (les deux moitiés) d'abord, puis, une fois APRÈS elle,
-## l'ANNEAU.
+## Disparition en FIN d'assaut (demandé, cf. `close()`), dans l'ordre INVERSE
+## de l'ouverture (demandé) : la JAUGE (les deux moitiés) se rétracte vers
+## l'anneau d'abord — même balayage que l'ouverture, à rebours — puis, une
+## fois APRÈS elle, l'ANNEAU se referme : fondu ET resserrement de 100 % à
+## `RING_CLOSE_SCALE_TO` EN MÊME TEMPS (demandé), contrairement à l'ouverture
+## qui sépare ses deux temps.
 const CLOSE_FADE_DURATION := 0.25
+const RING_CLOSE_SCALE_TO := 0.6
 
 ## « PERFECT » est peint lettre par lettre sur la maquette — jaune, blanc, cyan,
 ## magenta. C'est le seul verdict à ce traitement, et il le mérite : c'est celui
@@ -281,20 +290,22 @@ var _running: bool = false
 func _ready() -> void:
 	_left = PixelScale.sprite(LINE_EMPTY, Vector2.ZERO, true)
 	_left.position = BAR_POS
+	_left.material = _make_reveal_material(false)
 	add_child(_left)
 
-
-	# Retournée : l'asset est une moitié GAUCHE, son dégradé doit rester tourné
-	# vers le centre.
+	# PAS de `flip_h` (contrairement au reste de la barre où le retournement
+	# natif suffirait) : `rhythm_line_reveal.gdshader` a besoin d'un `UV.x`
+	# fidèle à l'ESPACE ÉCRAN du rectangle dessiné pour savoir dans quel sens
+	# balayer, et `flip_h` retourne aussi l'UV fourni au shader — cf. son
+	# commentaire. Le mirroir du dégradé (l'asset est dessiné comme moitié
+	# GAUCHE) se fait donc À LA MAIN, par l'uniform `flip` du shader.
 	#
-	# `flip_h` ne DÉPLACE PAS le sprite : avec `centered = false`, son rectangle
-	# part toujours de `position` et le retournement ne fait que miroiter la
-	# texture dedans. La moitié droite se pose donc simplement une largeur plus
-	# loin — la décaler de deux largeurs, comme le ferait un retournement autour
-	# de l'origine, l'envoyait hors de l'écran.
+	# `position` reste décalée d'une largeur, comme avant : `flip_h` ne
+	# DÉPLACE PAS un sprite (`centered = false` part toujours de `position`),
+	# seul le retournement de la TEXTURE change de méthode ici.
 	_right = PixelScale.sprite(LINE_EMPTY, Vector2.ZERO, true)
-	_right.flip_h = true
 	_right.position = BAR_POS + Vector2(HALF_WIDTH, 0)
+	_right.material = _make_reveal_material(true)
 	add_child(_right)
 
 	_glow_left = PixelScale.sprite(LINE_ENEMY, Vector2.ZERO, true)
@@ -432,14 +443,14 @@ func open() -> void:
 	rest()
 	set_side(Side.NONE)
 	visible = true
-	# Cachée AVANT la moindre attente, comme BattleIntro.play() : sans ça,
-	# `_left`/`_right` resteraient à leur alpha par défaut (1) pendant TOUTE
+	# Ramenées à largeur NULLE AVANT la moindre attente, comme BattleIntro.play() :
+	# sans ça, `_left`/`_right` resteraient pleinement révélées pendant TOUTE
 	# l'animation de l'anneau, visibles alors qu'elles ne doivent apparaître
 	# qu'après lui.
-	_left.modulate.a = 0.0
-	_right.modulate.a = 0.0
+	_set_sweep(_left, 0.0)
+	_set_sweep(_right, 0.0)
 	await _show_ring()
-	_fade_in_lines()
+	_reveal_lines()
 
 ## Éteint puis retire. La barre disparaît APRÈS son fondu, sinon la dernière
 ## action de l'assaut la verrait se couper net.
@@ -468,7 +479,7 @@ func close() -> void:
 ## RING_OPEN_SCALE_FROM, dépasse LÉGÈREMENT sous l'échelle de base avant d'y
 ## remonter — même découpage 70/30 de la durée que
 ## BattleIntro._slide_in_bounce, appliqué à l'échelle. `await`é par `open()`,
-## qui n'enchaîne sur `_fade_in_lines()` qu'une fois ce Tween fini.
+## qui n'enchaîne sur `_reveal_lines()` qu'une fois ce Tween fini.
 func _show_ring() -> void:
 	if _rig_tween != null and _rig_tween.is_valid():
 		_rig_tween.kill()
@@ -487,30 +498,112 @@ func _show_ring() -> void:
 		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 	await _rig_tween.finished
 
-## Fondu de la JAUGE SEULE (les deux moitiés), une fois l'anneau posé — cf.
-## `open()`. Alpha déjà à 0 (posé par `open()` avant son attente), rien à
-## reposer ici.
-func _fade_in_lines() -> void:
+## Matériau du balayage pour une moitié (cf. rhythm_line_reveal.gdshader) :
+## `flip` remplace le `flip_h` natif qu'on ne peut pas utiliser ici (cf.
+## `_ready`), `near_edge_uv` dit quel bord du rectangle dessiné (0 = gauche,
+## 1 = droite) est collé à l'anneau. UNE instance PAR moitié (pas de matériau
+## partagé) : les deux balaient avec un `progress` indépendant.
+func _make_reveal_material(flip: bool) -> ShaderMaterial:
+	var material := ShaderMaterial.new()
+	material.shader = LINE_REVEAL_SHADER
+	material.set_shader_parameter("flip", flip)
+	material.set_shader_parameter("near_edge_uv", 0.0 if flip else 1.0)
+	return material
+
+## Marge au-delà de 1 (ouverture) / en-deçà de 1 vers le haut (fermeture) sur
+## laquelle `shine_travel` continue après que `progress` a saturé à 1 — cf.
+## `_set_sweep` et le shader : c'est ce qui laisse à la pointe lumineuse la
+## place de sortir ENTIÈREMENT du cadre plutôt que de s'arrêter pile au bord
+## de l'écran (demandé, constaté en jeu : sans marge, la bosse plafonnait au
+## bord et y restait visible tant que `shine_strength` ne la coupait pas).
+## Doit dépasser `shine_width` (cf. shader) pour que la pointe ait fini de
+## s'éteindre avant de quitter la dernière colonne de pixels du sprite.
+const SHINE_EXIT_OVERSHOOT := 0.4
+
+## Pose `t` sur le matériau de `sprite` (`_left` ou `_right`) — c'est la
+## fonction que `_reveal_lines`/`_close_rig` animent via `tween_method`, dans
+## un sens puis dans l'autre. `t` peut dépasser [0, 1] (cf. SHINE_EXIT_OVERSHOOT) :
+## `progress` (qui pilote le remplissage de la ligne, cf. shader) est alors
+## SATURÉ à ses bornes, mais `shine_travel` (la position de la pointe
+## lumineuse) continue de suivre `t` sans être clampé — c'est ce qui la fait
+## sortir du cadre une fois la ligne déjà pleinement révélée/rétractée.
+func _set_sweep(sprite: Sprite2D, t: float) -> void:
+	var mat := sprite.material as ShaderMaterial
+	mat.set_shader_parameter("progress", clampf(t, 0.0, 1.0))
+	mat.set_shader_parameter("shine_travel", t)
+
+## Allume la brillance de tête (cf. shader, `shine_strength`) — INSTANTANÉ,
+## contrairement à son extinction (cf. SHINE_FADE_OUT) : elle démarre
+## toujours à `shine_travel = 0`/`1 + marge` (cf. `_set_sweep`), donc déjà à
+## son propre zéro géométrique — rien à fondre à l'allumage.
+func _set_shine(sprite: Sprite2D, on: bool) -> void:
+	(sprite.material as ShaderMaterial).set_shader_parameter("shine_strength", 1.0 if on else 0.0)
+
+## Durée du fondu de sortie de la brillance (cf. `shine_strength`) : ANIMÉ,
+## pas une coupure instantanée (demandé) — la pointe a déjà quitté le cadre à
+## ce moment (cf. SHINE_EXIT_OVERSHOOT), mais un fondu franc évite tout à-coup
+## si cette marge ne suffisait pas exactement selon `shine_width`.
+const SHINE_FADE_OUT := 0.15
+
+## Éteint la brillance des DEUX moitiés en fondu, chaîné après le balayage
+## courant du `tween` passé (cf. `_reveal_lines`/`_close_rig`, appelants).
+func _fade_out_shine(tween: Tween) -> void:
+	tween.chain().tween_property(_left.material, "shader_parameter/shine_strength", 0.0, SHINE_FADE_OUT)
+	tween.parallel().tween_property(_right.material, "shader_parameter/shine_strength", 0.0, SHINE_FADE_OUT)
+
+## Balayage de la JAUGE (les deux moitiés) depuis l'anneau vers le bord de
+## l'écran — ET AU-DELÀ (cf. SHINE_EXIT_OVERSHOOT), pour que la pointe
+## lumineuse sorte entièrement du cadre plutôt que de s'arrêter au bord. Une
+## fois l'anneau posé — cf. `open()`. `progress`/`shine_travel` déjà à 0
+## (posés par `open()` avant son attente), rien à reposer ici.
+func _reveal_lines() -> void:
+	_set_shine(_left, true)
+	_set_shine(_right, true)
 	_rig_tween = create_tween()
 	_rig_tween.set_parallel(true)
-	_rig_tween.tween_property(_left, "modulate:a", 1.0, OPEN_FADE_DURATION)
-	_rig_tween.tween_property(_right, "modulate:a", 1.0, OPEN_FADE_DURATION)
+	_rig_tween.tween_method(
+		func(p: float) -> void: _set_sweep(_left, p),
+		0.0, 1.0 + SHINE_EXIT_OVERSHOOT, OPEN_FADE_DURATION,
+	).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	_rig_tween.tween_method(
+		func(p: float) -> void: _set_sweep(_right, p),
+		0.0, 1.0 + SHINE_EXIT_OVERSHOOT, OPEN_FADE_DURATION,
+	).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	_fade_out_shine(_rig_tween)
 
-## Fondu de la JAUGE SEULE PUIS, une fois APRÈS elle, de l'ANNEAU — ordre
-## INVERSE de l'ouverture (demandé). Aucun changement d'échelle.
-## `set_parallel(false)` à la fin, comme l'ancien `_glow_tween` : ce que
-## l'appelant ajoute ensuite au Tween renvoyé (cf. `close()`) tourne APRÈS ce
-## fondu, pas à côté.
+## Balayage de la JAUGE à REBOURS (DEPUIS au-delà du bord de l'écran — cf.
+## SHINE_EXIT_OVERSHOOT, symétrique de la sortie d'ouverture, demandé —
+## jusqu'à l'anneau, qui l'« avale ») PUIS, une fois APRÈS lui, l'ANNEAU qui
+## se referme — fondu ET resserrement à `RING_CLOSE_SCALE_TO` EN MÊME TEMPS
+## (demandé) — ordre INVERSE de l'ouverture (demandé), qui elle sépare ses
+## deux temps. `set_parallel(false)` à la fin, comme l'ancien `_glow_tween` :
+## ce que l'appelant ajoute ensuite au Tween renvoyé (cf. `close()`) tourne
+## APRÈS ce balayage, pas à côté.
 func _close_rig() -> Tween:
 	if _rig_tween != null and _rig_tween.is_valid():
 		_rig_tween.kill()
+	_set_shine(_left, true)
+	_set_shine(_right, true)
 	_rig_tween = create_tween()
 	_rig_tween.set_parallel(true)
-	_rig_tween.tween_property(_left, "modulate:a", 0.0, CLOSE_FADE_DURATION)
-	_rig_tween.tween_property(_right, "modulate:a", 0.0, CLOSE_FADE_DURATION)
-	# `.chain()` : sans lui, `set_parallel(true)` (toujours actif) ferait
-	# démarrer l'anneau EN MÊME TEMPS que la jauge, pas après elle.
+	_rig_tween.tween_method(
+		func(p: float) -> void: _set_sweep(_left, p),
+		1.0 + SHINE_EXIT_OVERSHOOT, 0.0, CLOSE_FADE_DURATION,
+	).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	_rig_tween.tween_method(
+		func(p: float) -> void: _set_sweep(_right, p),
+		1.0 + SHINE_EXIT_OVERSHOOT, 0.0, CLOSE_FADE_DURATION,
+	).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	# `.chain()` (dans `_fade_out_shine`) : sans lui, `set_parallel(true)`
+	# (toujours actif) ferait démarrer l'anneau EN MÊME TEMPS que la jauge,
+	# pas après elle. `.parallel()`, plus bas, fait ensuite tourner le
+	# resserrement EN MÊME TEMPS que ce fondu-là seulement (même motif que
+	# `_show_judgement`), pas avec la jauge.
+	_fade_out_shine(_rig_tween)
 	_rig_tween.chain().tween_property(_ring, "modulate:a", 0.0, CLOSE_FADE_DURATION)
+	_rig_tween.parallel().tween_property(
+		_ring, "scale", (Vector2.ONE / float(PixelScale.SCALE)) * RING_CLOSE_SCALE_TO, CLOSE_FADE_DURATION
+	).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 	_rig_tween.set_parallel(false)
 	return _rig_tween
 
