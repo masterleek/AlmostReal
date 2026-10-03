@@ -38,6 +38,7 @@
 [ext_resource type="Shader" uid="uid://blu834eh00ekh" path="res://Shaders/hd2d_post.gdshader" id="41_hd2d_post_shader"]
 [ext_resource type="Script" uid="uid://c0rknfu6mcbyr" path="res://Scripts/Worldmap/Hd2dPostProcess.gd" id="42_hd2d_post_script"]
 [ext_resource type="Script" uid="uid://ds0eb4spnepbf" path="res://Scripts/Worldmap/AmbientParticles.gd" id="43_ambient_particles_script"]
+[ext_resource type="Script" uid="uid://hq8woymcalkt" path="res://Scripts/Worldmap/IslandShadow.gd" id="44_island_shadow_script"]
 
 [sub_resource type="FastNoiseLite" id="FastNoiseLite_mid"]
 frequency = 0.014
@@ -355,6 +356,11 @@ y_sort_enabled = true
 position = Vector2(0, -2)
 script = ExtResource("36_map_foam_script")
 foam_material = SubResource("ShaderMaterial_tile_foam")
+
+[node name="IslandShadow" type="Node2D" parent="." node_paths=PackedStringArray("tile_layer")]
+z_index = -2
+script = ExtResource("44_island_shadow_script")
+tile_layer = NodePath("../TileMapLayer")
 
 [node name="TileReflectionFlat" type="TileMapLayer" parent="." unique_id=1284730501]
 z_index = -2
