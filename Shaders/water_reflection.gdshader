@@ -103,7 +103,52 @@ uniform float wake_warp_strength = 0.1;
 uniform vec4 wake_color : source_color = vec4(1.0, 1.0, 1.0, 1.0);
 uniform float wake_highlight_strength : hint_range(0.0, 1.0) = 0.4;
 
+// Paillettes spéculaires : points qui s'allument et s'éteignent, posés sur une
+// grille en espace MONDE (elles restent donc attachées à l'eau quand la caméra
+// bouge, contrairement à un motif en UV d'écran). Deux couches : une dense et
+// fine, une rare et plus grosse. C'est cette seconde qui compte pour la passe
+// HD-2D (hd2d_post.gdshader) : hors de la bande nette, un point brillant
+// devient un disque de bokeh d'autant plus lisible qu'il est gros au départ.
+// glint_strength = 0 coupe tout (aucun coût, rendu identique à avant).
+// glint_bottom_fade : multiplicateur de densité au bas de la surface (uv.y = 1),
+// 1 = uniforme ; < 1 concentre les paillettes vers le haut/loin, là où le
+// soleil se reflète le plus (cf. captures d'Octopath Traveler 2).
+uniform float glint_strength : hint_range(0.0, 1.0) = 0.0;
+uniform vec4 glint_color : source_color = vec4(1.0, 0.97, 0.85, 1.0);
+uniform float glint_speed = 1.6;
+uniform float glint_bottom_fade : hint_range(0.0, 1.0) = 0.5;
+uniform float glint_cell_small = 12.0;
+uniform float glint_density_small : hint_range(0.0, 1.0) = 0.12;
+uniform float glint_size_small = 1.0;
+uniform float glint_cell_big = 36.0;
+uniform float glint_density_big : hint_range(0.0, 1.0) = 0.07;
+uniform float glint_size_big = 2.3;
+
 varying vec2 world_pos;
+
+float hash12(vec2 p) {
+	vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+	p3 += dot(p3, p3.yzx + 33.33);
+	return fract((p3.x + p3.y) * p3.z);
+}
+
+// Une couche de paillettes. Le centre est jitteré dans la moitié centrale de sa
+// cellule : le rayon (size_px) reste ainsi toujours à l'intérieur de la cellule,
+// sans qu'il faille lire les 8 voisines. La forme est une ellipse aplatie
+// (même perspective en biais que le reste de l'eau).
+float glint_layer(vec2 wp, float cell_px, float density, float size_px, float seed) {
+	vec2 cell = floor(wp / cell_px);
+	float h = hash12(cell + seed);
+	if (h > density) {
+		return 0.0;
+	}
+	vec2 jitter = vec2(hash12(cell + seed + 17.0), hash12(cell + seed + 53.0));
+	vec2 center = (cell + 0.25 + 0.5 * jitter) * cell_px;
+	vec2 d = (wp - center) * vec2(1.0, 1.8);
+	float tw = sin(TIME * glint_speed * (0.5 + h / density) + h * 40.0) * 0.5 + 0.5;
+	tw = tw * tw * tw;
+	return (1.0 - smoothstep(size_px * 0.6, size_px, length(d))) * tw;
+}
 
 void vertex() {
 	world_pos = (MODEL_MATRIX * vec4(VERTEX, 0.0, 1.0)).xy;
@@ -167,6 +212,13 @@ void fragment() {
 		bool small_hit = small_n > small_thresh;
 		if (big_hit || small_hit) {
 			col = reflection_color.rgb;
+		}
+
+		if (glint_strength > 0.0) {
+			float g = glint_layer(world_pos, glint_cell_small, glint_density_small, glint_size_small, 0.0)
+				+ glint_layer(world_pos, glint_cell_big, glint_density_big, glint_size_big, 7.0);
+			float depth_k = mix(1.0, glint_bottom_fade, uv.y);
+			col = mix(col, glint_color.rgb, clamp(g * glint_strength * depth_k, 0.0, 1.0));
 		}
 
 		col = mix(col, wake_color.rgb, wake_highlight * wake_highlight_strength * wake_color.a);
