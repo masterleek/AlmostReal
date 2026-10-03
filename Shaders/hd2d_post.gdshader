@@ -20,9 +20,9 @@ uniform sampler2D screen_tex : hint_screen_texture, filter_linear_mipmap, repeat
 // ne doit pas changer la composition de l'effet, qui est une affaire de cadrage
 // de l'image et non de distance dans le monde.
 uniform float focus_center : hint_range(0.0, 1.0) = 0.5;
-uniform float focus_half_height : hint_range(0.0, 0.5) = 0.17;
+uniform float focus_half_height : hint_range(0.0, 0.5) = 0.20;
 uniform float blur_ramp : hint_range(0.05, 0.6) = 0.30;
-uniform float blur_max : hint_range(0.0, 0.05) = 0.016;
+uniform float blur_max : hint_range(0.0, 0.05) = 0.012;
 uniform float blur_top_scale : hint_range(0.0, 2.0) = 1.0;
 uniform float blur_bottom_scale : hint_range(0.0, 2.0) = 1.2;
 
