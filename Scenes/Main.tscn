@@ -37,6 +37,7 @@
 [ext_resource type="Texture2D" uid="uid://djvyfpm0f82f7" path="res://UI/ic_plus.png" id="40_plus_icon_tex"]
 [ext_resource type="Shader" uid="uid://blu834eh00ekh" path="res://Shaders/hd2d_post.gdshader" id="41_hd2d_post_shader"]
 [ext_resource type="Script" uid="uid://c0rknfu6mcbyr" path="res://Scripts/Worldmap/Hd2dPostProcess.gd" id="42_hd2d_post_script"]
+[ext_resource type="Script" uid="uid://ds0eb4spnepbf" path="res://Scripts/Worldmap/AmbientParticles.gd" id="43_ambient_particles_script"]
 
 [sub_resource type="FastNoiseLite" id="FastNoiseLite_mid"]
 frequency = 0.014
@@ -476,6 +477,10 @@ script = ExtResource("6_camera")
 
 [node name="WorldmapMusic" type="AudioStreamPlayer" parent="." unique_id=1721430835]
 stream = ExtResource("18_worldmap_music")
+
+[node name="AmbientParticles" type="CPUParticles2D" parent="." node_paths=PackedStringArray("camera")]
+script = ExtResource("43_ambient_particles_script")
+camera = NodePath("../Camera2D")
 
 [node name="Hd2dPostProcess" type="CanvasLayer" parent="." node_paths=PackedStringArray("camera") groups=["keep_visible_during_battle"]]
 layer = 1
