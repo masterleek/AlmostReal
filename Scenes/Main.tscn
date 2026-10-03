@@ -35,6 +35,8 @@
 [ext_resource type="Script" uid="uid://dh2skd2un04la" path="res://Scripts/Worldmap/TileReflectionFlat.gd" id="38_tile_reflection_flat_script"]
 [ext_resource type="PackedScene" path="res://Scenes/LightRay.tscn" id="39_light_ray_scene"]
 [ext_resource type="Texture2D" uid="uid://djvyfpm0f82f7" path="res://UI/ic_plus.png" id="40_plus_icon_tex"]
+[ext_resource type="Shader" uid="uid://blu834eh00ekh" path="res://Shaders/hd2d_post.gdshader" id="41_hd2d_post_shader"]
+[ext_resource type="Script" uid="uid://c0rknfu6mcbyr" path="res://Scripts/Worldmap/Hd2dPostProcess.gd" id="42_hd2d_post_script"]
 
 [sub_resource type="FastNoiseLite" id="FastNoiseLite_mid"]
 frequency = 0.014
@@ -204,6 +206,9 @@ sources/0 = SubResource("TileSetAtlasSource_hex")
 
 [sub_resource type="CanvasItemMaterial" id="CanvasItemMaterial_glow"]
 blend_mode = 1
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_hd2d_post"]
+shader = ExtResource("41_hd2d_post_shader")
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_white_tint"]
 shader = ExtResource("16_white_tint_shader")
@@ -472,7 +477,22 @@ script = ExtResource("6_camera")
 [node name="WorldmapMusic" type="AudioStreamPlayer" parent="." unique_id=1721430835]
 stream = ExtResource("18_worldmap_music")
 
+[node name="Hd2dPostProcess" type="CanvasLayer" parent="." node_paths=PackedStringArray("camera") groups=["keep_visible_during_battle"]]
+layer = 1
+script = ExtResource("42_hd2d_post_script")
+camera = NodePath("../Camera2D")
+
+[node name="Fx" type="ColorRect" parent="Hd2dPostProcess"]
+material = SubResource("ShaderMaterial_hd2d_post")
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
 [node name="HUD" type="CanvasLayer" parent="." unique_id=1725324657]
+layer = 2
 
 [node name="HexCounter" type="HBoxContainer" parent="HUD" unique_id=1290498837]
 anchors_preset = 1

@@ -60,10 +60,15 @@ static func open(host: Node, context: Dictionary = {}) -> CanvasLayer:
 ## Masque les CanvasLayer du worldmap (son HUD). Un CanvasLayer se dessine
 ## indépendamment de la visibilité de son parent Node2D : c'est lui qu'il faut
 ## masquer, le décor restant, lui, affiché.
+##
+## Les calques du groupe `keep_visible_during_battle` sont épargnés : ils font
+## partie du DÉCOR, pas de l'interface (la passe HD-2D). Les masquer ferait
+## sauter le worldmap, visible derrière le combat, du flou à l'image nette.
 static func _hide_layers(host: Node) -> Array[Node]:
 	var hidden: Array[Node] = []
 	for child in host.get_children():
-		if child is CanvasLayer and child.visible:
+		if child is CanvasLayer and child.visible \
+				and not child.is_in_group("keep_visible_during_battle"):
 			child.visible = false
 			hidden.append(child)
 	return hidden
