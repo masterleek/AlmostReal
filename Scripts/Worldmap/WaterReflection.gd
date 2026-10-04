@@ -8,12 +8,14 @@ extends ColorRect
 @export var width: float = 1536.0
 @export var height: float = 1536.0
 
-## Distance minimale (en pixels monde) parcourue par le curseur avant de
-## semer un nouveau point de sillage : volontairement PETITE (contrairement à
-## l'ancien ripple) pour que les points se chevauchent et forment une traînée
-## CONTINUE plutôt que des anneaux espacés (cf wake_positions/
-## wake_spawn_times ci-dessous), indépendamment du framerate.
-@export var wake_min_spawn_distance: float = 8.0
+## Distance (en pixels monde) entre deux anneaux du sillage (cf
+## wake_positions/wake_spawn_times ci-dessous). Elle règle la densité de la
+## chaîne : dans la référence, les arcs empilés sont espacés d'environ 18 % de la
+## largeur d'un anneau (≈ 54 px au maximum), d'où ~15 px. À 350 px/s cela fait
+## ~23 anneaux/s, soit ~16 vivants à la fois pour 0,7 s de durée de vie ; le
+## tampon (WAKE_MAX) doit les contenir tous, sinon les plus vieux sont écrasés
+## trop tôt (il a de la marge si le curseur va plus vite ou l'espacement baisse).
+@export var wake_min_spawn_distance: float = 15.0
 
 @onready var tile_layer: TileMapLayer = $"../TileMapLayer"
 @onready var cursor: Node2D = $"../WorldmapCursor"
@@ -22,7 +24,7 @@ const WorldmapCursor = preload("res://Scripts/Worldmap/WorldmapCursor.gd")
 # Doit rester égal à la taille des tableaux "wake_positions"/
 # "wake_spawn_times" déclarés dans water_reflection.gdshader (les tableaux
 # de uniforms GLSL ont une taille fixe, pas de resize possible côté shader).
-const WAKE_MAX := 16
+const WAKE_MAX := 32
 
 # Horloge dédiée au sillage (plutôt que le TIME du shader) : sert à la fois
 # à dater chaque semis (wake_spawn_times) et à calculer leur âge côté shader
@@ -48,11 +50,10 @@ func _ready() -> void:
 	# call_deferred attend que ce chargement soit terminé.
 	call_deferred("fit_to_map")
 
-## Sillage sous le curseur : une traînée continue de points semés le long de
-## son trajet (pas des anneaux d'impact ponctuels) — chaque point pousse
-## localement les reflets (cf water_reflection.gdshader) puis s'éteint
-## définitivement après un temps fixe (cf wake_lifetime côté shader), donc la
-## traînée se dissipe d'elle-même si le curseur s'arrête ou quitte l'eau.
+## Sillage sous le curseur : une chaîne d'anneaux posés le long de son trajet
+## (cf water_reflection.gdshader) — chaque point semé devient un anneau qui
+## grandit puis s'éteint après wake_lifetime côté shader, donc la traînée se
+## dissipe d'elle-même si le curseur s'arrête ou quitte l'eau.
 ## Semis seulement en déplacement libre (cf WorldmapCursor.Mode.FREE — en
 ## mode grille, le curseur est toujours sur une vraie tuile, jamais sur
 ## l'eau) ET tant qu'il survole effectivement CE rect (Rect2.has_point plutôt
@@ -67,20 +68,45 @@ func _process(delta: float) -> void:
 	var is_free: bool = cursor.mode == WorldmapCursor.Mode.FREE
 	var over_water: bool = Rect2(position, size).has_point(cursor.global_position)
 	if is_free and over_water:
-		if wake_last_spawn_pos == Vector2.INF or cursor.global_position.distance_to(wake_last_spawn_pos) >= wake_min_spawn_distance:
-			_spawn_wake(cursor.global_position)
+		_spawn_along_path(cursor.global_position, delta)
 	else:
 		wake_last_spawn_pos = Vector2.INF
 
 	mat.set_shader_parameter("wake_time", wake_time)
+	# Dernier anneau semé : le shader parcourt le tampon du plus ancien au plus
+	# récent à partir de là (cf water_reflection.gdshader, empilement des disques).
+	mat.set_shader_parameter("wake_head", (wake_next_index - 1 + WAKE_MAX) % WAKE_MAX)
 	mat.set_shader_parameter("wake_positions", wake_positions)
 	mat.set_shader_parameter("wake_spawn_times", wake_spawn_times)
 
+## Sème un anneau tous les wake_min_spawn_distance px le long du segment parcouru
+## depuis le dernier semis, et non un seul par image : à 350 px/s un seul semis
+## par image donnerait un espacement qui dépend de la fréquence d'images (24 px
+## à 30 fps, 12 px à 60), alors que les anneaux de la référence sont serrés et
+## réguliers. Chaque anneau est daté à l'instant où le curseur a réellement
+## traversé son point (interpolé dans l'image), pas à la fin de l'image : sinon
+## tous ceux d'une même image naîtraient du même âge et s'empileraient d'un bloc.
+func _spawn_along_path(current: Vector2, delta: float) -> void:
+	if wake_last_spawn_pos == Vector2.INF:
+		_spawn_wake(current, wake_time)
+		return
+	var segment: Vector2 = current - wake_last_spawn_pos
+	var length: float = segment.length()
+	if length < wake_min_spawn_distance:
+		return
+	var dir: Vector2 = segment / length
+	var from: Vector2 = wake_last_spawn_pos
+	var count: int = int(length / wake_min_spawn_distance)
+	for j in range(1, count + 1):
+		var travelled: float = wake_min_spawn_distance * float(j)
+		var spawn_time: float = wake_time - delta * (1.0 - travelled / length)
+		_spawn_wake(from + dir * travelled, spawn_time)
+
 ## Ajoute un point de sillage à `pos` dans le tampon circulaire
 ## wake_positions/wake_spawn_times (écrase le plus ancien une fois plein).
-func _spawn_wake(pos: Vector2) -> void:
+func _spawn_wake(pos: Vector2, spawn_time: float) -> void:
 	wake_positions[wake_next_index] = pos
-	wake_spawn_times[wake_next_index] = wake_time
+	wake_spawn_times[wake_next_index] = spawn_time
 	wake_next_index = (wake_next_index + 1) % WAKE_MAX
 	wake_last_spawn_pos = pos
 

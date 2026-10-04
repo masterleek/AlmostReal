@@ -76,32 +76,57 @@ uniform sampler2D reflect_warp_noise : repeat_enable;
 uniform float reflect_warp_tiles = 1.4;
 uniform float reflect_warp_strength = 0.35;
 
-// Sillage continu sous le curseur en déplacement libre (cf WaterReflection.gd
-// qui sème un point de sillage dans wake_positions/wake_spawn_times à chaque
-// PETIT déplacement du curseur au-dessus de l'eau — contrairement à l'ancien
-// ripple, la distance de semis est volontairement petite pour que les points
-// se chevauchent et forment une traînée CONTINUE plutôt que des anneaux
-// espacés). Chaque point pousse localement la position d'échantillonnage des
-// reflets (cf warped_uv plus bas) — comme si la surface était repoussée par
-// le passage du curseur, façon sillage de bateau — plutôt que de dessiner un
-// anneau dessus : effet plus discret/physique, visible via la distorsion des
-// taches de lumière existantes + un léger éclaircissement là où la poussée
-// est la plus forte. wake_squash aplatit la distance verticale (même
-// perspective en biais que le reste du rendu). Chaque point s'efface
-// définitivement après wake_lifetime secondes (pas de boucle infinie).
-uniform vec2 wake_positions[16];
-uniform float wake_spawn_times[16];
+// Sillage sous le curseur en déplacement libre : une CHAÎNE D'ANNEAUX EMPILÉS
+// le long de son trajet (cf WaterReflection.gd, qui sème un point dans
+// wake_positions/wake_spawn_times tous les wake_min_spawn_distance px).
+//
+// Chaque anneau naît petit, grandit en vieillissant et se comporte comme un DISQUE
+// posé au-dessus de ceux qui sont plus vieux : un anneau récent efface le trait
+// des anciens qu'il recouvre, il ne reste visible que l'arc non recouvert de
+// chacun (effet « ressort / bols empilés » de la référence). Les anneaux sont
+// parcourus du plus ancien au plus récent (wake_head = indice du dernier semé
+// dans le tampon circulaire) et chacun efface ce qui a déjà été dessiné sous son
+// disque ; la bordure de l'effacement est douce et tombe sous son propre trait.
+//
+// Le trait est BLANC, de largeur IRRÉGULIÈRE (épaississements et zones fines le
+// long de l'anneau, qui évoluent dans le temps) avec un rayon qui tremble, et une
+// lueur de wake_color. Il reste blanc et net presque jusqu'au bout : la
+// référence ne le fait ni pâlir ni scintiller. Un anneau vieux S'ÉRODE par ses
+// extrémités : un masque FIXE le long de l'anneau (bruit lisse, propre à chaque
+// anneau) est comparé à un seuil qui monte avec l'âge. Les arcs dont le masque
+// reste au-dessus du seuil survivent, s'amincissent en pointe là où le seuil les
+// rattrape (la largeur suit l'écart au seuil), s'effritent en quelques tirets,
+// et le dernier à rester est un petit éclat : l'anneau se coupe en longs
+// morceaux qui raccourcissent, il ne se pulvérise pas en points.
+// wake_squash aplatit les cercles en ellipses (perspective en biais de l'eau).
+const int WAKE_MAX = 32;
+uniform vec2 wake_positions[WAKE_MAX];
+uniform float wake_spawn_times[WAKE_MAX];
+uniform int wake_head = 0;
 uniform float wake_time = 0.0;
-uniform float wake_lifetime = 0.6;
-uniform float wake_radius = 44.0;
-uniform float wake_squash : hint_range(0.1, 1.0) = 0.45;
-uniform float wake_warp_strength = 0.1;
-// wake_color.a sert directement de multiplicateur d'opacité (cf fragment()) —
-// pas seulement sa teinte : le canal alpha du sélecteur de couleur dans
-// l'éditeur contrôle donc réellement la transparence du sillage, en plus de
-// wake_highlight_strength (les deux se multiplient).
-uniform vec4 wake_color : source_color = vec4(1.0, 1.0, 1.0, 1.0);
-uniform float wake_highlight_strength : hint_range(0.0, 1.0) = 0.4;
+// Durée de vie d'un anneau, et rayon (px monde) à la naissance puis à la mort.
+uniform float wake_lifetime = 0.7;
+uniform float wake_radius_start = 15.0;
+uniform float wake_radius = 27.0;
+uniform float wake_squash : hint_range(0.1, 1.0) = 0.65;
+// Épaisseur de base du trait (px monde) : l'épaisseur réelle varie de ~0,3 à
+// ~1,5 fois cette valeur le long de l'anneau.
+uniform float wake_line_width = 1.8;
+// Lueur : couleur, largeur (px monde) et intensité.
+uniform vec4 wake_color : source_color = vec4(0.3254902, 0.9764706, 1.0, 1.0);
+uniform float wake_glow_width = 2.8;
+uniform float wake_glow_strength : hint_range(0.0, 1.0) = 0.85;
+// Distance (px monde) sur laquelle la lueur déborde le long de l'arc au-delà de
+// l'endroit où le trait s'arrête : plus c'est grand, plus le bout est doux.
+uniform float wake_glow_reach = 9.0;
+// Part de la vie d'un anneau pendant laquelle il reste entier avant de s'éroder.
+uniform float wake_erode_start : hint_range(0.0, 0.9) = 0.55;
+// Nombre de bosses du masque d'érosion sur le tour : 2,5 donne 2 à 3 gros arcs
+// qui survivent, plus donne des morceaux plus courts et plus nombreux.
+uniform float wake_erode_scale = 2.5;
+// Amplitude du tremblement du rayon (px monde) et vitesse d'évolution du trait.
+uniform float wake_jitter = 0.8;
+uniform float wake_flicker_hz = 9.0;
 
 // Paillettes spéculaires : points qui s'allument et s'éteignent, posés sur une
 // grille en espace MONDE (elles restent donc attachées à l'eau quand la caméra
@@ -130,6 +155,18 @@ float hash12(vec2 p) {
 	vec3 p3 = fract(vec3(p.xyx) * 0.1031);
 	p3 += dot(p3, p3.yzx + 33.33);
 	return fract((p3.x + p3.y) * p3.z);
+}
+
+// Bruit de valeur lisse (0..1). Échantillonné sur le CERCLE (cos, sin) pour que le
+// trait d'un anneau soit continu en faisant le tour, sans raccord à 360°.
+float value_noise(vec2 p) {
+	vec2 i = floor(p);
+	vec2 f = fract(p);
+	f = f * f * (3.0 - 2.0 * f);
+	return mix(
+		mix(hash12(i), hash12(i + vec2(1.0, 0.0)), f.x),
+		mix(hash12(i + vec2(0.0, 1.0)), hash12(i + vec2(1.0, 1.0)), f.x),
+		f.y);
 }
 
 // Une couche de paillettes. Le centre est jitteré dans la moitié centrale de sa
@@ -172,9 +209,12 @@ void fragment() {
 			col *= vec3(0.88, 0.94, 0.96);
 		}
 
-		vec2 wake_push = vec2(0.0);
-		float wake_highlight = 0.0;
-		for (int i = 0; i < 16; i++) {
+		float wake_core = 0.0;
+		float wake_glow = 0.0;
+		float flick = TIME * wake_flicker_hz;
+		// Du plus ancien au plus récent : chaque anneau efface ce qu'il recouvre.
+		for (int k = 1; k <= WAKE_MAX; k++) {
+			int i = (wake_head + k) % WAKE_MAX;
 			float age = wake_time - wake_spawn_times[i];
 			if (age < 0.0 || age > wake_lifetime) {
 				continue;
@@ -182,15 +222,77 @@ void fragment() {
 			vec2 diff = world_pos - wake_positions[i];
 			diff.y /= wake_squash;
 			float dist = length(diff);
-			if (dist > wake_radius) {
+			float u = age / wake_lifetime;
+			// Croissance rapide puis qui ralentit (ease-out) : l'anneau « éclate »
+			// à la naissance au lieu de grossir à vitesse constante.
+			float r = mix(wake_radius_start, wake_radius, 1.0 - (1.0 - u) * (1.0 - u));
+			if (dist > r + wake_glow_width * 5.0) {
 				continue;
 			}
-			float falloff = 1.0 - smoothstep(0.0, wake_radius, dist);
-			float life_fade = 1.0 - age / wake_lifetime;
-			float amount = falloff * life_fade;
-			vec2 dir = dist > 0.001 ? diff / dist : vec2(0.0);
-			wake_push += dir * amount;
-			wake_highlight = max(wake_highlight, amount);
+			float seed = float(i);
+			vec2 circ = dist > 0.001 ? diff / dist : vec2(1.0, 0.0);
+
+			// Rayon qui tremble, lisse le long de l'anneau.
+			float tremble = (value_noise(circ * 4.0 + seed * 1.9 + vec2(flick * 0.35, 0.0)) - 0.5) * wake_jitter;
+			float rim = r + tremble;
+
+			// Érosion : seuil qui monte de -0,2 (tout est visible) à 1,1 (tout a disparu).
+			// Le masque d'érosion est fixe dans le temps (ni scintillement ni points qui
+			// s'éteignent au hasard), seul le seuil bouge.
+			float erode = clamp((u - wake_erode_start) / (0.98 - wake_erode_start), 0.0, 1.0);
+			float threshold = -0.2 + 1.3 * erode;
+			float mask = 0.85 * value_noise(circ * wake_erode_scale + seed * 5.7)
+				+ 0.15 * value_noise(circ * 7.0 + seed * 2.3);
+			mask = smoothstep(0.25, 0.75, mask);
+			// Largeur résiduelle : pleine loin du seuil, nulle dessus, ce qui taille les
+			// extrémités des arcs en pointe.
+			float vis = clamp((mask - threshold) / 0.22, 0.0, 1.0);
+			// La lueur ne suit que cette version LISSE et large : elle rayonne vers
+			// l'extérieur, et toute variation fine de vis y dessinerait des rayons.
+			float vis_glow = clamp((mask - threshold + 0.2) / 0.6, 0.0, 1.0);
+			// Effritement : près des extrémités (vis < 1), un bruit fin perce le trait de
+			// trous qui se referment en pointe. TOUT passe par des bruits lisses et des
+			// smoothstep : un masque par secteurs d'angle (step/hash) laissait des arêtes
+			// radiales droites, visibles dans la lueur comme des « parts de tarte ».
+			float fine = smoothstep(0.2, 0.6, value_noise(circ * 18.0 + seed * 1.3));
+			vis *= mix(1.0, fine, 1.0 - vis);
+			// Micro-coupures du trait entier : quelques creux lisses qui s'effacent avec
+			// l'érosion (renouvelés ~2,5 fois par seconde).
+			float gaps = smoothstep(0.17, 0.4, value_noise(circ * 9.0 + seed * 4.1 + vec2(flick * 0.05, 0.0)));
+			vis *= mix(gaps, 1.0, erode);
+			// Le disque de cet anneau occulte le TRAIT des plus vieux (bord de 2 px, caché
+			// sous son propre trait), seulement là où l'anneau est encore présent : un
+			// anneau érodé n'a plus de bord. La LUEUR n'est jamais effacée selon l'angle
+			// (présence) : combiné au rayon du disque, cela découpait des polygones à
+			// bords droits dans le halo, surtout visibles sur l'eau sombre.
+			float present = smoothstep(0.0, 0.25, mask - threshold);
+			float inside = 1.0 - smoothstep(rim - 1.0, rim + 1.0, dist);
+			wake_core *= 1.0 - inside * present;
+			// Les lueurs des anciens sont seulement ATTÉNUÉES sous le disque (aucune
+			// dépendance à l'angle, transition de ~14 px) : assez pour ne pas laisser de
+			// cercles fantômes derrière chaque anneau, trop douce pour dessiner un bord.
+			wake_glow *= 1.0 - 0.7 * (1.0 - smoothstep(rim - 13.0, rim + 1.0, dist));
+			float energy = smoothstep(0.0, 0.03, u) * mix(1.0, 0.85, erode);
+
+			// Épaisseur irrégulière : deux échelles de bruit (grosses variations lentes
+			// + crépitement fin) qui évoluent dans le temps.
+			float n_slow = value_noise(circ * 2.2 + seed * 7.1 + vec2(flick * 0.12, -flick * 0.09));
+			float n_fast = value_noise(circ * 7.0 + seed * 3.3 + vec2(-flick * 0.5, flick * 0.4));
+			float variation = smoothstep(0.25, 0.75, mix(n_slow, n_fast, 0.4));
+			float thickness = wake_line_width * mix(0.3, 1.5, variation) * vis;
+
+			float d = abs(dist - rim);
+			float core = (1.0 - smoothstep(thickness * 0.5, max(thickness, 0.001), d)) * smoothstep(0.0, 0.15, vis);
+			// La lueur suit le trait mais SE FOND au lieu de s'arrêter : là où l'arc
+			// s'érode, la distance à la partie encore visible grandit (« gap », en px),
+			// et la lueur décroît avec la distance euclidienne radiale + le long de
+			// l'arc. Le bout de l'arc reçoit un halo arrondi qui s'estompe, au lieu
+			// d'un bord radial net. C'est l'équivalent d'un flou de la lueur, sans
+			// passe supplémentaire.
+			float gap = (1.0 - vis_glow) * wake_glow_reach;
+			float glow = exp(-sqrt(d * d + gap * gap) / wake_glow_width) * smoothstep(0.0, 0.5, vis_glow);
+			wake_core = max(wake_core, core * energy);
+			wake_glow = max(wake_glow, glow * energy);
 		}
 
 		vec2 drift = TIME * reflect_speed * reflect_direction;
@@ -199,7 +301,7 @@ void fragment() {
 			texture(reflect_warp_noise, warp_uv).x,
 			texture(reflect_warp_noise, warp_uv + vec2(5.2, 1.7)).x
 		) - 0.5;
-		vec2 warped_uv = uv + warp * reflect_warp_strength + wake_push * wake_warp_strength;
+		vec2 warped_uv = uv + warp * reflect_warp_strength;
 
 		float big = texture(reflect_big_noise, warped_uv * reflect_big_tiles + drift).x;
 		float small_n = texture(reflect_small_noise, warped_uv * reflect_small_tiles + drift * 1.6).x;
@@ -221,7 +323,8 @@ void fragment() {
 			col = mix(col, glint_color.rgb, clamp(g * glint_strength * depth_k, 0.0, 1.0));
 		}
 
-		col = mix(col, wake_color.rgb, wake_highlight * wake_highlight_strength * wake_color.a);
+		col = mix(col, wake_color.rgb, wake_glow * wake_glow_strength * wake_color.a);
+		col = mix(col, vec3(1.0), wake_core);
 
 		COLOR = vec4(col, 1.0);
 	} else {
