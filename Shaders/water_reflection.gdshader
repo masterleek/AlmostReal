@@ -124,6 +124,8 @@ uniform float wake_erode_start : hint_range(0.0, 0.9) = 0.55;
 // Nombre de bosses du masque d'érosion sur le tour : 2,5 donne 2 à 3 gros arcs
 // qui survivent, plus donne des morceaux plus courts et plus nombreux.
 uniform float wake_erode_scale = 2.5;
+// Avancement de l'érosion (0..1) à partir duquel l'anneau s'éteint en fondu.
+uniform float wake_fade_start : hint_range(0.0, 0.95) = 0.2;
 // Amplitude du tremblement du rayon (px monde) et vitesse d'évolution du trait.
 uniform float wake_jitter = 0.8;
 uniform float wake_flicker_hz = 9.0;
@@ -272,7 +274,11 @@ void fragment() {
 			// dépendance à l'angle, transition de ~14 px) : assez pour ne pas laisser de
 			// cercles fantômes derrière chaque anneau, trop douce pour dessiner un bord.
 			wake_glow *= 1.0 - 0.7 * (1.0 - smoothstep(rim - 13.0, rim + 1.0, dist));
-			float energy = smoothstep(0.0, 0.03, u) * mix(1.0, 0.85, erode);
+			// Fondu de fin de vie : sur la dernière part de l'érosion, trait ET lueur
+			// perdent leur intensité (les derniers éclats s'éteignent au lieu de
+			// disparaître d'un coup).
+			float fade = 1.0 - smoothstep(wake_fade_start, 1.0, erode);
+			float energy = smoothstep(0.0, 0.03, u) * mix(1.0, 0.85, erode) * fade;
 
 			// Épaisseur irrégulière : deux échelles de bruit (grosses variations lentes
 			// + crépitement fin) qui évoluent dans le temps.

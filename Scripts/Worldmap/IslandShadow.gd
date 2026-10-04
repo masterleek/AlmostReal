@@ -30,6 +30,15 @@ const CELL_HALF := 32.0
 # et ne doit pas être rognée par le bord du viewport.
 const LIFT_MARGIN := 24.0
 
+## Émis quand le masque (silhouette noire des tuiles) vient d'être (re)construit.
+## IslandFoam.gd s'en sert pour recalculer sa distance au rivage.
+signal mask_changed
+
+## Texture du masque et rectangle qu'elle occupe en pixels MONDE (1 px de
+## texture = 1 px monde). Valides après le premier setup().
+var mask_texture: Texture2D
+var mask_rect: Rect2
+
 var _viewport: SubViewport
 var _mask_layer: TileMapLayer
 var _sprite: Sprite2D
@@ -89,6 +98,10 @@ func setup() -> void:
 	_sprite.material = blur
 	_sprite.position = bounds.position - margin + shadow_offset
 	add_child(_sprite)
+
+	mask_texture = _viewport.get_texture()
+	mask_rect = Rect2(bounds.position - margin, Vector2(_viewport.size))
+	mask_changed.emit()
 
 func _clear() -> void:
 	if _viewport != null:

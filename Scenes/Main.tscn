@@ -38,6 +38,7 @@
 [ext_resource type="Shader" uid="uid://blu834eh00ekh" path="res://Shaders/hd2d_post.gdshader" id="41_hd2d_post_shader"]
 [ext_resource type="Script" uid="uid://c0rknfu6mcbyr" path="res://Scripts/Worldmap/Hd2dPostProcess.gd" id="42_hd2d_post_script"]
 [ext_resource type="Script" uid="uid://ds0eb4spnepbf" path="res://Scripts/Worldmap/AmbientParticles.gd" id="43_ambient_particles_script"]
+[ext_resource type="Script" uid="uid://l4pcjvod5weo" path="res://Scripts/Worldmap/IslandFoam.gd" id="46_island_foam_script"]
 [ext_resource type="Script" uid="uid://hq8woymcalkt" path="res://Scripts/Worldmap/IslandShadow.gd" id="44_island_shadow_script"]
 
 [sub_resource type="FastNoiseLite" id="FastNoiseLite_mid"]
@@ -345,6 +346,7 @@ offset_right = 602.0
 offset_bottom = 278.0
 
 [node name="MapFoam" type="Node2D" parent="." unique_id=585089238]
+visible = false
 z_index = -1
 y_sort_enabled = true
 position = Vector2(0, -2)
@@ -362,6 +364,12 @@ material = SubResource("ShaderMaterial_tile_reflection_flat")
 position = Vector2(0, 7)
 tile_set = SubResource("TileSet_hex")
 script = ExtResource("38_tile_reflection_flat_script")
+
+[node name="IslandFoam" type="Node2D" parent="." unique_id=585089301 node_paths=PackedStringArray("shadow", "water")]
+z_index = -1
+script = ExtResource("46_island_foam_script")
+shadow = NodePath("../IslandShadow")
+water = NodePath("../WaterReflection")
 
 [node name="TileMapLayer" type="TileMapLayer" parent="." unique_id=319968199]
 z_index = -1
