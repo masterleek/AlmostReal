@@ -131,15 +131,12 @@ void fragment() {
 		float n_mid = value_noise(wp / 8.0 + vec2(0.0, foam_t * 0.05));
 		float dd = d + (n_mid - 0.5) * 4.5 + (n_slow - 0.5) * 5.0 + top_hide_px * top - bottom_extend_px * bottom;
 
-		// 1. Teinte d'eau peu profonde : dégradé lisse.
-		float depth_k = clamp(1.0 - dd / band_px, 0.0, 1.0);
-		vec3 col = color_shallow.rgb;
-		float alpha = smoothstep(0.0, 1.0, depth_k) * shallow_strength * mix(1.0, top_water_scale, top);
-
 		// 2. Reflets de l'eau, recalculés comme dans water_reflection.gdshader (même
-		// déformation de domaine, même dérive, mêmes textures, même échantillonnage)
-		// avec des seuils abaissés près du rivage (jamais relevés : l'eau du haut de
-		// la carte, presque sans reflets, n'en donnerait aucun).
+		// déformation de domaine, même dérive, mêmes textures, même échantillonnage),
+		// pour REDESSINER par-dessus la teinte (et l'ombre des îlots, qui les grisait)
+		// les traits que l'eau dessine déjà. L'origine de l'eau reçue (water_origin)
+		// est celle réellement affichée, arrondie comme un Control : sans cela, le
+		// tracé tombait un demi-pixel à côté et laissait un fantôme sous chaque trait.
 		vec2 water_uv = (wp - water_origin) / water_size;
 		vec2 warp_uv = water_uv * reflect_warp_tiles;
 		vec2 warp = vec2(
@@ -153,21 +150,28 @@ void fragment() {
 		float hole = texture(reflect_hole_noise, warped_uv * reflect_hole_tiles + drift).x;
 		float big_thresh = mix(reflect_big_thresh_top, reflect_big_thresh_bottom, water_uv.y);
 		float small_thresh = mix(reflect_small_thresh_top, reflect_small_thresh_bottom, water_uv.y);
+		bool big_hit = big > big_thresh && hole < reflect_hole_threshold;
+		bool water_hit = big_hit || small_n > small_thresh;
+		// Traits EN PLUS : seuil de la petite couche abaissé près du rivage (jamais
+		// relevé : l'eau du haut de la carte, presque sans reflets, n'en donnerait
+		// aucun). Ils ne s'ajoutent que là où l'eau n'en a pas.
 		small_thresh = min(small_thresh, mix(wave_threshold_near, wave_threshold_far, d / band_px));
-		bool water_hit = (big > big_thresh && hole < reflect_hole_threshold) || small_n > mix(reflect_small_thresh_top, reflect_small_thresh_bottom, water_uv.y);
-		bool foam_hit = (big > big_thresh && hole < reflect_hole_threshold) || small_n > small_thresh;
-		// Les traits que l'eau dessine déjà sont recopiés À L'IDENTIQUE (même
-		// échantillonnage, même seuil strict) et en pleine opacité, pour recouvrir
-		// exactement leur propre trait sous la teinte : un tracé légèrement différent
-		// (bord adouci, filtrage linéaire) laissait un fantôme à côté de chaque trait,
-		// d'où des « doublons ». Les traits en plus, dus aux seuils abaissés, sont
-		// simplement ajoutés.
-		float hit = (foam_hit ? 1.0 : 0.0) * mix(1.0, top_water_scale, top);
+		bool extra_hit = !water_hit && (big_hit || small_n > small_thresh);
+
+		// 1. Teinte d'eau peu profonde : dégradé lisse.
+		float depth_k = clamp(1.0 - dd / band_px, 0.0, 1.0);
+		vec3 col = color_shallow.rgb;
+		float alpha = smoothstep(0.0, 1.0, depth_k) * shallow_strength * mix(1.0, top_water_scale, top);
 		if (water_hit) {
-			hit = 1.0;
+			col = reflection_color.rgb;
+			alpha = 1.0;
 		}
-		col = mix(col, reflection_color.rgb, hit);
-		alpha = max(alpha, hit);
+		// Opacité pleine aussi : atténués (top_water_scale), ces traits en plus
+		// devenaient des taches grises à moitié transparentes.
+		if (extra_hit) {
+			col = reflection_color.rgb;
+			alpha = 1.0;
+		}
 
 		// 3 + 4. Frange : sa largeur respire au rythme d'une houle lente, déphasée
 		// d'un point à l'autre du rivage par le bruit lent. Bords antialiasés sur la

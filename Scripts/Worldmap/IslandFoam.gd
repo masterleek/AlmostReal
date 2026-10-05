@@ -108,7 +108,12 @@ func _copy_water_params(material: ShaderMaterial) -> void:
 		var value: Variant = water_material.get_shader_parameter(param_name)
 		if value != null:
 			material.set_shader_parameter(param_name, value)
-	material.set_shader_parameter("water_origin", water.position)
+	# Un Control est dessiné à une position ENTIÈRE (gui/common/snap_controls_to_pixels) :
+	# la position fractionnaire de l'eau (ici y = -112,5, centre d'une carte à
+	# nombre pair de rangées) est arrondie vers le haut à l'écran. Utiliser la valeur
+	# brute décalait nos reflets d'un demi-pixel par rapport aux siens, et chaque
+	# trait se doublait d'un fantôme.
+	material.set_shader_parameter("water_origin", (water.position + Vector2(0.5, 0.5)).floor())
 	material.set_shader_parameter("water_size", water.size)
 
 ## Distance (en px) de chaque pixel au pixel opaque le plus proche, rangée ligne
