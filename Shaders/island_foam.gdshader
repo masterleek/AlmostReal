@@ -33,6 +33,9 @@ uniform float shallow_strength : hint_range(0.0, 1.0) = 0.7;
 // Largeur de la frange blanche (px) : minimum, et amplitude de sa « respiration ».
 uniform float foam_width_min = 1.4;
 uniform float foam_width_breath = 1.3;
+// Vitesse de la frange blanche : multiplie le temps de sa respiration et de la
+// dérive de son bord (pas celui des reflets, qui suivent l'eau).
+uniform float foam_speed = 1.7;
 
 // Reflets de l'eau : ces paramètres sont COPIÉS du matériau de WaterReflection par
 // IslandFoam.gd (mêmes noms), jamais réglés ici. water_origin et water_size donnent
@@ -40,27 +43,26 @@ uniform float foam_width_breath = 1.3;
 uniform vec2 water_origin = vec2(0.0);
 uniform vec2 water_size = vec2(1.0);
 uniform vec4 reflection_color : source_color = vec4(0.969, 0.941, 0.816, 1.0);
-uniform sampler2D reflect_big_noise : filter_linear, repeat_enable;
+uniform sampler2D reflect_big_noise : repeat_enable;
 uniform float reflect_big_tiles = 1.0;
 uniform float reflect_big_thresh_top = 0.6;
 uniform float reflect_big_thresh_bottom = 0.85;
-uniform sampler2D reflect_small_noise : filter_linear, repeat_enable;
+uniform sampler2D reflect_small_noise : repeat_enable;
 uniform float reflect_small_tiles = 4.0;
 uniform float reflect_small_thresh_top = 0.56;
 uniform float reflect_small_thresh_bottom = 0.82;
-uniform sampler2D reflect_hole_noise : filter_linear, repeat_enable;
+uniform sampler2D reflect_hole_noise : repeat_enable;
 uniform float reflect_hole_tiles = 4.5;
 uniform float reflect_hole_threshold = 0.6;
 uniform float reflect_speed = 0.015;
 uniform vec2 reflect_direction = vec2(1.0, 0.3);
-uniform sampler2D reflect_warp_noise : filter_linear, repeat_enable;
+uniform sampler2D reflect_warp_noise : repeat_enable;
 uniform float reflect_warp_tiles = 1.4;
 uniform float reflect_warp_strength = 0.35;
 // Reflets dans la bande : seuil de la petite couche (plus bas = plus de traits)
-// au contact du rivage puis au large de la bande, et douceur de leur bord.
+// au contact du rivage puis au large de la bande.
 uniform float wave_threshold_near : hint_range(0.0, 1.0) = 0.7;
 uniform float wave_threshold_far : hint_range(0.0, 1.0) = 0.82;
-uniform float wave_softness = 0.015;
 
 // Côté NORD des tuiles (rivage tourné vers le haut de l'écran) : l'écume y est
 // plus discrète et en partie cachée par la tuile. top_foam_scale multiplie la
@@ -91,6 +93,14 @@ float value_noise(vec2 p) {
 		f.y);
 }
 
+// Direction (unitaire) du gradient de la distance en `uv` : vers le large.
+vec2 shore_direction(vec2 uv, vec2 px) {
+	vec2 g = vec2(
+		texture(distance_field, uv + vec2(2.0, 0.0) * px).r - texture(distance_field, uv - vec2(2.0, 0.0) * px).r,
+		texture(distance_field, uv + vec2(0.0, 2.0) * px).r - texture(distance_field, uv - vec2(0.0, 2.0) * px).r);
+	return g / max(length(g), 0.001);
+}
+
 void fragment() {
 	float d = texture(distance_field, UV).r;
 	if (d <= 0.0 || d >= band_px) {
@@ -98,20 +108,27 @@ void fragment() {
 	} else {
 		vec2 wp = origin_px + UV * size_px;
 
-		// Orientation du rivage : le gradient de la distance pointe vers le large.
-		// `top` vaut 1 face au nord, `bottom` 1 face au sud, 0 de côté.
+		// Orientation du rivage, MOYENNÉE sur un cercle de 8 points à 6 px : la
+		// direction du gradient bascule d'un coup le long de l'axe médian entre deux
+		// bords (dans un angle rentrant de la silhouette). Prise en un seul point,
+		// elle y faisait sauter `top` de 0 à 1 et laissait une arête droite dans la
+		// teinte ; moyennée, les directions opposées s'annulent et `top` varie
+		// progressivement. `ny` vaut ainsi entre -1 (face au nord) et 1 (face au sud).
 		vec2 px = 1.0 / size_px;
-		vec2 grad = vec2(
-			texture(distance_field, UV + vec2(2.0, 0.0) * px).r - texture(distance_field, UV - vec2(2.0, 0.0) * px).r,
-			texture(distance_field, UV + vec2(0.0, 2.0) * px).r - texture(distance_field, UV - vec2(0.0, 2.0) * px).r);
-		float ny = grad.y / max(length(grad), 0.001);
-		float top = smoothstep(0.35, -0.5, ny);
-		float bottom = smoothstep(0.0, 0.7, ny);
+		vec2 mean_dir = vec2(0.0);
+		for (int k = 0; k < 8; k++) {
+			float a = float(k) * 0.7853982;
+			mean_dir += shore_direction(UV + vec2(cos(a), sin(a)) * 6.0 * px, px);
+		}
+		float ny = mean_dir.y / 8.0;
+		float top = smoothstep(0.2, -0.4, ny);
+		float bottom = smoothstep(0.0, 0.5, ny);
 
 		// Bruits ancrés dans le monde : un très lent (grandes taches), un moyen (le
 		// bord ondule).
-		float n_slow = value_noise(wp / 23.0 + vec2(TIME * 0.02, 0.0));
-		float n_mid = value_noise(wp / 8.0 + vec2(0.0, TIME * 0.05));
+		float foam_t = TIME * foam_speed;
+		float n_slow = value_noise(wp / 23.0 + vec2(foam_t * 0.02, 0.0));
+		float n_mid = value_noise(wp / 8.0 + vec2(0.0, foam_t * 0.05));
 		float dd = d + (n_mid - 0.5) * 4.5 + (n_slow - 0.5) * 5.0 + top_hide_px * top - bottom_extend_px * bottom;
 
 		// 1. Teinte d'eau peu profonde : dégradé lisse.
@@ -120,7 +137,7 @@ void fragment() {
 		float alpha = smoothstep(0.0, 1.0, depth_k) * shallow_strength * mix(1.0, top_water_scale, top);
 
 		// 2. Reflets de l'eau, recalculés comme dans water_reflection.gdshader (même
-		// déformation de domaine, même dérive, mêmes textures) mais en bord doux et
+		// déformation de domaine, même dérive, mêmes textures, même échantillonnage)
 		// avec des seuils abaissés près du rivage (jamais relevés : l'eau du haut de
 		// la carte, presque sans reflets, n'en donnerait aucun).
 		vec2 water_uv = (wp - water_origin) / water_size;
@@ -137,17 +154,25 @@ void fragment() {
 		float big_thresh = mix(reflect_big_thresh_top, reflect_big_thresh_bottom, water_uv.y);
 		float small_thresh = mix(reflect_small_thresh_top, reflect_small_thresh_bottom, water_uv.y);
 		small_thresh = min(small_thresh, mix(wave_threshold_near, wave_threshold_far, d / band_px));
-		float s_small = smoothstep(small_thresh, small_thresh + wave_softness, small_n);
-		float s_big = smoothstep(big_thresh, big_thresh + wave_softness, big)
-			* (1.0 - smoothstep(reflect_hole_threshold, reflect_hole_threshold + wave_softness, hole));
-		float hit = max(s_small, s_big) * mix(1.0, top_water_scale, top);
+		bool water_hit = (big > big_thresh && hole < reflect_hole_threshold) || small_n > mix(reflect_small_thresh_top, reflect_small_thresh_bottom, water_uv.y);
+		bool foam_hit = (big > big_thresh && hole < reflect_hole_threshold) || small_n > small_thresh;
+		// Les traits que l'eau dessine déjà sont recopiés À L'IDENTIQUE (même
+		// échantillonnage, même seuil strict) et en pleine opacité, pour recouvrir
+		// exactement leur propre trait sous la teinte : un tracé légèrement différent
+		// (bord adouci, filtrage linéaire) laissait un fantôme à côté de chaque trait,
+		// d'où des « doublons ». Les traits en plus, dus aux seuils abaissés, sont
+		// simplement ajoutés.
+		float hit = (foam_hit ? 1.0 : 0.0) * mix(1.0, top_water_scale, top);
+		if (water_hit) {
+			hit = 1.0;
+		}
 		col = mix(col, reflection_color.rgb, hit);
 		alpha = max(alpha, hit);
 
 		// 3 + 4. Frange : sa largeur respire au rythme d'une houle lente, déphasée
 		// d'un point à l'autre du rivage par le bruit lent. Bords antialiasés sur la
 		// largeur d'un pixel d'écran.
-		float breath = 0.5 + 0.5 * sin(TIME * 0.9 + n_slow * 12.0);
+		float breath = 0.5 + 0.5 * sin(foam_t * 0.9 + n_slow * 12.0);
 		float foam_w = (foam_width_min + foam_width_breath * breath + 1.6 * n_mid)
 			* mix(1.0, top_foam_scale, top) * mix(1.0, bottom_foam_scale, bottom);
 		float aa = max(fwidth(dd), 0.02);
