@@ -365,10 +365,10 @@ position = Vector2(0, 7)
 tile_set = SubResource("TileSet_hex")
 script = ExtResource("38_tile_reflection_flat_script")
 
-[node name="IslandFoam" type="Node2D" parent="." unique_id=585089301 node_paths=PackedStringArray("shadow", "water")]
+[node name="IslandFoam" type="Node2D" parent="." unique_id=585089301 node_paths=PackedStringArray("tile_layer", "water")]
 z_index = -1
 script = ExtResource("46_island_foam_script")
-shadow = NodePath("../IslandShadow")
+tile_layer = NodePath("../TileMapLayer")
 water = NodePath("../WaterReflection")
 
 [node name="TileMapLayer" type="TileMapLayer" parent="." unique_id=319968199]

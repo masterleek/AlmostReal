@@ -5,34 +5,39 @@ extends Node2D
 ## traits que WaterReflection) qui restent nets par-dessus.
 ##
 ## Tout part d'UNE donnée : la distance de chaque pixel d'eau à la silhouette
-## réelle des tuiles. Elle est tirée du masque que IslandShadow construit déjà
-## (même copie des cases, même TileSet), puis transformée en carte de distance
-## EXACTE une seule fois (transformation de Felzenszwalb, deux passes 1D). Le
-## shader n'a plus qu'à lire un nombre de pixels : frange, teinte et reflets sont
-## des fonctions de cette distance, d'où un motif qui épouse n'importe quel
-## contour — sans rien tester par tuile et sans superposer les bandes de deux
-## tuiles voisines.
+## réelle des tuiles. La silhouette est reconstruite SUR LE PROCESSEUR, en collant
+## l'alpha de chaque tuile (région de l'atlas) à sa place dans une image : pas de
+## SubViewport à rendre ni de relecture GPU, donc rien à attendre — une première
+## version relisait le masque d'IslandShadow et perdait ~300 ms avant que l'écume
+## n'apparaisse au lancement. Elle est ensuite transformée en carte de distance
+## EXACTE (transformation de Felzenszwalb, deux passes 1D) dans un fil de travail :
+## ~130 ms de calcul qui, sur le fil principal, gelaient le jeu — sauf au lancement,
+## où il vaut mieux les payer AVANT le premier rendu que de voir l'écume apparaître
+## après coup. Le shader n'a plus
+## qu'à lire un nombre de pixels : frange, teinte et reflets sont des fonctions de
+## cette distance, d'où un motif qui épouse n'importe quel contour — sans rien
+## tester par tuile et sans superposer les bandes de deux tuiles voisines.
 ##
-## À placer APRÈS IslandShadow dans l'arbre, avec un z_index de -1 : un cran AU-
-## DESSUS de l'ombre et du reflet des tuiles (z_index -2), qu'elle doit recouvrir
-## quel que soit leur ordre dans l'arbre, et dans le même plan que les tuiles
-## (placée avant elles dans l'arbre, elles recouvrent la partie intérieure ; seule
-## la bande côté eau reste visible).
+## À placer avant les tuiles dans l'arbre, avec un z_index de -1 : un cran AU-DESSUS
+## de l'ombre et du reflet des tuiles (z_index -2), qu'elle doit recouvrir quel que
+## soit leur ordre dans l'arbre, et dans le même plan que les tuiles (placée avant
+## elles, elles recouvrent la partie intérieure ; seule la bande côté eau reste
+## visible).
 ##
-## Même limite que IslandShadow : la carte est calculée une fois. Une case
-## révélée ensuite change un peu de silhouette ; appeler setup() sur
-## IslandShadow la recalcule (ce nœud écoute son signal).
+## Limite : la silhouette est calculée une fois. Une case révélée ensuite change un
+## peu de silhouette ; appeler setup() la recalcule (dans un fil de travail).
 
-## L'ombre dont on réutilise le masque (nœud IslandShadow).
-@export var shadow: Node2D
+## La couche de tuiles dont on suit la silhouette.
+@export var tile_layer: TileMapLayer
 ## Le fond d'eau (nœud WaterReflection) : ses reflets sont redessinés dans la
 ## bande d'écume avec ses textures de bruit et ses seuils.
 @export var water: ColorRect
-## Largeur (px monde) de la zone d'eau couverte. Doit rester sous la marge laissée
-## autour du masque (~38 px).
+## Largeur (px monde) de la zone d'eau couverte.
 @export_range(8.0, 36.0) var band_px: float = 28.0
 
 const FOAM_SHADER := preload("res://Shaders/island_foam.gdshader")
+# L'art d'une tuile occupe sa case de 64×64, centrée sur map_to_local().
+const CELL_HALF := 32.0
 # Paramètres du matériau de l'eau recopiés tels quels dans celui de l'écume : les
 # deux shaders déclarent les mêmes noms, donc un réglage de l'eau se retrouve ici.
 const WATER_PARAMS: PackedStringArray = [
@@ -48,37 +53,90 @@ const WATER_PARAMS: PackedStringArray = [
 const FAR := 1.0e9
 
 var _rect: ColorRect
+# Numéro du dernier calcul lancé : un résultat plus ancien que lui est jeté.
+var _generation := 0
+# Tâche de calcul en cours (-1 : aucune), pour l'attendre avant de quitter.
+var _task_id := -1
 
 func _ready() -> void:
-	if shadow == null:
-		return
-	shadow.connect("mask_changed", _on_mask_changed)
-	# Si IslandShadow a déjà construit son masque avant notre _ready.
-	if shadow.get("mask_texture") != null:
-		_on_mask_changed()
+	# tile_layer est peuplé par map_loader.gd dans son propre _ready() : on
+	# attend que la passe soit finie pour que les cases existent déjà.
+	# Calcul SYNCHRONE au lancement : il s'exécute avant le tout premier rendu, donc
+	# la frange est déjà là à la première image au lieu d'apparaître ~140 ms après.
+	call_deferred("setup", false)
 
-func _on_mask_changed() -> void:
-	# Le SubViewport n'est rempli qu'après un rendu : on attend deux images avant
-	# de relire ses pixels.
-	await get_tree().process_frame
-	await get_tree().process_frame
-	# Sans rendu (--headless), le SubViewport n'a pas de pixels à relire.
-	if DisplayServer.get_name() == "headless":
-		return
-	var texture: Texture2D = shadow.get("mask_texture")
-	var mask_rect: Rect2 = shadow.get("mask_rect")
-	if texture == null:
-		return
-	var image: Image = texture.get_image()
-	if image == null or image.is_empty():
-		return
-	if image.get_format() != Image.FORMAT_RGBA8:
-		image.convert(Image.FORMAT_RGBA8)
+func _exit_tree() -> void:
+	# Le fil de travail rappelle ce nœud à la fin de son calcul : on l'attend pour
+	# ne jamais l'appeler une fois le nœud libéré (fermeture du jeu en plein calcul).
+	if _task_id != -1:
+		WorkerThreadPool.wait_for_task_completion(_task_id)
+		_task_id = -1
 
-	var width: int = image.get_width()
-	var height: int = image.get_height()
-	var distance := _distance_field(image.get_data(), width, height)
-	var field := Image.create_from_data(width, height, false, Image.FORMAT_RF, distance.to_byte_array())
+## `threaded` : calcule la carte de distance dans un fil de travail (la frange se
+## met à jour quand il a fini, sans geler le jeu) plutôt que tout de suite. À
+## vrai pour un recalcul en cours de partie, à faux au lancement.
+func setup(threaded: bool = true) -> void:
+	if tile_layer == null:
+		return
+	var used := tile_layer.get_used_cells()
+	if used.is_empty():
+		return
+
+	# Cadre de l'image : toutes les cases, plus la bande d'écume tout autour.
+	var first: Vector2 = tile_layer.position + tile_layer.map_to_local(used[0])
+	var bounds := Rect2(first - Vector2(CELL_HALF, CELL_HALF), Vector2(CELL_HALF, CELL_HALF) * 2.0)
+	for cell: Vector2i in used:
+		var centre: Vector2 = tile_layer.position + tile_layer.map_to_local(cell)
+		bounds = bounds.expand(centre - Vector2(CELL_HALF, CELL_HALF))
+		bounds = bounds.expand(centre + Vector2(CELL_HALF, CELL_HALF))
+	var margin := Vector2.ONE * (ceilf(band_px) + 4.0)
+	var origin: Vector2 = (bounds.position - margin).floor()
+	var size := Vector2i((bounds.end + margin - origin).ceil())
+
+	var mask := Image.create(size.x, size.y, false, Image.FORMAT_RGBA8)
+	_stamp_tiles(mask, used, origin)
+
+	_generation += 1
+	var generation := _generation
+	var data := mask.get_data()
+	if not threaded:
+		_apply(_distance_field(data, size.x, size.y), size, origin, generation)
+		return
+	# Le calcul tourne dans un fil de travail ; seul son résultat revient ici.
+	_task_id = WorkerThreadPool.add_task(func() -> void:
+		var distance := _distance_field(data, size.x, size.y)
+		_apply.call_deferred(distance, size, origin, generation)
+	)
+
+## Colle l'alpha de chaque tuile à sa place : même géométrie que le TileMapLayer
+## (centre de la case, moins la moitié de la région et le décalage de texture).
+func _stamp_tiles(mask: Image, used: Array[Vector2i], origin: Vector2) -> void:
+	var tile_set := tile_layer.tile_set
+	var atlases := {}
+	for cell: Vector2i in used:
+		var source_id: int = tile_layer.get_cell_source_id(cell)
+		var source := tile_set.get_source(source_id) as TileSetAtlasSource
+		if source == null or source.texture == null:
+			continue
+		if not atlases.has(source_id):
+			var atlas := source.texture.get_image()
+			if atlas.is_compressed():
+				atlas.decompress()
+			atlas.convert(Image.FORMAT_RGBA8)
+			atlases[source_id] = atlas
+		var coords: Vector2i = tile_layer.get_cell_atlas_coords(cell)
+		var region: Rect2i = source.get_tile_texture_region(coords)
+		var tile_data := source.get_tile_data(coords, 0)
+		var centre: Vector2 = tile_layer.position + tile_layer.map_to_local(cell)
+		var top_left: Vector2 = centre - Vector2(region.size) / 2.0 - Vector2(tile_data.texture_origin) - origin
+		mask.blend_rect(atlases[source_id], region, Vector2i(top_left.round()))
+
+## Reçoit la carte de distance calculée en fil de travail et la branche sur le shader.
+func _apply(distance: PackedFloat32Array, size: Vector2i, origin: Vector2, generation: int) -> void:
+	# Un setup() plus récent est déjà parti : ce résultat est périmé.
+	if generation != _generation:
+		return
+	var field := Image.create_from_data(size.x, size.y, false, Image.FORMAT_RF, distance.to_byte_array())
 	var field_texture := ImageTexture.create_from_image(field)
 
 	if _rect == null:
@@ -88,12 +146,12 @@ func _on_mask_changed() -> void:
 		_rect.material = ShaderMaterial.new()
 		(_rect.material as ShaderMaterial).shader = FOAM_SHADER
 		add_child(_rect)
-	_rect.position = mask_rect.position
-	_rect.size = Vector2(width, height)
+	_rect.position = origin
+	_rect.size = Vector2(size)
 	var material := _rect.material as ShaderMaterial
 	material.set_shader_parameter("distance_field", field_texture)
-	material.set_shader_parameter("origin_px", mask_rect.position)
-	material.set_shader_parameter("size_px", Vector2(width, height))
+	material.set_shader_parameter("origin_px", origin)
+	material.set_shader_parameter("size_px", Vector2(size))
 	material.set_shader_parameter("band_px", band_px)
 	_copy_water_params(material)
 
@@ -118,7 +176,9 @@ func _copy_water_params(material: ShaderMaterial) -> void:
 
 ## Distance (en px) de chaque pixel au pixel opaque le plus proche, rangée ligne
 ## par ligne. `data` est une image RGBA8 : l'alpha (4e octet) dit « dans une tuile ».
-func _distance_field(data: PackedByteArray, width: int, height: int) -> PackedFloat32Array:
+## Statique et sans nœud : appelée depuis un fil de travail, où l'instance du nœud
+## n'a pas à être touchée.
+static func _distance_field(data: PackedByteArray, width: int, height: int) -> PackedFloat32Array:
 	var cells := PackedFloat32Array()
 	cells.resize(width * height)
 	for i in width * height:
@@ -151,7 +211,7 @@ func _distance_field(data: PackedByteArray, width: int, height: int) -> PackedFl
 
 ## Une passe 1D de la transformation de distance : enveloppe inférieure des
 ## paraboles y = f[q] + (x - q)², puis lecture de cette enveloppe en chaque x.
-func _transform_1d(f: PackedFloat32Array, n: int, out: PackedFloat32Array, v: PackedInt32Array, z: PackedFloat32Array) -> void:
+static func _transform_1d(f: PackedFloat32Array, n: int, out: PackedFloat32Array, v: PackedInt32Array, z: PackedFloat32Array) -> void:
 	var k := 0
 	v[0] = 0
 	z[0] = -FAR
